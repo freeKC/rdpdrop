@@ -487,3 +487,6 @@ $RECYCLE.BIN/
 bin/
 obj/
 artifacts/
+
+# Release notes used by the release workflow
+!docs/releases/
