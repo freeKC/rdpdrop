@@ -69,10 +69,8 @@ local desktop      RdpDrop.Client                 RDP           RdpDrop.Agent (i
 Pure logic shared by the two apps and covered by tests.
 
 * `Messages`: the message records below, serialized with System.Text.Json.
-* `Framing`: encode a message as 4 byte little endian length prefix followed
-  by UTF-8 JSON. A `FrameReader` accumulates arbitrary byte chunks and yields
-  complete messages. Maximum frame size is 1 MiB; a larger length is a
-  protocol error that resets the reader.
+* `LineFraming`, `LineReader` and `ChannelTextCodec`: ASCII line framing
+  and byte model detection, described under "Wire encoding" below.
 * `ClientPathMapper`: turns a local path such as `C:\Users\me\a.txt` into
   `\\tsclient\C\Users\me\a.txt`. Only paths with a drive letter are accepted.
   UNC paths and relative paths are rejected with a clear reason.
@@ -87,8 +85,8 @@ Pure logic shared by the two apps and covered by tests.
 ### Protocol
 
 Static virtual channel named `RDPDROP` (seven characters, the maximum for a
-static channel). Every message is one frame. Messages are JSON objects with a
-`type` field.
+static channel). Every message is one line (see "Wire encoding" below).
+Messages are JSON objects with a `type` field.
 
 Client to agent:
 
@@ -108,6 +106,38 @@ Agent to client:
 Version handling: both sides send `version: 1`. A receiver that sees a higher
 major version replies with an error `dropResult` or ignores the message and
 logs it. Unknown fields are ignored.
+
+#### Wire encoding
+
+The ActiveX control exposes channel data as a COM string (BSTR), and the way
+`mstscax.dll` turns bytes into string units is not documented. Two models are
+possible: one byte per character, or raw UTF-16LE (two bytes per character,
+with an odd trailing byte lost). RdpDrop therefore only ever puts ASCII on
+the wire, frames messages by lines, and detects the model at run time.
+
+* A message on the wire is its JSON object serialized with ASCII only
+  (System.Text.Json escapes everything else as `\uXXXX`), followed by one
+  `\n`. The JSON never contains a raw newline.
+* Agent side: the agent detects the model from the first two bytes it
+  receives on a connection. `0x7B 0x00` means UTF-16LE; `0x7B` followed by
+  any other byte means one byte per character. It keeps that model for the
+  rest of the connection and writes replies with the same model: UTF-16LE
+  bytes, or ASCII bytes. In the one byte per character model it pads a line
+  to an even number of bytes by inserting a space before the `\n` when
+  needed, so that nothing is lost if the control pairs bytes into characters.
+* Client side: the event delivers a string. If its first character is `{`,
+  each character is one byte (take the low byte). Otherwise the string holds
+  raw bytes, two per character, little endian (reinterpret the UTF-16 units
+  as bytes). The client keeps the detected model and logs it, since this is
+  the first thing to check when a drop fails.
+* Both sides accumulate until `\n` and parse each line on its own. Blank
+  lines are ignored. A line above 1 MiB is a protocol error that drops the
+  buffer.
+
+This lives in Core as `LineFraming` (encode a message as an ASCII line),
+`LineReader` (accumulate text, yield complete lines) and `ChannelTextCodec`
+(model detection and byte/string conversion in both directions), all unit
+tested. The earlier binary length prefixed framing is not used.
 
 ### RdpDrop.Client
 
@@ -165,9 +195,11 @@ Behaviour:
 
 1. Channel loop on a background thread:
    `WTSVirtualChannelOpen(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, "RDPDROP")`,
-   then `WTSVirtualChannelQuery(WTSVirtualFileHandle)` to get a file handle
-   wrapped in a `FileStream`. Read chunks into a `FrameReader`, dispatch
-   messages, write replies with `WTSVirtualChannelWrite`. On any error
+   then `WTSVirtualChannelRead` with a short timeout, so that the loop can
+   stop or restart without closing a handle under a pending read. Detect the
+   byte model from the first two bytes, convert chunks to text with
+   `ChannelTextCodec`, feed a `LineReader`, dispatch messages, write replies
+   with `WTSVirtualChannelWrite` in the same byte model. On any error
    (session disconnected, channel closed, not an RDP session) close
    everything, wait two seconds and retry forever. Also listen to
    `WM_WTSSESSION_CHANGE` to retry at once after a reconnect.
