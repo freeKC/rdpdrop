@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check release notes
+        shell: pwsh
+        run: |
+          $notes = "docs/releases/$env:TAG.md"
+          if (-not (Test-Path $notes)) {
+            Write-Error "Release notes file $notes is missing. Add it before tagging."
+            exit 1
+          }
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore RdpDrop.sln
+
+      - name: Build
+        run: dotnet build RdpDrop.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test RdpDrop.sln -c Release --no-build --logger trx
+
+      - name: Publish client
+        run: dotnet publish src/RdpDrop.Client/RdpDrop.Client.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/RdpDrop.Client
+
+      - name: Publish agent
+        run: dotnet publish src/RdpDrop.Agent/RdpDrop.Agent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/RdpDrop.Agent
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path artifacts/RdpDrop.Client/* -DestinationPath "RdpDrop.Client-$env:TAG-win-x64.zip"
+          Compress-Archive -Path artifacts/RdpDrop.Agent/* -DestinationPath "RdpDrop.Agent-$env:TAG-win-x64.zip"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: docs/releases/${{ github.ref_name }}.md
+          files: |
+            RdpDrop.Client-${{ github.ref_name }}-win-x64.zip
+            RdpDrop.Agent-${{ github.ref_name }}-win-x64.zip
+          fail_on_unmatched_files: true
