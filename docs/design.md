@@ -129,7 +129,11 @@ the wire, frames messages by lines, and detects the model at run time.
   each character is one byte (take the low byte). Otherwise the string holds
   raw bytes, two per character, little endian (reinterpret the UTF-16 units
   as bytes). The client keeps the detected model and logs it, since this is
-  the first thing to check when a drop fails.
+  the first thing to check when a drop fails. The detected model is only
+  used to read. When sending, the client always hands the ASCII line itself
+  to the control: whatever the control does with it, the agent receives
+  either ASCII bytes or UTF-16LE bytes, and both are covered by its own
+  detection.
 * Both sides accumulate until `\n` and parse each line on its own. Blank
   lines are ignored. A line above 1 MiB is a protocol error that drops the
   buffer.
@@ -137,7 +141,7 @@ the wire, frames messages by lines, and detects the model at run time.
 This lives in Core as `LineFraming` (encode a message as an ASCII line),
 `LineReader` (accumulate text, yield complete lines) and `ChannelTextCodec`
 (model detection and byte/string conversion in both directions), all unit
-tested. The earlier binary length prefixed framing is not used.
+tested.
 
 ### RdpDrop.Client
 
@@ -242,7 +246,7 @@ Behaviour:
   redirected, removable drive unplugged): error result naming the item.
 * Agent cannot open the channel (console session, policy forbidding the
   channel): logged once at warning level, then silent retries.
-* Protocol error (bad length, bad JSON): logged, frame reader reset,
+* Protocol error (a line too long or bad JSON): logged, line reader reset,
   connection kept.
 
 ## Security notes
@@ -258,7 +262,7 @@ Behaviour:
 ## Testing
 
 * `RdpDrop.Core.Tests` covers: framing round trip, split and merged chunks,
-  oversize frames, JSON round trip of every message, path mapping (drive
+  oversize lines, JSON round trip of every message, path mapping (drive
   letter case, UNC rejection, relative rejection), `.rdp` parsing (UTF-16 and
   UTF-8, types, defaults), target folder policy (Explorer folder, desktop,
   virtual folder, nothing under cursor, each fallback).
