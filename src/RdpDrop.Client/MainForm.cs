@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
-using AxMSTSCLib;
+using RdpDrop.Client.Channel;
 using RdpDrop.Client.Logging;
 using RdpDrop.Client.Rdp;
+using RdpDrop.Core.Paths;
+using RdpDrop.Core.Protocol;
 using RdpDrop.Core.RdpFiles;
 
 namespace RdpDrop.Client;
@@ -15,8 +17,10 @@ internal sealed class MainForm : Form
     private readonly string _host;
     private readonly RdpControl _rdp = new();
     private readonly ChildDropTargets _childTargets;
+    private readonly AgentLink _agent;
     private readonly ToolStripMenuItem _connectItem = new("&Connect");
     private readonly ToolStripMenuItem _disconnectItem = new("&Disconnect");
+    private readonly ToolStripMenuItem _findAgentItem = new("&Look for the agent again");
     private readonly ToolStripStatusLabel _connectionLabel = new() { Text = "Not connected" };
     private readonly ToolStripStatusLabel _agentLabel = new() { Text = "Agent: not connected" };
     private readonly ToolStripStatusLabel _dropLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
@@ -25,6 +29,9 @@ internal sealed class MainForm : Form
     private bool _channelCreated;
     private bool _closeRequested;
     private Size _desktopSize;
+    private string? _pendingDropId;
+    private string? _dropTextBeforeDrag;
+    private string _dropStatus = string.Empty;
 
     public MainForm(string rdpPath, RdpFile file)
     {
@@ -32,6 +39,7 @@ internal sealed class MainForm : Form
         _file = file;
         _host = RdpAddress.Split(file.FullAddress ?? string.Empty).Host;
         _childTargets = new ChildDropTargets(_rdp);
+        _agent = new AgentLink(_rdp);
 
         Text = $"{AppInfo.Name}: {file.FullAddress}";
         StartPosition = FormStartPosition.CenterScreen;
@@ -40,7 +48,7 @@ internal sealed class MainForm : Form
         AllowDrop = true;
 
         var menu = BuildMenu();
-        var status = new StatusStrip();
+        var status = new StatusStrip { ShowItemToolTips = true };
         _connectionLabel.BorderSides = ToolStripStatusLabelBorderSides.Right;
         _agentLabel.BorderSides = ToolStripStatusLabelBorderSides.Right;
         status.Items.AddRange([_connectionLabel, _agentLabel, _dropLabel]);
@@ -64,6 +72,11 @@ internal sealed class MainForm : Form
         _rdp.OnRemoteDesktopSizeChange += (_, e) => OnRemoteDesktopSizeChange(e.width, e.height);
         _rdp.OnAutoReconnecting2 += (_, e) => OnAutoReconnecting(e.disconnectReason, e.attemptCount);
         _rdp.OnAutoReconnected += (_, _) => OnAutoReconnected();
+        _rdp.FileDragOver += OnFileDragOver;
+        _rdp.FileDropped += OnFileDropped;
+        _rdp.FileDragLeft += (_, _) => OnFileDragLeft();
+        _agent.StateChanged += (_, _) => OnAgentStateChanged();
+        _agent.DropResultReceived += (_, result) => OnDropResult(result);
 
         ClientLog.Info(Invariant($"Main form created, control version {SafeControlVersion()}"));
         if (!file.RequestsDriveRedirection)
@@ -84,6 +97,7 @@ internal sealed class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        ClientLog.Info($"Form closing: reason {e.CloseReason}, state {_state}, close requested {_closeRequested}.");
         if (_state != ConnectionState.Disconnected && !_closeRequested)
         {
             // Disconnect cleanly first; OnDisconnected closes the window.
@@ -100,15 +114,61 @@ internal sealed class MainForm : Form
                 Close();
             };
             timer.Start();
+            StartExitWatchdog();
             return;
         }
 
         base.OnFormClosing(e);
     }
 
+    // The form is a drop target too, as a fallback: OLE reaches it when no window under
+    // the cursor is registered. It answers through the control, which refuses points
+    // outside the session area.
+    protected override void OnDragEnter(DragEventArgs drgevent)
+    {
+        drgevent.Effect = _rdp.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+    }
+
+    protected override void OnDragOver(DragEventArgs drgevent)
+    {
+        drgevent.Effect = _rdp.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+    }
+
+    protected override void OnDragDrop(DragEventArgs drgevent)
+    {
+        drgevent.Effect = _rdp.ProcessDrop(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+    }
+
+    protected override void OnDragLeave(EventArgs e)
+    {
+        _rdp.ProcessDragLeave();
+    }
+
+    /// <summary>
+    /// The control can block its own teardown, for example while its credential prompt
+    /// is open. If the process is still alive ten seconds after the user asked to close,
+    /// it exits without waiting for the control.
+    /// </summary>
+    private static void StartExitWatchdog()
+    {
+        var watchdog = new Thread(() =>
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(10));
+            ClientLog.Warn("The Remote Desktop control did not let the window close; exiting.");
+            Environment.Exit(0);
+        })
+        {
+            IsBackground = true,
+            Name = "Exit watchdog",
+        };
+        watchdog.Start();
+    }
+
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        ClientLog.Info("Form closed.");
         _childTargets.RevokeAll();
+        _agent.Dispose();
         base.OnFormClosed(e);
     }
 
@@ -116,11 +176,12 @@ internal sealed class MainForm : Form
     {
         _connectItem.Click += (_, _) => Connect();
         _disconnectItem.Click += (_, _) => Disconnect();
+        _findAgentItem.Click += (_, _) => _agent.RestartDiscovery("menu");
         var quit = new ToolStripMenuItem("&Quit");
         quit.Click += (_, _) => Close();
 
         var session = new ToolStripMenuItem("&Session");
-        session.DropDownItems.AddRange([_connectItem, _disconnectItem, new ToolStripSeparator(), quit]);
+        session.DropDownItems.AddRange([_connectItem, _disconnectItem, _findAgentItem, new ToolStripSeparator(), quit]);
 
         var about = new ToolStripMenuItem("&About RdpDrop");
         about.Click += (_, _) => ShowAbout();
@@ -169,7 +230,7 @@ internal sealed class MainForm : Form
         try
         {
             ClientLog.Info("Disconnect requested.");
-            _connectionLabel.Text = "Disconnecting...";
+            SetLabel(_connectionLabel, "Disconnecting...");
             _rdp.Disconnect();
         }
         catch (COMException ex)
@@ -189,6 +250,7 @@ internal sealed class MainForm : Form
         ClientLog.Info("Event OnConnected");
         SetConnection(ConnectionState.Connected, $"Connected to {_host}");
         _childTargets.Refresh("connected");
+        _agent.Start();
     }
 
     private void OnRdpLoginComplete()
@@ -196,6 +258,7 @@ internal sealed class MainForm : Form
         ClientLog.Info("Event OnLoginComplete");
         SetConnection(ConnectionState.Connected, $"Logged on to {_host}");
         _childTargets.Refresh("logged on");
+        _agent.RestartDiscovery("logged on");
     }
 
     private void OnRdpDisconnected(int reason)
@@ -203,7 +266,9 @@ internal sealed class MainForm : Form
         var extended = SafeExtendedReason();
         var text = SafeErrorDescription(reason, extended);
         ClientLog.Info(Invariant($"Event OnDisconnected reason={reason} extended={extended} text=\"{text}\""));
-        SetConnection(ConnectionState.Disconnected, string.IsNullOrWhiteSpace(text) ? Invariant($"Disconnected (code {reason})") : $"Disconnected: {text}");
+        _agent.Stop();
+        _pendingDropId = null;
+        SetConnection(ConnectionState.Disconnected, DescribeDisconnect(reason, text));
 
         if (_closeRequested)
         {
@@ -211,9 +276,23 @@ internal sealed class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Codes 1 to 3 are normal ends of a session; the control describes code 1 as an
+    /// internal error, so they get their own text.
+    /// </summary>
+    private static string DescribeDisconnect(int reason, string description) => reason switch
+    {
+        1 => "Disconnected",
+        2 => "Disconnected: the session was closed from the remote computer",
+        3 => "Disconnected by the remote computer",
+        _ when string.IsNullOrWhiteSpace(description) => Invariant($"Disconnected (code {reason})"),
+        _ => $"Disconnected: {description.ReplaceLineEndings(" ").Replace("  ", " ", StringComparison.Ordinal).Trim()}",
+    };
+
     private void OnRdpFatalError(int errorCode)
     {
         ClientLog.Error(Invariant($"Event OnFatalError code={errorCode}"));
+        _agent.Stop();
         SetConnection(ConnectionState.Disconnected, Invariant($"Fatal error {errorCode} in the Remote Desktop control"));
     }
 
@@ -229,7 +308,7 @@ internal sealed class MainForm : Form
     private void OnAutoReconnecting(int reason, int attempt)
     {
         ClientLog.Info(Invariant($"Auto reconnecting, reason={reason} attempt={attempt}"));
-        _connectionLabel.Text = Invariant($"Reconnecting to {_host} (attempt {attempt})...");
+        SetLabel(_connectionLabel, Invariant($"Reconnecting to {_host} (attempt {attempt})..."));
     }
 
     private void OnAutoReconnected()
@@ -242,7 +321,7 @@ internal sealed class MainForm : Form
     private void SetConnection(ConnectionState state, string text)
     {
         _state = state;
-        _connectionLabel.Text = text;
+        SetLabel(_connectionLabel, text);
         UpdateMenu();
     }
 
@@ -250,9 +329,148 @@ internal sealed class MainForm : Form
     {
         _connectItem.Enabled = _state == ConnectionState.Disconnected;
         _disconnectItem.Enabled = _state != ConnectionState.Disconnected;
+        _findAgentItem.Enabled = _state == ConnectionState.Connected && _agent.State != AgentState.Ready;
     }
 
-    private void ShowDropStatus(string text) => _dropLabel.Text = text;
+    private void ShowDropStatus(string text)
+    {
+        _dropStatus = text;
+        SetLabel(_dropLabel, text);
+    }
+
+    /// <summary>
+    /// Shows a text in a status label, shortened when long; the tooltip keeps all of it.
+    /// </summary>
+    private static void SetLabel(ToolStripStatusLabel label, string text)
+    {
+        const int MaxLength = 110;
+        label.ToolTipText = text;
+        label.Text = text.Length <= MaxLength ? text : string.Concat(text.AsSpan(0, MaxLength - 3), "...");
+    }
+
+    private void OnAgentStateChanged()
+    {
+        _agentLabel.Text = _agent.State switch
+        {
+            AgentState.Waiting => "Agent: waiting",
+            AgentState.Ready => $"Agent ready (v{_agent.AgentVersion ?? "?"})",
+            AgentState.NotFound => "No agent on the remote computer",
+            _ => "Agent: not connected",
+        };
+
+        if (_agent.State == AgentState.Ready && _agent.DriveRedirectionAvailable == false)
+        {
+            ShowDropStatus("The session sees no redirected drive: drops will not work. Turn on drives under Local Resources.");
+        }
+
+        UpdateMenu();
+    }
+
+    /// <summary>
+    /// Why a drop cannot be sent now, or null when it can.
+    /// </summary>
+    private string? DropRefusalReason()
+    {
+        if (_state != ConnectionState.Connected)
+        {
+            return "Drop refused: not connected.";
+        }
+
+        return _agent.State switch
+        {
+            AgentState.Ready => null,
+            AgentState.Waiting => "Drop refused: the RdpDrop agent has not answered yet.",
+            _ => "Drop refused: the RdpDrop agent is not running in the remote session.",
+        };
+    }
+
+    private void OnFileDragOver(object? sender, FileDragEventArgs e)
+    {
+        _dropTextBeforeDrag ??= _dropStatus;
+        var reason = DropRefusalReason();
+        if (reason is null)
+        {
+            e.Effect = DragDropEffects.Copy;
+            ShowDropStatus(_dropTextBeforeDrag);
+        }
+        else
+        {
+            e.Effect = DragDropEffects.None;
+            ShowDropStatus(reason);
+        }
+    }
+
+    private void OnFileDragLeft()
+    {
+        if (_dropTextBeforeDrag is not null)
+        {
+            ShowDropStatus(_dropTextBeforeDrag);
+            _dropTextBeforeDrag = null;
+        }
+    }
+
+    private void OnFileDropped(object? sender, FileDragEventArgs e)
+    {
+        _dropTextBeforeDrag = null;
+        var reason = DropRefusalReason();
+        if (reason is not null)
+        {
+            ClientLog.Info(Invariant($"Drop of {e.Files.Count} item(s) refused: {reason}"));
+            ShowDropStatus(reason);
+            return;
+        }
+
+        var items = new List<DropItem>(e.Files.Count);
+        foreach (var path in e.Files)
+        {
+            if (!ClientPathMapper.TryMapToTsClient(path, out _, out var pathProblem))
+            {
+                ClientLog.Info($"Drop refused: {pathProblem}");
+                ShowDropStatus($"Drop refused: {pathProblem}");
+                return;
+            }
+
+            items.Add(new DropItem(path, Directory.Exists(path)));
+        }
+
+        var remote = DropCoordinateMapper.ToRemote(e.ClientPoint, _rdp.ClientSize, _desktopSize);
+        var drop = new DropMessage(Guid.NewGuid().ToString("N"), remote.X, remote.Y, items);
+        ClientLog.Info(Invariant(
+            $"Drop {drop.Id}: {items.Count} item(s) at control ({e.ClientPoint.X}, {e.ClientPoint.Y}) of {_rdp.ClientSize.Width}x{_rdp.ClientSize.Height}, remote ({remote.X}, {remote.Y}) of {_desktopSize.Width}x{_desktopSize.Height}, model {_agent.Model}: {string.Join("; ", e.Files)}"));
+
+        if (!_agent.SendDrop(drop))
+        {
+            ShowDropStatus("Drop failed: the message could not be sent to the agent.");
+            return;
+        }
+
+        _pendingDropId = drop.Id;
+        e.Effect = DragDropEffects.Copy;
+        ShowDropStatus(Invariant($"Sending {items.Count} item(s)..."));
+    }
+
+    private void OnDropResult(DropResultMessage result)
+    {
+        if (_pendingDropId is not null && result.Id != _pendingDropId)
+        {
+            ClientLog.Info($"Result {result.Id} belongs to an earlier drop; the status bar keeps the latest one.");
+            return;
+        }
+
+        _pendingDropId = null;
+        ShowDropStatus(DescribeResult(result));
+    }
+
+    private static string DescribeResult(DropResultMessage result) => result.Status switch
+    {
+        DropStatus.Ok => !string.IsNullOrWhiteSpace(result.Message)
+            ? result.Message
+            : $"Copied to {result.TargetFolder}",
+        DropStatus.Cancelled => !string.IsNullOrWhiteSpace(result.Message)
+            ? $"Cancelled: {result.Message}"
+            : "Copy cancelled.",
+        _ => $"Drop failed: {(string.IsNullOrWhiteSpace(result.Message) ? "no detail from the agent." : result.Message)}",
+    };
 
     private void ShowAbout()
     {
