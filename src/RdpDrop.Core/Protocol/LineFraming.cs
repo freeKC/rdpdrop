@@ -1,6 +1,3 @@
-using System.Buffers.Binary;
-using System.Runtime.InteropServices;
-
 namespace RdpDrop.Core.Protocol;
 
 /// <summary>
@@ -70,22 +67,10 @@ public static class LineFraming
         var line = EncodeLine(message);
         return model switch
         {
-            ChannelByteModel.Utf16 => ToUtf16LittleEndian(line),
+            ChannelByteModel.Utf16 => ChannelTextCodec.StringToUtf16LittleEndian(line),
             ChannelByteModel.OneBytePerChar => ToPaddedAscii(line),
             _ => throw new ArgumentOutOfRangeException(nameof(model), model, "The byte model must be known to encode a message."),
         };
-    }
-
-    private static byte[] ToUtf16LittleEndian(string line)
-    {
-        var bytes = MemoryMarshal.AsBytes(line.AsSpan()).ToArray();
-        if (!BitConverter.IsLittleEndian)
-        {
-            var units = MemoryMarshal.Cast<byte, ushort>(bytes.AsSpan());
-            BinaryPrimitives.ReverseEndianness(units, units);
-        }
-
-        return bytes;
     }
 
     private static byte[] ToPaddedAscii(string line)

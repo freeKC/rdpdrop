@@ -199,7 +199,8 @@ public static class ChannelTextCodec
         return new string(MemoryMarshal.Cast<ushort, char>(swapped));
     }
 
-    private static byte[] StringToUtf16LittleEndian(string s)
+    /// <summary>The UTF-16LE bytes of <paramref name="s"/>, without a byte order mark.</summary>
+    internal static byte[] StringToUtf16LittleEndian(string s)
     {
         var bytes = MemoryMarshal.AsBytes(s.AsSpan()).ToArray();
         if (!BitConverter.IsLittleEndian)

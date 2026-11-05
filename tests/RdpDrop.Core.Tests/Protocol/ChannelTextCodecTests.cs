@@ -222,4 +222,33 @@ public class ChannelTextCodecTests
         Assert.True(reader.TryReadLine(out line));
         Assert.Equal(message, MessageSerializer.Deserialize(Encoding.ASCII.GetBytes(line)));
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Line_sent_as_is_by_the_client_round_trips_with_either_control(bool rawControl)
+    {
+        // The client hands the ASCII line itself to the control. A raw control sends the
+        // UTF-16LE bytes of the string and builds strings from raw bytes; the other kind
+        // maps each character to one byte and back.
+        var controlEncoding = rawControl ? Encoding.Unicode : Encoding.Latin1;
+        Func<string, byte[]> send = controlEncoding.GetBytes;
+        Func<byte[], string> deliver = controlEncoding.GetString;
+        var drop = new DropMessage("id", 5, 6, [new DropItem(@"C:\Users\Zoë\a.txt", false)]);
+
+        var agentBytes = send(LineFraming.EncodeLine(drop));
+        var agentModel = ChannelTextCodec.DetectFromBytes(agentBytes);
+        Assert.Equal(rawControl ? ChannelByteModel.Utf16 : ChannelByteModel.OneBytePerChar, agentModel);
+        var agentText = ChannelTextCodec.BytesToText(agentBytes, agentModel);
+        Assert.Equal(LineFraming.EncodeLine(drop), agentText);
+
+        var reply = new DropResultMessage("id", DropStatus.Ok, @"C:\Users\me\Desktop", "Copied a.txt");
+        var clientString = deliver(LineFraming.EncodeBytes(reply, agentModel));
+        var clientModel = ChannelTextCodec.DetectFromControlString(clientString);
+        Assert.Equal(ChannelByteModel.OneBytePerChar, clientModel);
+        var reader = new LineReader();
+        reader.Append(ChannelTextCodec.ControlStringToText(clientString, clientModel));
+        Assert.True(reader.TryReadLine(out var line));
+        Assert.Equal(reply, MessageSerializer.Deserialize(Encoding.ASCII.GetBytes(line)));
+    }
 }
