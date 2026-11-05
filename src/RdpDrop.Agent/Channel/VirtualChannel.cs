@@ -11,7 +11,7 @@ namespace RdpDrop.Agent.Channel;
 /// <remarks>
 /// Reads use WTSVirtualChannelRead with a short timeout so that the owner can stop or
 /// restart the loop without closing a handle under a pending read. Reads deliver the
-/// data in blocks of at most about 1600 bytes; the caller reassembles frames.
+/// data in blocks of at most about 1600 bytes; the caller reassembles lines.
 /// Writes may come from any thread. Reads and <see cref="Dispose"/> must come from
 /// the thread that owns the instance.
 /// </remarks>

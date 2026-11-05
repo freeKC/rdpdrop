@@ -24,13 +24,13 @@ internal sealed class AgentProtocolHandler
         _executor = executor;
     }
 
-    /// <summary>Handles one frame payload.</summary>
+    /// <summary>Handles one line, given as its ASCII bytes.</summary>
     public void Handle(byte[] payload)
     {
         var envelope = MessageEnvelope.TryRead(payload);
         if (envelope is null)
         {
-            _logger.Warn($"Protocol error: a {payload.Length} byte frame is not a JSON object. Ignored.");
+            _logger.Warn($"Protocol error: a {payload.Length} byte line is not a JSON object. Ignored.");
             return;
         }
 

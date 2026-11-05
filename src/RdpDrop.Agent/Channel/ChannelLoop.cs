@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text;
 using RdpDrop.Agent.Interop;
 using RdpDrop.Agent.Logging;
 using RdpDrop.Core.Protocol;
@@ -8,7 +9,8 @@ namespace RdpDrop.Agent.Channel;
 
 /// <summary>
 /// Keeps the RDPDROP channel open for as long as the agent runs. A dedicated background
-/// thread opens the channel, reads frames and hands each payload to the handler. On any
+/// thread opens the channel, reads lines (see <see cref="IncomingTextDecoder"/> and
+/// <see cref="LineReader"/>) and hands each one, as ASCII bytes, to the handler. On any
 /// failure it closes the channel, waits <see cref="RetryDelay"/> and tries again,
 /// forever. <see cref="RestartNow"/> skips the wait, for example after a reconnect.
 /// </summary>
@@ -26,7 +28,8 @@ internal sealed class ChannelLoop : IDisposable
 
     private readonly FileLogger _logger;
     private readonly AutoResetEvent _wake = new(false);
-    private readonly FrameReader _frameReader = new();
+    private readonly IncomingTextDecoder _decoder = new();
+    private readonly LineReader _lineReader = new();
     private readonly RepeatedFailureFilter _openFailures = new();
     private Action<byte[]>? _payloadHandler;
     private Thread? _thread;
@@ -35,12 +38,13 @@ internal sealed class ChannelLoop : IDisposable
     private volatile bool _restartRequested;
     private volatile string? _restartReason;
     private volatile bool _sessionDisconnected;
+    private volatile ChannelByteModel _model;
 
     public ChannelLoop(FileLogger logger)
     {
         _logger = logger;
-        _frameReader.ProtocolError += (_, e) =>
-            _logger.Warn($"Protocol error: a frame announced {e.DeclaredLength} bytes, more than the {Framing.MaxFrameSize} byte limit. Buffered data dropped; the channel stays open.");
+        _lineReader.ProtocolError += (_, _) =>
+            _logger.Warn($"Protocol error: a line is longer than {LineFraming.MaxLineLength} characters. Buffered data dropped; the channel stays open.");
     }
 
     /// <summary>True while a channel is open.</summary>
@@ -48,7 +52,7 @@ internal sealed class ChannelLoop : IDisposable
 
     /// <summary>
     /// Starts the background thread. <paramref name="payloadHandler"/> runs on that thread
-    /// for every complete frame; it must return quickly.
+    /// for every complete line; it must return quickly.
     /// </summary>
     public void Start(Action<byte[]> payloadHandler)
     {
@@ -81,8 +85,9 @@ internal sealed class ChannelLoop : IDisposable
     public void SetSessionDisconnected(bool disconnected) => _sessionDisconnected = disconnected;
 
     /// <summary>
-    /// Frames and sends a message on the current channel. Returns false when no channel
-    /// is open or the write failed. Callable from any thread.
+    /// Sends a message on the current channel, in the byte model detected on it. Returns
+    /// false when no channel is open, nothing was received on it yet, or the write
+    /// failed. Callable from any thread.
     /// </summary>
     public bool TrySend(Message message)
     {
@@ -93,9 +98,16 @@ internal sealed class ChannelLoop : IDisposable
             return false;
         }
 
+        var model = _model;
+        if (model == ChannelByteModel.Unknown)
+        {
+            _logger.Warn($"Cannot send the {message.Type} message: nothing was received on this connection yet, so its byte model is unknown.");
+            return false;
+        }
+
         try
         {
-            channel.Write(Framing.Frame(message));
+            channel.Write(LineFraming.EncodeBytes(message, model));
             _logger.Debug($"Sent {message.Type}.");
             return true;
         }
@@ -175,7 +187,9 @@ internal sealed class ChannelLoop : IDisposable
         }
 
         _openFailures.Reset();
-        _frameReader.Reset();
+        _decoder.Reset();
+        _lineReader.Reset();
+        _model = ChannelByteModel.Unknown;
         Volatile.Write(ref _channel, channel);
         _logger.Info($"The {ProtocolConstants.ChannelName} virtual channel is open.");
         return channel;
@@ -207,10 +221,23 @@ internal sealed class ChannelLoop : IDisposable
             }
 
             instantEmptyReads = 0;
-            _frameReader.Append(buffer.AsSpan(0, count));
-            while (_frameReader.TryReadFrame(out var payload))
+            var text = _decoder.Decode(buffer.AsSpan(0, count), out var rejected);
+            if (rejected)
             {
-                Dispatch(payload);
+                _logger.Warn($"Protocol error: the data at the start of the connection does not start with \"{{\". Dropped.");
+                continue;
+            }
+
+            if (_model == ChannelByteModel.Unknown && _decoder.Model != ChannelByteModel.Unknown)
+            {
+                _model = _decoder.Model;
+                _logger.Info($"Channel byte model: {_model}.");
+            }
+
+            _lineReader.Append(text);
+            while (_lineReader.TryReadLine(out var line))
+            {
+                Dispatch(Encoding.ASCII.GetBytes(line));
             }
         }
     }
