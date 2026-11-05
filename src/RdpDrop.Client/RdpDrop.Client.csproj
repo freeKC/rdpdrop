@@ -10,10 +10,16 @@
     <RootNamespace>RdpDrop.Client</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
+    <!-- Classic COM interop for the Remote Desktop ActiveX control (AxMSTSCLib). -->
+    <MsRdpExComInterop>Legacy</MsRdpExComInterop>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\RdpDrop.Core\RdpDrop.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Devolutions.MsRdpEx" Version="2026.10.26" />
   </ItemGroup>
 
 </Project>
