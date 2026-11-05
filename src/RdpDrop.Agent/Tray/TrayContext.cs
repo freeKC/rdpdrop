@@ -61,7 +61,10 @@ internal sealed class TrayContext : ApplicationContext
             Visible = true,
         };
 
-        _logger.Info($"{AgentInfo.ProductName} {AgentInfo.Version} started in session {Process.GetCurrentProcess().SessionId}.");
+        using (var process = Process.GetCurrentProcess())
+        {
+            _logger.Info($"{AgentInfo.ProductName} {AgentInfo.Version} started in session {process.SessionId}.");
+        }
 
         var probe = new DriveRedirectionProbe(logger);
         var executor = new DropExecutor(logger, settings, probe, new CursorTargetResolver(logger));

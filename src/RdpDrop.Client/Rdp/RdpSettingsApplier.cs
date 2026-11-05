@@ -51,16 +51,14 @@ internal static class RdpSettingsApplier
         control.AdvancedSettings9.RDPPort = port;
         log.Add(Invariant($"server={host} port={port}"));
 
-        if (!string.IsNullOrEmpty(file.UserName))
+        if (file.UserName is { Length: > 0 } userName)
         {
-            control.UserName = file.UserName;
-            log.Add($"username={file.UserName}");
+            TrySet(log, $"username={userName}", () => control.UserName = userName);
         }
 
-        if (!string.IsNullOrEmpty(file.Domain))
+        if (file.Domain is { Length: > 0 } domain)
         {
-            control.Domain = file.Domain;
-            log.Add($"domain={file.Domain}");
+            TrySet(log, $"domain={domain}", () => control.Domain = domain);
         }
 
         var desktop = ChooseDesktopSize(control.ClientSize, file);
@@ -70,8 +68,7 @@ internal static class RdpSettingsApplier
 
         if (file.GetInt(SessionBppKey) is int bpp and (15 or 16 or 24 or 32))
         {
-            control.ColorDepth = bpp;
-            log.Add(Invariant($"colorDepth={bpp}"));
+            TrySet(log, Invariant($"colorDepth={bpp}"), () => control.ColorDepth = bpp);
         }
 
         if (file.ScreenModeId == 2)
@@ -85,26 +82,25 @@ internal static class RdpSettingsApplier
         }
 
         var advanced = control.AdvancedSettings9;
+
+        // Smart sizing keeps the drop coordinates right after a resize; it is required.
         advanced.SmartSizing = true;
-        advanced.RedirectClipboard = file.RedirectClipboard;
-        log.Add($"smartSizing=True redirectClipboard={file.RedirectClipboard}");
+        log.Add("smartSizing=True");
+        TrySet(log, $"redirectClipboard={file.RedirectClipboard}", () => advanced.RedirectClipboard = file.RedirectClipboard);
 
         // The control leaves CredSSP (network level authentication) off unless asked;
         // mstsc turns it on unless the file says otherwise.
         var credSsp = file.GetBool(EnableCredSspSupportKey, true);
-        advanced.EnableCredSspSupport = credSsp;
-        log.Add($"enableCredSspSupport={credSsp}");
+        TrySet(log, $"enableCredSspSupport={credSsp}", () => advanced.EnableCredSspSupport = credSsp);
 
         if (file.AuthenticationLevel is int authLevel and >= 0)
         {
-            advanced.AuthenticationLevel = (uint)authLevel;
-            log.Add(Invariant($"authenticationLevel={authLevel}"));
+            TrySet(log, Invariant($"authenticationLevel={authLevel}"), () => advanced.AuthenticationLevel = (uint)authLevel);
         }
 
         if (file.GetString(LoadBalanceInfoKey) is { Length: > 0 } loadBalanceInfo)
         {
-            advanced.LoadBalanceInfo = LoadBalanceInfo.ToControlValue(loadBalanceInfo);
-            log.Add($"loadbalanceinfo={loadBalanceInfo}");
+            TrySet(log, $"loadbalanceinfo={loadBalanceInfo}", () => advanced.LoadBalanceInfo = LoadBalanceInfo.ToControlValue(loadBalanceInfo));
         }
 
         ApplyGateway(control, file, log);
@@ -112,13 +108,11 @@ internal static class RdpSettingsApplier
         var ocx = control.GetOcx();
         if (ocx is IMsRdpClientNonScriptable5 nonScriptable)
         {
-            nonScriptable.PromptForCredentials = file.PromptForCredentials;
-            log.Add($"promptForCredentials={file.PromptForCredentials}");
+            TrySet(log, $"promptForCredentials={file.PromptForCredentials}", () => nonScriptable.PromptForCredentials = file.PromptForCredentials);
 
             if (file.GetInt(PromptForCredentialsOnClientKey) is int onClient)
             {
-                nonScriptable.PromptForCredsOnClient = onClient != 0;
-                log.Add(Invariant($"promptForCredsOnClient={onClient != 0}"));
+                TrySet(log, Invariant($"promptForCredsOnClient={onClient != 0}"), () => nonScriptable.PromptForCredsOnClient = onClient != 0);
             }
 
             ApplyDrives(control, nonScriptable, file, log);
@@ -126,13 +120,12 @@ internal static class RdpSettingsApplier
         else
         {
             log.Add("IMsRdpClientNonScriptable5 not available, prompt and drive settings left as they are");
-            advanced.RedirectDrives = file.RequestsDriveRedirection;
+            TrySet(log, $"redirectDrives={file.RequestsDriveRedirection}", () => advanced.RedirectDrives = file.RequestsDriveRedirection);
         }
 
         if (ocx is IMsRdpPreferredRedirectionInfo redirectionInfo && file.GetInt(UseRedirectionServerNameKey) is int useName)
         {
-            redirectionInfo.UseRedirectionServerName = useName != 0;
-            log.Add(Invariant($"useRedirectionServerName={useName != 0}"));
+            TrySet(log, Invariant($"useRedirectionServerName={useName != 0}"), () => redirectionInfo.UseRedirectionServerName = useName != 0);
         }
 
         if (createChannel)
@@ -173,34 +166,29 @@ internal static class RdpSettingsApplier
     private static void ApplyGateway(RdpControl control, RdpFile file, List<string> log)
     {
         var transport = control.TransportSettings4;
-        if (!string.IsNullOrEmpty(file.GatewayHostname))
+        if (file.GatewayHostname is { Length: > 0 } gatewayHostname)
         {
-            transport.GatewayHostname = file.GatewayHostname;
-            log.Add($"gatewayHostname={file.GatewayHostname}");
+            TrySet(log, $"gatewayHostname={gatewayHostname}", () => transport.GatewayHostname = gatewayHostname);
         }
 
         if (file.GatewayUsageMethod is int usage and >= 0)
         {
-            transport.GatewayUsageMethod = (uint)usage;
-            log.Add(Invariant($"gatewayUsageMethod={usage}"));
+            TrySet(log, Invariant($"gatewayUsageMethod={usage}"), () => transport.GatewayUsageMethod = (uint)usage);
         }
 
         if (file.GatewayCredentialsSource is int source and >= 0)
         {
-            transport.GatewayCredsSource = (uint)source;
-            log.Add(Invariant($"gatewayCredsSource={source}"));
+            TrySet(log, Invariant($"gatewayCredsSource={source}"), () => transport.GatewayCredsSource = (uint)source);
         }
 
         if (file.GatewayProfileUsageMethod is int profile and >= 0)
         {
-            transport.GatewayProfileUsageMethod = (uint)profile;
-            log.Add(Invariant($"gatewayProfileUsageMethod={profile}"));
+            TrySet(log, Invariant($"gatewayProfileUsageMethod={profile}"), () => transport.GatewayProfileUsageMethod = (uint)profile);
         }
 
         if (file.GetInt(PromptCredentialOnceKey) is int once and >= 0)
         {
-            transport.GatewayCredSharing = (uint)once;
-            log.Add(Invariant($"gatewayCredSharing={once}"));
+            TrySet(log, Invariant($"gatewayCredSharing={once}"), () => transport.GatewayCredSharing = (uint)once);
         }
     }
 
@@ -209,15 +197,13 @@ internal static class RdpSettingsApplier
         var advanced = control.AdvancedSettings9;
         if (!file.RequestsDriveRedirection)
         {
-            advanced.RedirectDrives = false;
-            log.Add("redirectDrives=False (the .rdp file does not redirect drives)");
+            TrySet(log, "redirectDrives=False (the .rdp file does not redirect drives)", () => advanced.RedirectDrives = false);
             return;
         }
 
         var selection = DriveSelection.Parse(file.DrivesToRedirect);
-        advanced.RedirectDrives = true;
-        nonScriptable.RedirectDynamicDrives = selection.DynamicDrives;
-        log.Add($"redirectDrives=True drivestoredirect=\"{file.DrivesToRedirect}\" dynamicDrives={selection.DynamicDrives}");
+        TrySet(log, $"redirectDrives=True drivestoredirect=\"{file.DrivesToRedirect}\"", () => advanced.RedirectDrives = true);
+        TrySet(log, $"dynamicDrives={selection.DynamicDrives}", () => nonScriptable.RedirectDynamicDrives = selection.DynamicDrives);
 
         try
         {
@@ -238,9 +224,27 @@ internal static class RdpSettingsApplier
 
             log.Add("drives: " + (states.Count == 0 ? "none listed by the control" : string.Join(", ", states)));
         }
-        catch (COMException ex)
+        catch (Exception ex) when (ex is COMException or ArgumentException)
         {
             log.Add(Invariant($"drive collection not available (0x{ex.HResult:X8}), every drive stays redirected"));
+        }
+    }
+
+    /// <summary>
+    /// Applies one optional setting. A value that the control refuses (E_INVALIDARG
+    /// arrives as <see cref="ArgumentException"/>) is logged and skipped, so that one odd
+    /// line of a .rdp file does not prevent the connection.
+    /// </summary>
+    private static void TrySet(List<string> log, string setting, Action apply)
+    {
+        try
+        {
+            apply();
+            log.Add(setting);
+        }
+        catch (Exception ex) when (ex is COMException or ArgumentException)
+        {
+            log.Add(Invariant($"{setting} refused by the control (0x{ex.HResult:X8}), skipped"));
         }
     }
 

@@ -47,9 +47,6 @@ internal sealed class ChannelLoop : IDisposable
             _logger.Warn($"Protocol error: a line is longer than {LineFraming.MaxLineLength} characters. Buffered data dropped; the channel stays open.");
     }
 
-    /// <summary>True while a channel is open.</summary>
-    public bool IsConnected => Volatile.Read(ref _channel) is not null;
-
     /// <summary>
     /// Starts the background thread. <paramref name="payloadHandler"/> runs on that thread
     /// for every complete line; it must return quickly.
@@ -147,6 +144,12 @@ internal sealed class ChannelLoop : IDisposable
                         _logger.Info($"The channel closed. {ex.Message}. Reopening it.");
                     }
                 }
+                catch (Exception ex)
+                {
+                    // An unexpected error must not end the loop, or the agent would stop
+                    // listening until it is restarted.
+                    _logger.Error("Unexpected error on the channel; reopening it.", ex);
+                }
                 finally
                 {
                     Volatile.Write(ref _channel, null);
@@ -237,7 +240,13 @@ internal sealed class ChannelLoop : IDisposable
             _lineReader.Append(text);
             while (_lineReader.TryReadLine(out var line))
             {
-                Dispatch(Encoding.ASCII.GetBytes(line));
+                // A control that ends each string with its NUL terminator would put a NUL
+                // in front of the next line.
+                var trimmed = line.Trim(['\0', ' ']);
+                if (trimmed.Length > 0)
+                {
+                    Dispatch(Encoding.ASCII.GetBytes(trimmed));
+                }
             }
         }
     }

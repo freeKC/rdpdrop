@@ -18,10 +18,16 @@ namespace RdpDrop.Client.Channel;
 /// Every call and every event happens on the UI thread, like the control itself.
 /// </para>
 /// <para>
-/// How mstscax turns the channel string into bytes is not documented. Until the agent
-/// answers, hello messages alternate between the two models, starting with one byte per
-/// character. The agent replies in the model it detected, so the model detected on the
-/// reply string is the one that worked; it is then kept for the rest of the connection.
+/// How mstscax turns the channel string into bytes is not documented. Every message is
+/// sent as the ASCII line itself, one character per byte of text. Whatever the control
+/// makes of such a string, it makes the same of every message, and the agent detects
+/// that byte model from the first bytes it receives on a connection and keeps it.
+/// Sending in two forms would let a late message of the other form reach the agent after
+/// it locked its model and spoil the line that follows it.
+/// </para>
+/// <para>
+/// The model detected on the reply of the agent only tells how to read what the control
+/// delivers; it is kept for the rest of the connection.
 /// </para>
 /// </remarks>
 internal sealed class AgentLink : IDisposable
@@ -33,7 +39,6 @@ internal sealed class AgentLink : IDisposable
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = HelloIntervalMilliseconds };
     private readonly ChannelReceiver _receiver = new();
 
-    private ChannelByteModel _nextHelloModel = ChannelByteModel.OneBytePerChar;
     private DateTime _discoveryDeadline;
     private int _hellosSent;
     private bool _connected;
@@ -59,7 +64,7 @@ internal sealed class AgentLink : IDisposable
     /// <summary>Whether the agent sees at least one redirected drive, or null before it answers.</summary>
     public bool? DriveRedirectionAvailable { get; private set; }
 
-    /// <summary>Byte model locked when the agent answered, Unknown before.</summary>
+    /// <summary>Byte model of the strings received, locked when the agent answered, Unknown before.</summary>
     public ChannelByteModel Model => _receiver.LockedModel;
 
     /// <summary>
@@ -69,6 +74,10 @@ internal sealed class AgentLink : IDisposable
     {
         _connected = true;
         ResetProtocol();
+
+        // A new connection needs a new answer, even if the control raised OnConnected
+        // again without OnDisconnected in between.
+        State = AgentState.NotConnected;
         RestartDiscovery("connected");
     }
 
@@ -113,7 +122,7 @@ internal sealed class AgentLink : IDisposable
             return false;
         }
 
-        return Send(drop, Model, $"drop {drop.Id}");
+        return Send(drop, $"drop {drop.Id}");
     }
 
     public void Dispose()
@@ -125,7 +134,6 @@ internal sealed class AgentLink : IDisposable
     private void ResetProtocol()
     {
         _receiver.Reset();
-        _nextHelloModel = ChannelByteModel.OneBytePerChar;
         _hellosSent = 0;
         AgentVersion = null;
         DriveRedirectionAvailable = null;
@@ -152,23 +160,16 @@ internal sealed class AgentLink : IDisposable
 
     private void SendHello()
     {
-        var model = Model;
-        if (model == ChannelByteModel.Unknown)
-        {
-            model = _nextHelloModel;
-            _nextHelloModel = model == ChannelByteModel.OneBytePerChar ? ChannelByteModel.Utf16 : ChannelByteModel.OneBytePerChar;
-        }
-
         _hellosSent++;
-        Send(HelloMessage.FromClient(AppInfo.Version), model, Invariant($"hello #{_hellosSent}"));
+        Send(HelloMessage.FromClient(AppInfo.Version), Invariant($"hello #{_hellosSent}"));
     }
 
-    private bool Send(Message message, ChannelByteModel model, string what)
+    private bool Send(Message message, string what)
     {
-        string controlString;
+        string line;
         try
         {
-            controlString = ChannelTextCodec.TextToControlString(LineFraming.EncodeLine(message), model);
+            line = LineFraming.EncodeLine(message);
         }
         catch (ArgumentException ex)
         {
@@ -178,8 +179,8 @@ internal sealed class AgentLink : IDisposable
 
         try
         {
-            _control.SendOnVirtualChannel(ProtocolConstants.ChannelName, controlString);
-            ClientLog.Info(Invariant($"Sent {what} in model {model}, {controlString.Length} string units."));
+            _control.SendOnVirtualChannel(ProtocolConstants.ChannelName, line);
+            ClientLog.Info(Invariant($"Sent {what}, {line.Length} characters."));
             return true;
         }
         catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
@@ -234,6 +235,12 @@ internal sealed class AgentLink : IDisposable
 
     private void OnAgentHello(HelloMessage hello, ChannelByteModel model)
     {
+        if (!_connected)
+        {
+            ClientLog.Info("Hello from the agent after the disconnection. Ignored.");
+            return;
+        }
+
         if (Model == ChannelByteModel.Unknown)
         {
             _receiver.LockedModel = model;

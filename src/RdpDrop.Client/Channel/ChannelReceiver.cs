@@ -15,7 +15,7 @@ internal readonly record struct ReceivedLine(string Text, ChannelByteModel Model
 /// A string that starts a line (nothing buffered) tells its own model, because a line
 /// always starts with '{'. A string that continues a line uses the model of the previous
 /// one. Once <see cref="LockedModel"/> is set, a string that starts a line in the other
-/// model is a late answer to a hello sent before the lock, and is ignored.
+/// model does not belong to this connection and is ignored.
 /// </remarks>
 internal sealed class ChannelReceiver
 {
@@ -69,8 +69,8 @@ internal sealed class ChannelReceiver
         _reader.Append(text);
         while (_reader.TryReadLine(out var line))
         {
-            // A NUL left over from a string decoded in the wrong model must not spoil
-            // the next line.
+            // A NUL left at the edge of a line (a string terminator, or a string decoded
+            // in the wrong model) must not spoil it.
             var trimmed = line.Trim(['\0', ' ']);
             if (trimmed.Length > 0)
             {

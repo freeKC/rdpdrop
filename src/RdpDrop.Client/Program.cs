@@ -22,10 +22,10 @@ internal static class Program
             return 0;
         }
 
-        path = Path.GetFullPath(path);
         RdpFile file;
         try
         {
+            path = Path.GetFullPath(path);
             file = RdpFile.Load(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)

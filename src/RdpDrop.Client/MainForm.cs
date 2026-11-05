@@ -213,7 +213,7 @@ internal sealed class MainForm : Form
             ClientLog.Info($"Connecting to {_host} with {_rdpPath}");
             _rdp.Connect();
         }
-        catch (Exception ex) when (ex is COMException or InvalidOperationException or AxHost.InvalidActiveXStateException)
+        catch (Exception ex) when (ex is COMException or ArgumentException or InvalidOperationException or AxHost.InvalidActiveXStateException)
         {
             ClientLog.Error("Connect failed", ex);
             SetConnection(ConnectionState.Disconnected, $"Cannot connect: {ex.Message}");
@@ -486,7 +486,16 @@ internal sealed class MainForm : Form
 
     private static void OpenLogFolder()
     {
-        Directory.CreateDirectory(ClientLog.Directory);
+        try
+        {
+            Directory.CreateDirectory(ClientLog.Directory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ClientLog.Error($"Cannot create {ClientLog.Directory}", ex);
+            return;
+        }
+
         OpenWithShell(ClientLog.Directory);
     }
 

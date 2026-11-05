@@ -44,7 +44,8 @@ internal sealed class AgentSettings
                 if (data is not null)
                 {
                     fallback = ToFallback(data);
-                    logLevel = data.LogLevel ?? LogLevel.Info;
+                    // A number out of range would silence the log entirely.
+                    logLevel = data.LogLevel is { } level && Enum.IsDefined(level) ? level : LogLevel.Info;
                 }
             }
         }
