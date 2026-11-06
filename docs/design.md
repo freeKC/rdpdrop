@@ -318,25 +318,62 @@ each one built, tested and committed before the next starts.
 * Coordinates: the drop mapper keeps using the ratio between the session
   size and the control size, which is 1:1 after a resize in "resize" mode.
 
-### Step 2: richer drop
+### Step 2: native drop into any remote application
 
-* Visible drop zone: while a file drag is over the session, a translucent
-  banner "Drop here to copy into the session" appears at the top of the
-  control and disappears on leave or drop.
-* Modifiers: Shift held at drop time asks the agent to show a folder picker
-  in the session instead of using the folder under the cursor; Ctrl held
-  asks for a move (the source on the local drive is deleted after a
-  successful copy, with the Windows dialogs). Both are optional fields on
-  the `drop` message: `"target": "cursor" | "ask"` and
-  `"operation": "copy" | "move"`. A 0.1 agent ignores unknown fields and
-  copies to the cursor folder, which is acceptable.
-* Acknowledgement: the agent sends `{ "type": "dropAck", "id": "<guid>" }`
-  as soon as it accepts a drop. If no acknowledgement arrives within
-  fifteen seconds, the client marks the drop as "no answer from the agent"
-  and allows new drops; a late result still updates the status bar. The
-  final result has no timeout because the copy dialog can stay open as
-  long as the user wants.
-* Protocol version stays 1; these additions are backward compatible.
+Goal: a file dropped from the local desktop onto the session is received by
+the remote application under the cursor as a normal OLE drag and drop, not
+only by Explorer. Mail clients, editors, browsers, business applications:
+anything that accepts a file drop in the session accepts it from RdpDrop.
+
+Principle: the agent becomes the drag source inside the session. It replays
+the local drag in real time and ends it with a real drop at the point where
+the user released the button.
+
+* Live drag messages from the client, on the same channel and in the same
+  ASCII line format: `dragEnter` (id, x, y, items, key state), `dragMove`
+  (id, x, y, key state, throttled to about thirty per second and only when
+  the point or the keys changed), `drop` (id, x, y, key state) and
+  `dragLeave` (id). Key state carries the Ctrl, Shift and Alt flags so that
+  the remote target applies its own copy, move or link semantics.
+* Agent side, on `dragEnter`: on a dedicated STA thread, create a tiny
+  invisible layered window, move it under the cursor point, move the remote
+  cursor there and simulate a left button press on that window with
+  `SendInput`, then call `DoDragDrop` with a data object that offers
+  `CF_HDROP` (the `\tsclient\<drive>\...` paths) and, for applications
+  that do not accept UNC paths, the same files staged in
+  `%LOCALAPPDATA%\RdpDrop\staging\<id>\` when the setting "stage files in
+  the session before the drop" is on (off by default, staging happens
+  before `DoDragDrop` and can take time for large files).
+* The agent implements `IDropSource`: `QueryContinueDrag` returns continue
+  while the client keeps sending `dragMove`, drop when `drop` arrived,
+  cancel when `dragLeave` arrived or no message came for five seconds.
+  Each `dragMove` moves the remote cursor with `SendInput` so that OLE
+  delivers `DragOver` to the window under it and the target shows its own
+  feedback. On `drop`, the agent moves the cursor to the final point and
+  releases the simulated button; on cancel it releases the button and
+  returns cancel from `QueryContinueDrag`.
+* Result: `dropResult` carries the effect the target returned (copy, move,
+  link, none) and, when known, the window class and title of the target.
+  When the target returned none and the setting "copy to the fallback
+  folder when nothing accepts the drop" is on (default on, so that 0.1
+  behaviour is kept), the agent performs the 0.1 copy into the fallback
+  folder and says so in the result.
+* Acknowledgement and timeouts: the agent answers `dragEnter` with
+  `dragAck` within a second; without it the client shows "no answer from
+  the agent" and refuses the drop. `dropResult` has no timeout because the
+  target may show dialogs.
+* Client side: the drop zone banner from the previous plan stays; the
+  client sends `dragEnter` on the first `DragOver` over the session (not on
+  `DragEnter`, so that the point is known), `dragMove` while hovering,
+  `drop` or `dragLeave` at the end. The local drag effect shown to the user
+  is copy while the agent is in the drag, none when it refused.
+* Compatibility: a 0.1 agent ignores the new message types; the client
+  detects a 0.1 agent from its hello version and falls back to the 0.1
+  `drop` message, which keeps the copy to the folder under the cursor.
+* Security: the simulated input happens only inside the user's own
+  session, only between a `dragEnter` and the matching `drop` or
+  `dragLeave`, and only with the left button. The staging folder is wiped
+  when the agent starts and after each drop.
 
 ### Step 3: connections
 

@@ -490,3 +490,6 @@ artifacts/
 
 # Release notes used by the release workflow
 !docs/releases/
+
+# Connection files may hold host names and account names
+*.rdp
