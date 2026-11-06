@@ -23,7 +23,7 @@ internal sealed class DisplayController : IDisposable
     private const int DebounceMilliseconds = 300;
 
     private readonly RdpControl _control;
-    private readonly Form _form;
+    private readonly Control _owner;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = DebounceMilliseconds };
 
     private bool _loggedOn;
@@ -35,10 +35,10 @@ internal sealed class DisplayController : IDisposable
     private int _deviceScale = SessionDisplay.DefaultScaleFactor;
     private bool _multimon;
 
-    public DisplayController(RdpControl control, Form form, DisplayMode mode)
+    public DisplayController(RdpControl control, Control owner, DisplayMode mode)
     {
         _control = control;
-        _form = form;
+        _owner = owner;
         Mode = mode;
         _timer.Tick += (_, _) => OnTimer();
     }
@@ -49,7 +49,7 @@ internal sealed class DisplayController : IDisposable
     public Size RemoteDesktopSize { get; private set; }
 
     /// <summary>Scale factor that "Auto" gives on the monitor that holds the window.</summary>
-    public int AutoScaleFactor => SessionDisplay.DesktopScaleFromDpi(_form.DeviceDpi);
+    public int AutoScaleFactor => SessionDisplay.DesktopScaleFromDpi(_owner.DeviceDpi);
 
     /// <summary>
     /// Computes the options of the next connection. <paramref name="scaleChoice"/> is the
@@ -65,7 +65,7 @@ internal sealed class DisplayController : IDisposable
         _fullScreen = false;
         var origin = scaleChoice is null ? "auto" : "chosen";
         ClientLog.Info(Invariant(
-            $"Display for the next connection: mode {Mode}, monitor at {_form.DeviceDpi} DPI, scale factor {_desktopScale} % ({origin}), device scale factor {_deviceScale} %"));
+            $"Display for the next connection: mode {Mode}, monitor at {_owner.DeviceDpi} DPI, scale factor {_desktopScale} % ({origin}), device scale factor {_deviceScale} %"));
         return new SessionOptions(Mode == DisplayMode.ScaleToWindow, _desktopScale, _deviceScale, keyboardHookMode, useMultimon, fullScreenTitle);
     }
 
@@ -171,7 +171,7 @@ internal sealed class DisplayController : IDisposable
         _timer.Stop();
         var force = _forceNextUpdate;
         _forceNextUpdate = false;
-        if (Mode != DisplayMode.ResizeSession || !_loggedOn || _form.WindowState == FormWindowState.Minimized)
+        if (Mode != DisplayMode.ResizeSession || !_loggedOn || _owner.FindForm()?.WindowState == FormWindowState.Minimized)
         {
             return;
         }
@@ -201,7 +201,7 @@ internal sealed class DisplayController : IDisposable
 
     private bool TryUpdateSessionDisplay(Size target)
     {
-        var (physicalWidth, physicalHeight) = SessionDisplay.PhysicalMillimeters(target.Width, target.Height, _form.DeviceDpi);
+        var (physicalWidth, physicalHeight) = SessionDisplay.PhysicalMillimeters(target.Width, target.Height, _owner.DeviceDpi);
         try
         {
             if (_control.GetOcx() is not IMsRdpClient9 client)

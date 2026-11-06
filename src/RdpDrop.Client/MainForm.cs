@@ -1,27 +1,19 @@
 using System.Diagnostics;
-using System.Globalization;
-using System.Runtime.InteropServices;
-using RdpDrop.Client.Channel;
 using RdpDrop.Client.Logging;
-using RdpDrop.Client.Rdp;
+using RdpDrop.Client.Sessions;
 using RdpDrop.Client.Settings;
-using RdpDrop.Core.Paths;
-using RdpDrop.Core.Protocol;
 using RdpDrop.Core.RdpFiles;
 
 namespace RdpDrop.Client;
 
+/// <summary>
+/// The main window: menus, the session view and the status bar that shows it.
+/// </summary>
 internal sealed partial class MainForm : Form
 {
-    private readonly string _rdpPath;
-    private readonly RdpFile _file;
-    private readonly string _host;
-    private readonly RdpControl _rdp = new();
-    private readonly ChildDropTargets _childTargets;
-    private readonly AgentLink _agent;
     private readonly ClientSettings _settings;
-    private readonly DisplayController _display;
     private readonly ViewMenu _viewMenu = new();
+    private readonly SessionView _session;
     private readonly ToolStripMenuItem _connectItem = new("&Connect");
     private readonly ToolStripMenuItem _disconnectItem = new("&Disconnect");
     private readonly ToolStripMenuItem _findAgentItem = new("&Look for the agent again");
@@ -29,26 +21,13 @@ internal sealed partial class MainForm : Form
     private readonly ToolStripStatusLabel _agentLabel = new() { Text = "Agent: not connected" };
     private readonly ToolStripStatusLabel _dropLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
 
-    private ConnectionState _state = ConnectionState.Disconnected;
-    private bool _channelCreated;
     private bool _closeRequested;
-    private bool _reconnectRequested;
-    private string? _pendingDropId;
-    private string? _dropTextBeforeDrag;
-    private string _dropStatus = string.Empty;
 
     public MainForm(string rdpPath, RdpFile file)
     {
-        _rdpPath = rdpPath;
-        _file = file;
-        _host = RdpAddress.Split(file.FullAddress ?? string.Empty).Host;
-        _childTargets = new ChildDropTargets(_rdp);
-        _agent = new AgentLink(_rdp);
         _settings = ClientSettings.Load(ClientSettings.DefaultPath);
-        _display = new DisplayController(_rdp, this, _settings.DisplayMode);
-        InitializeViewChoices();
+        InitializeViewMenu();
 
-        Text = $"{AppInfo.Name}: {file.FullAddress}";
         StartPosition = FormStartPosition.CenterScreen;
         var area = Screen.PrimaryScreen?.WorkingArea.Size ?? new Size(1280, 800);
         Size = new Size(area.Width * 4 / 5, area.Height * 4 / 5);
@@ -60,69 +39,37 @@ internal sealed partial class MainForm : Form
         _agentLabel.BorderSides = ToolStripStatusLabelBorderSides.Right;
         status.Items.AddRange([_connectionLabel, _agentLabel, _dropLabel]);
 
-        ((System.ComponentModel.ISupportInitialize)_rdp).BeginInit();
-        _rdp.Dock = DockStyle.Fill;
-        Controls.Add(_rdp);
+        _session = new SessionView(rdpPath, file, _settings);
+        Controls.Add(_session);
         Controls.Add(status);
         Controls.Add(menu);
         MainMenuStrip = menu;
-        ((System.ComponentModel.ISupportInitialize)_rdp).EndInit();
-        _rdp.AllowDrop = true;
 
-        _rdp.OnConnecting += (_, _) => OnRdpConnecting();
-        _rdp.OnConnected += (_, _) => OnRdpConnected();
-        _rdp.OnLoginComplete += (_, _) => OnRdpLoginComplete();
-        _rdp.OnDisconnected += (_, e) => OnRdpDisconnected(e.discReason);
-        _rdp.OnFatalError += (_, e) => OnRdpFatalError(e.errorCode);
-        _rdp.OnWarning += (_, e) => ClientLog.Warn(Invariant($"Control warning {e.warningCode}"));
-        _rdp.OnLogonError += (_, e) => ClientLog.Warn(Invariant($"Logon error {e.lError}"));
-        _rdp.OnRemoteDesktopSizeChange += (_, e) => _display.OnRemoteDesktopSizeChange(e.width, e.height);
-        _rdp.OnAutoReconnecting2 += (_, e) => OnAutoReconnecting(e.disconnectReason, e.attemptCount);
-        _rdp.OnAutoReconnected += (_, _) => OnAutoReconnected();
-        _rdp.OnEnterFullScreenMode += (_, _) => OnFullScreenChanged(true);
-        _rdp.OnLeaveFullScreenMode += (_, _) => OnFullScreenChanged(false);
-        _rdp.FileDragOver += OnFileDragOver;
-        _rdp.FileDropped += OnFileDropped;
-        _rdp.FileDragLeft += (_, _) => OnFileDragLeft();
-        _agent.StateChanged += (_, _) => OnAgentStateChanged();
-        _agent.DropResultReceived += (_, result) => OnDropResult(result);
+        _session.StateChanged += (_, _) => UpdateMenu();
+        _session.ConnectionTextChanged += (_, _) => SetLabel(_connectionLabel, _session.ConnectionText);
+        _session.AgentTextChanged += (_, _) => SetLabel(_agentLabel, _session.AgentText);
+        _session.DropTextChanged += (_, _) => SetLabel(_dropLabel, _session.DropText);
+        _session.CloseCompleted += (_, _) => OnSessionClosed();
+        ShowSessionStatus();
 
-        ClientLog.Info(Invariant($"Main form created, control version {SafeControlVersion()}"));
-        if (!file.RequestsDriveRedirection)
-        {
-            ShowDropStatus("This .rdp file does not redirect drives: drops will not work.");
-        }
-
+        ClientLog.Info("Main form created.");
         UpdateMenu();
-        Shown += (_, _) => Connect();
+        Shown += (_, _) => _session.Connect();
     }
 
-    private enum ConnectionState
-    {
-        Disconnected,
-        Connecting,
-        Connected,
-    }
+    /// <summary>The session the menus and shortcuts act on.</summary>
+    private SessionView? ActiveSession => _session;
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        ClientLog.Info($"Form closing: reason {e.CloseReason}, state {_state}, close requested {_closeRequested}.");
-        if (_state != ConnectionState.Disconnected && !_closeRequested)
+        ClientLog.Info($"Form closing: reason {e.CloseReason}, close requested {_closeRequested}.");
+        if (!_closeRequested && _session.State != SessionState.Disconnected)
         {
-            // Disconnect cleanly first; OnDisconnected closes the window.
+            // Disconnect cleanly first; the session reports when it is closed.
             _closeRequested = true;
             e.Cancel = true;
             ClientLog.Info("Window closing, disconnecting first.");
-            Disconnect();
-            var timer = new System.Windows.Forms.Timer { Interval = 5000 };
-            timer.Tick += (_, _) =>
-            {
-                timer.Dispose();
-                ClientLog.Warn("No disconnect event after five seconds, closing anyway.");
-                _state = ConnectionState.Disconnected;
-                Close();
-            };
-            timer.Start();
+            _session.BeginClose();
             StartExitWatchdog();
             return;
         }
@@ -131,26 +78,32 @@ internal sealed partial class MainForm : Form
     }
 
     // The form is a drop target too, as a fallback: OLE reaches it when no window under
-    // the cursor is registered. It answers through the control, which refuses points
-    // outside the session area.
+    // the cursor is registered. It answers through the active session, which refuses
+    // points outside the session area.
     protected override void OnDragEnter(DragEventArgs drgevent)
     {
-        drgevent.Effect = _rdp.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+        drgevent.Effect = ActiveSession?.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect) ?? DragDropEffects.None;
     }
 
     protected override void OnDragOver(DragEventArgs drgevent)
     {
-        drgevent.Effect = _rdp.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+        drgevent.Effect = ActiveSession?.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect) ?? DragDropEffects.None;
     }
 
     protected override void OnDragDrop(DragEventArgs drgevent)
     {
-        drgevent.Effect = _rdp.ProcessDrop(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+        drgevent.Effect = ActiveSession?.ProcessDrop(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect) ?? DragDropEffects.None;
     }
 
     protected override void OnDragLeave(EventArgs e)
     {
-        _rdp.ProcessDragLeave();
+        ActiveSession?.ProcessDragLeave();
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        ClientLog.Info("Form closed.");
+        base.OnFormClosed(e);
     }
 
     /// <summary>
@@ -173,20 +126,19 @@ internal sealed partial class MainForm : Form
         watchdog.Start();
     }
 
-    protected override void OnFormClosed(FormClosedEventArgs e)
+    private void OnSessionClosed()
     {
-        ClientLog.Info("Form closed.");
-        _childTargets.RevokeAll();
-        _agent.Dispose();
-        _display.Dispose();
-        base.OnFormClosed(e);
+        if (_closeRequested)
+        {
+            BeginInvoke(Close);
+        }
     }
 
     private MenuStrip BuildMenu()
     {
-        _connectItem.Click += (_, _) => Connect();
-        _disconnectItem.Click += (_, _) => Disconnect();
-        _findAgentItem.Click += (_, _) => _agent.RestartDiscovery("menu");
+        _connectItem.Click += (_, _) => ActiveSession?.Connect();
+        _disconnectItem.Click += (_, _) => ActiveSession?.Disconnect();
+        _findAgentItem.Click += (_, _) => ActiveSession?.LookForAgent();
         var quit = new ToolStripMenuItem("&Quit");
         quit.Click += (_, _) => Close();
 
@@ -208,152 +160,23 @@ internal sealed partial class MainForm : Form
         return menu;
     }
 
-    private void Connect()
+    /// <summary>Shows the texts and the title of the active session.</summary>
+    private void ShowSessionStatus()
     {
-        if (_state != ConnectionState.Disconnected || _closeRequested)
-        {
-            return;
-        }
-
-        try
-        {
-            _reconnectRequested = false;
-            var options = _display.PrepareConnection(_scaleChoice, _keyboardHookMode, _useAllMonitors, Text);
-            var desktop = RdpSettingsApplier.Apply(_rdp, _file, options, createChannel: !_channelCreated);
-            _display.OnConnecting(desktop);
-            _sessionUsesAllMonitors = _useAllMonitors;
-            _channelCreated = true;
-            SetConnection(ConnectionState.Connecting, $"Connecting to {_host}...");
-            ClientLog.Info($"Connecting to {_host} with {_rdpPath}");
-            _rdp.Connect();
-        }
-        catch (Exception ex) when (ex is COMException or ArgumentException or InvalidOperationException or AxHost.InvalidActiveXStateException)
-        {
-            ClientLog.Error("Connect failed", ex);
-            SetConnection(ConnectionState.Disconnected, $"Cannot connect: {ex.Message}");
-        }
-    }
-
-    private void Disconnect()
-    {
-        if (_state == ConnectionState.Disconnected)
-        {
-            return;
-        }
-
-        try
-        {
-            ClientLog.Info("Disconnect requested.");
-            SetLabel(_connectionLabel, "Disconnecting...");
-            _rdp.Disconnect();
-        }
-        catch (COMException ex)
-        {
-            ClientLog.Error("Disconnect failed", ex);
-        }
-    }
-
-    private void OnRdpConnecting()
-    {
-        ClientLog.Info("Event OnConnecting");
-        SetConnection(ConnectionState.Connecting, $"Connecting to {_host}...");
-    }
-
-    private void OnRdpConnected()
-    {
-        ClientLog.Info("Event OnConnected");
-        SetConnection(ConnectionState.Connected, $"Connected to {_host}");
-        _childTargets.Refresh("connected");
-        _agent.Start();
-    }
-
-    private void OnRdpLoginComplete()
-    {
-        ClientLog.Info("Event OnLoginComplete");
-        SetConnection(ConnectionState.Connected, $"Logged on to {_host}");
-        _childTargets.Refresh("logged on");
-        _display.OnLoggedOn();
-        _agent.RestartDiscovery("logged on");
-    }
-
-    private void OnRdpDisconnected(int reason)
-    {
-        var extended = SafeExtendedReason();
-        var text = SafeErrorDescription(reason, extended);
-        ClientLog.Info(Invariant($"Event OnDisconnected reason={reason} extended={extended} text=\"{text}\""));
-        _agent.Stop();
-        _display.OnDisconnected();
-        _pendingDropId = null;
-        ShowFullScreenState(false);
-        SetConnection(ConnectionState.Disconnected, DescribeDisconnect(reason, text));
-
-        if (_closeRequested)
-        {
-            BeginInvoke(Close);
-        }
-        else if (_reconnectRequested)
-        {
-            _reconnectRequested = false;
-            ClientLog.Info("Reconnecting to apply the new display settings.");
-            BeginInvoke(Connect);
-        }
-    }
-
-    /// <summary>
-    /// Codes 1 to 3 are normal ends of a session; the control describes code 1 as an
-    /// internal error, so they get their own text.
-    /// </summary>
-    private static string DescribeDisconnect(int reason, string description) => reason switch
-    {
-        1 => "Disconnected",
-        2 => "Disconnected: the session was closed from the remote computer",
-        3 => "Disconnected by the remote computer",
-        _ when string.IsNullOrWhiteSpace(description) => Invariant($"Disconnected (code {reason})"),
-        _ => $"Disconnected: {description.ReplaceLineEndings(" ").Replace("  ", " ", StringComparison.Ordinal).Trim()}",
-    };
-
-    private void OnRdpFatalError(int errorCode)
-    {
-        ClientLog.Error(Invariant($"Event OnFatalError code={errorCode}"));
-        _agent.Stop();
-        _display.OnDisconnected();
-        _reconnectRequested = false;
-        ShowFullScreenState(false);
-        SetConnection(ConnectionState.Disconnected, Invariant($"Fatal error {errorCode} in the Remote Desktop control"));
-    }
-
-    private void OnAutoReconnecting(int reason, int attempt)
-    {
-        ClientLog.Info(Invariant($"Auto reconnecting, reason={reason} attempt={attempt}"));
-        SetLabel(_connectionLabel, Invariant($"Reconnecting to {_host} (attempt {attempt})..."));
-    }
-
-    private void OnAutoReconnected()
-    {
-        ClientLog.Info("Auto reconnected");
-        SetConnection(ConnectionState.Connected, $"Connected to {_host}");
-        _childTargets.Refresh("reconnected");
-    }
-
-    private void SetConnection(ConnectionState state, string text)
-    {
-        _state = state;
-        SetLabel(_connectionLabel, text);
-        UpdateMenu();
+        var session = ActiveSession;
+        Text = session?.WindowTitle ?? AppInfo.Name;
+        SetLabel(_connectionLabel, session?.ConnectionText ?? "No session");
+        SetLabel(_agentLabel, session?.AgentText ?? string.Empty);
+        SetLabel(_dropLabel, session?.DropText ?? string.Empty);
     }
 
     private void UpdateMenu()
     {
-        _connectItem.Enabled = _state == ConnectionState.Disconnected;
-        _disconnectItem.Enabled = _state != ConnectionState.Disconnected;
-        _findAgentItem.Enabled = _state == ConnectionState.Connected && _agent.State != AgentState.Ready;
-        _viewMenu.ShowFullScreen(_rdp.FullScreenBounds is not null, _state == ConnectionState.Connected);
-    }
-
-    private void ShowDropStatus(string text)
-    {
-        _dropStatus = text;
-        SetLabel(_dropLabel, text);
+        var session = ActiveSession;
+        _connectItem.Enabled = session is { State: SessionState.Disconnected, IsClosing: false };
+        _disconnectItem.Enabled = session is not null && session.State != SessionState.Disconnected;
+        _findAgentItem.Enabled = session?.CanLookForAgent == true;
+        ShowViewChoices();
     }
 
     /// <summary>
@@ -365,132 +188,6 @@ internal sealed partial class MainForm : Form
         label.ToolTipText = text;
         label.Text = text.Length <= MaxLength ? text : string.Concat(text.AsSpan(0, MaxLength - 3), "...");
     }
-
-    private void OnAgentStateChanged()
-    {
-        _agentLabel.Text = _agent.State switch
-        {
-            AgentState.Waiting => "Agent: waiting",
-            AgentState.Ready => $"Agent ready (v{_agent.AgentVersion ?? "?"})",
-            AgentState.NotFound => "No agent on the remote computer",
-            _ => "Agent: not connected",
-        };
-
-        if (_agent.State == AgentState.Ready && _agent.DriveRedirectionAvailable == false)
-        {
-            ShowDropStatus("The session sees no redirected drive: drops will not work. Turn on drives under Local Resources.");
-        }
-
-        UpdateMenu();
-    }
-
-    /// <summary>
-    /// Why a drop cannot be sent now, or null when it can.
-    /// </summary>
-    private string? DropRefusalReason()
-    {
-        if (_state != ConnectionState.Connected)
-        {
-            return "Drop refused: not connected.";
-        }
-
-        return _agent.State switch
-        {
-            AgentState.Ready => null,
-            AgentState.Waiting => "Drop refused: the RdpDrop agent has not answered yet.",
-            _ => "Drop refused: the RdpDrop agent is not running in the remote session.",
-        };
-    }
-
-    private void OnFileDragOver(object? sender, FileDragEventArgs e)
-    {
-        _dropTextBeforeDrag ??= _dropStatus;
-        var reason = DropRefusalReason();
-        if (reason is null)
-        {
-            e.Effect = DragDropEffects.Copy;
-            ShowDropStatus(_dropTextBeforeDrag);
-        }
-        else
-        {
-            e.Effect = DragDropEffects.None;
-            ShowDropStatus(reason);
-        }
-    }
-
-    private void OnFileDragLeft()
-    {
-        if (_dropTextBeforeDrag is not null)
-        {
-            ShowDropStatus(_dropTextBeforeDrag);
-            _dropTextBeforeDrag = null;
-        }
-    }
-
-    private void OnFileDropped(object? sender, FileDragEventArgs e)
-    {
-        _dropTextBeforeDrag = null;
-        var reason = DropRefusalReason();
-        if (reason is not null)
-        {
-            ClientLog.Info(Invariant($"Drop of {e.Files.Count} item(s) refused: {reason}"));
-            ShowDropStatus(reason);
-            return;
-        }
-
-        var items = new List<DropItem>(e.Files.Count);
-        foreach (var path in e.Files)
-        {
-            if (!ClientPathMapper.TryMapToTsClient(path, out _, out var pathProblem))
-            {
-                ClientLog.Info($"Drop refused: {pathProblem}");
-                ShowDropStatus($"Drop refused: {pathProblem}");
-                return;
-            }
-
-            items.Add(new DropItem(path, Directory.Exists(path)));
-        }
-
-        var viewSize = _rdp.ViewSize;
-        var desktopSize = _display.RemoteDesktopSize;
-        var remote = DropCoordinateMapper.ToRemote(e.ClientPoint, viewSize, desktopSize);
-        var drop = new DropMessage(Guid.NewGuid().ToString("N"), remote.X, remote.Y, items);
-        ClientLog.Info(Invariant(
-            $"Drop {drop.Id}: {items.Count} item(s) at view ({e.ClientPoint.X}, {e.ClientPoint.Y}) of {viewSize.Width}x{viewSize.Height}{(_rdp.FullScreenBounds is null ? string.Empty : " full screen")}, remote ({remote.X}, {remote.Y}) of {desktopSize.Width}x{desktopSize.Height}, model {_agent.Model}: {string.Join("; ", e.Files)}"));
-
-        if (!_agent.SendDrop(drop))
-        {
-            ShowDropStatus("Drop failed: the message could not be sent to the agent.");
-            return;
-        }
-
-        _pendingDropId = drop.Id;
-        e.Effect = DragDropEffects.Copy;
-        ShowDropStatus(Invariant($"Sending {items.Count} item(s)..."));
-    }
-
-    private void OnDropResult(DropResultMessage result)
-    {
-        if (_pendingDropId is not null && result.Id != _pendingDropId)
-        {
-            ClientLog.Info($"Result {result.Id} belongs to an earlier drop; the status bar keeps the latest one.");
-            return;
-        }
-
-        _pendingDropId = null;
-        ShowDropStatus(DescribeResult(result));
-    }
-
-    private static string DescribeResult(DropResultMessage result) => result.Status switch
-    {
-        DropStatus.Ok => !string.IsNullOrWhiteSpace(result.Message)
-            ? result.Message
-            : $"Copied to {result.TargetFolder}",
-        DropStatus.Cancelled => !string.IsNullOrWhiteSpace(result.Message)
-            ? $"Cancelled: {result.Message}"
-            : "Copy cancelled.",
-        _ => $"Drop failed: {(string.IsNullOrWhiteSpace(result.Message) ? "no detail from the agent." : result.Message)}",
-    };
 
     private void ShowAbout()
     {
@@ -530,42 +227,4 @@ internal sealed partial class MainForm : Form
             ClientLog.Error($"Cannot open {target}", ex);
         }
     }
-
-    private string SafeControlVersion()
-    {
-        try
-        {
-            return _rdp.Version;
-        }
-        catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
-        {
-            return "unknown";
-        }
-    }
-
-    private uint SafeExtendedReason()
-    {
-        try
-        {
-            return (uint)_rdp.ExtendedDisconnectReason;
-        }
-        catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
-        {
-            return 0;
-        }
-    }
-
-    private string SafeErrorDescription(int reason, uint extended)
-    {
-        try
-        {
-            return _rdp.GetErrorDescription((uint)reason, extended);
-        }
-        catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
-        {
-            return string.Empty;
-        }
-    }
-
-    private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }
