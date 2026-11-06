@@ -52,4 +52,28 @@ public static class RdpKeys
 
     /// <summary><c>screen mode id</c></summary>
     public const string ScreenModeId = "screen mode id";
+
+    /// <summary><c>audiomode</c></summary>
+    public const string AudioMode = "audiomode";
+
+    /// <summary><c>audiocapturemode</c></summary>
+    public const string AudioCaptureMode = "audiocapturemode";
+
+    /// <summary><c>redirectprinters</c></summary>
+    public const string RedirectPrinters = "redirectprinters";
+
+    /// <summary><c>redirectcomports</c></summary>
+    public const string RedirectComPorts = "redirectcomports";
+
+    /// <summary><c>redirectsmartcards</c></summary>
+    public const string RedirectSmartCards = "redirectsmartcards";
+
+    /// <summary><c>use multimon</c></summary>
+    public const string UseMultimon = "use multimon";
+
+    /// <summary><c>keyboardhook</c></summary>
+    public const string KeyboardHook = "keyboardhook";
+
+    /// <summary><c>desktopscalefactor</c></summary>
+    public const string DesktopScaleFactor = "desktopscalefactor";
 }

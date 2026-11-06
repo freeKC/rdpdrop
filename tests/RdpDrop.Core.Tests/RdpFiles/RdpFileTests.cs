@@ -242,6 +242,14 @@ public class RdpFileTests
         Assert.True(file.RedirectClipboard);
         Assert.False(file.RedirectDrives);
         Assert.False(file.RequestsDriveRedirection);
+        Assert.Equal(0, file.AudioMode);
+        Assert.False(file.AudioCaptureMode);
+        Assert.True(file.RedirectPrinters);
+        Assert.False(file.RedirectComPorts);
+        Assert.True(file.RedirectSmartCards);
+        Assert.Null(file.UseMultimon);
+        Assert.Null(file.KeyboardHook);
+        Assert.Null(file.DesktopScaleFactor);
         Assert.Null(file.GetEntry("anything"));
         Assert.Null(file.GetBinary("anything"));
     }
@@ -335,6 +343,79 @@ public class RdpFileTests
     }
 
     [Fact]
+    public void Device_and_audio_settings_are_read()
+    {
+        var file = RdpFile.Parse("""
+            audiomode:i:2
+            audiocapturemode:i:1
+            redirectprinters:i:0
+            redirectcomports:i:1
+            redirectsmartcards:i:0
+            """);
+
+        Assert.Equal(2, file.AudioMode);
+        Assert.True(file.AudioCaptureMode);
+        Assert.False(file.RedirectPrinters);
+        Assert.True(file.RedirectComPorts);
+        Assert.False(file.RedirectSmartCards);
+    }
+
+    [Theory]
+    [InlineData("audiomode:i:0", 0)]
+    [InlineData("audiomode:i:1", 1)]
+    [InlineData("audiomode:i:3", 0)]
+    [InlineData("audiomode:i:-1", 0)]
+    [InlineData("audiomode:i:x", 0)]
+    public void AudioMode_falls_back_to_this_computer_when_out_of_range(string content, int expected)
+    {
+        Assert.Equal(expected, RdpFile.Parse(content).AudioMode);
+    }
+
+    [Theory]
+    [InlineData("use multimon:i:1", true)]
+    [InlineData("use multimon:i:0", false)]
+    [InlineData("use multimon:i:", null)]
+    [InlineData("", null)]
+    public void UseMultimon_is_null_when_absent(string content, bool? expected)
+    {
+        Assert.Equal(expected, RdpFile.Parse(content).UseMultimon);
+    }
+
+    [Theory]
+    [InlineData("keyboardhook:i:0", 0)]
+    [InlineData("keyboardhook:i:1", 1)]
+    [InlineData("keyboardhook:i:2", 2)]
+    [InlineData("keyboardhook:i:3", null)]
+    [InlineData("keyboardhook:i:-1", null)]
+    [InlineData("", null)]
+    public void KeyboardHook_accepts_the_three_modes(string content, int? expected)
+    {
+        Assert.Equal(expected, RdpFile.Parse(content).KeyboardHook);
+    }
+
+    [Theory]
+    [InlineData("desktopscalefactor:i:100", 100)]
+    [InlineData("desktopscalefactor:i:150", 150)]
+    [InlineData("desktopscalefactor:i:500", 500)]
+    [InlineData("desktopscalefactor:i:99", null)]
+    [InlineData("desktopscalefactor:i:501", null)]
+    [InlineData("desktopscalefactor:i:0", null)]
+    [InlineData("", null)]
+    public void DesktopScaleFactor_accepts_100_to_500(string content, int? expected)
+    {
+        Assert.Equal(expected, RdpFile.Parse(content).DesktopScaleFactor);
+    }
+
+    [Fact]
+    public void Sample_display_settings_are_read()
+    {
+        var file = RdpFile.Parse(Sample);
+
+        Assert.False(file.UseMultimon);
+        Assert.Equal(0, file.AudioMode);
+    }
+
+    [Fact]
     public void Key_lookup_trims_spaces()
     {
         var file = RdpFile.Parse("server port : i : 3390");
@@ -356,5 +437,9 @@ public class RdpFileTests
         Assert.Equal("screen mode id", RdpKeys.ScreenModeId);
         Assert.Equal("drivestoredirect", RdpKeys.DrivesToRedirect);
         Assert.Equal("authentication level", RdpKeys.AuthenticationLevel);
+        Assert.Equal("use multimon", RdpKeys.UseMultimon);
+        Assert.Equal("keyboardhook", RdpKeys.KeyboardHook);
+        Assert.Equal("desktopscalefactor", RdpKeys.DesktopScaleFactor);
+        Assert.Equal("redirectcomports", RdpKeys.RedirectComPorts);
     }
 }

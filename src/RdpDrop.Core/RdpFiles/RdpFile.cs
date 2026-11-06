@@ -79,6 +79,43 @@ public sealed class RdpFile
     public int? ScreenModeId => GetInt(RdpKeys.ScreenModeId);
 
     /// <summary>
+    /// <c>audiomode</c>: 0 plays the sound on this computer, 1 on the remote computer,
+    /// 2 nowhere. 0 when absent or out of range, like mstsc.
+    /// </summary>
+    public int AudioMode => GetInt(RdpKeys.AudioMode) is int mode and >= 0 and <= 2 ? mode : 0;
+
+    /// <summary><c>audiocapturemode</c>: records from this computer. False when absent.</summary>
+    public bool AudioCaptureMode => GetBool(RdpKeys.AudioCaptureMode, false);
+
+    /// <summary><c>redirectprinters</c>. True when absent, like mstsc.</summary>
+    public bool RedirectPrinters => GetBool(RdpKeys.RedirectPrinters, true);
+
+    /// <summary><c>redirectcomports</c>. False when absent.</summary>
+    public bool RedirectComPorts => GetBool(RdpKeys.RedirectComPorts, false);
+
+    /// <summary><c>redirectsmartcards</c>. True when absent, like mstsc.</summary>
+    public bool RedirectSmartCards => GetBool(RdpKeys.RedirectSmartCards, true);
+
+    /// <summary>
+    /// <c>use multimon</c>: the session uses every monitor in full screen. Null when
+    /// absent or not an integer, so that the caller can keep its own choice.
+    /// </summary>
+    public bool? UseMultimon => GetInt(RdpKeys.UseMultimon) is int value ? value != 0 : null;
+
+    /// <summary>
+    /// <c>keyboardhook</c>: where Windows key combinations go. 0 to this computer, 1 to
+    /// the remote computer, 2 to the remote computer in full screen only. Null when
+    /// absent or out of range.
+    /// </summary>
+    public int? KeyboardHook => GetInt(RdpKeys.KeyboardHook) is int mode and >= 0 and <= 2 ? mode : null;
+
+    /// <summary>
+    /// <c>desktopscalefactor</c>: scale factor of the remote desktop in percent. Null when
+    /// absent or outside 100 to 500, the range the Remote Desktop control accepts.
+    /// </summary>
+    public int? DesktopScaleFactor => GetInt(RdpKeys.DesktopScaleFactor) is int factor and >= 100 and <= 500 ? factor : null;
+
+    /// <summary>
     /// Reads and parses a file. UTF-16 (with a byte order mark, as written by mstsc) and
     /// UTF-8 (with or without a byte order mark) are supported.
     /// </summary>
