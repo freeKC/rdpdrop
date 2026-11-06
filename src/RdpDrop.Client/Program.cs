@@ -1,5 +1,4 @@
 using RdpDrop.Client.Logging;
-using RdpDrop.Core.RdpFiles;
 
 namespace RdpDrop.Client;
 
@@ -15,48 +14,17 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         ClientLog.Info($"RdpDrop client {AppInfo.Version} starting, arguments: {string.Join(' ', args)}");
 
-        var path = args.Length > 0 ? args[0] : AskForFile();
+        // Without an argument the open dialog comes first, as in 0.1. When it is
+        // cancelled the window opens empty, so that File, Recent is still at hand.
+        var path = args.Length > 0 ? args[0] : MainForm.AskForRdpFile(null);
         if (path is null)
         {
-            ClientLog.Info("No .rdp file chosen, exiting.");
-            return 0;
+            ClientLog.Info("No .rdp file chosen, the window opens empty.");
         }
 
-        RdpFile file;
-        try
-        {
-            path = Path.GetFullPath(path);
-            file = RdpFile.Load(path);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        {
-            ClientLog.Error($"Cannot read {path}", ex);
-            MessageBox.Show($"Cannot read the file {path}.{Environment.NewLine}{ex.Message}", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return 1;
-        }
-
-        if (string.IsNullOrWhiteSpace(file.FullAddress))
-        {
-            ClientLog.Error($"{path} has no full address setting.");
-            MessageBox.Show($"The file {path} does not name a computer to connect to (no \"full address\" line).", AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return 1;
-        }
-
-        ClientLog.Info($"Using {path}");
-        Application.Run(new MainForm(path, file));
+        Application.Run(new MainForm(path));
         ClientLog.Info("RdpDrop client stopped.");
         return 0;
-    }
-
-    private static string? AskForFile()
-    {
-        using var dialog = new OpenFileDialog
-        {
-            Title = "Open a Remote Desktop file",
-            Filter = "Remote Desktop files (*.rdp)|*.rdp",
-            CheckFileExists = true,
-        };
-        return dialog.ShowDialog() == DialogResult.OK ? dialog.FileName : null;
     }
 
     private static void ReportUnhandled(Exception? exception)

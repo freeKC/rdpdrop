@@ -1,11 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RdpDrop.Client.Logging;
+using RdpDrop.Core.Recent;
 
 namespace RdpDrop.Client.Settings;
 
 /// <summary>
-/// Display choices remembered between runs in %LOCALAPPDATA%\RdpDrop\client.json.
+/// Display choices and recent connections remembered between runs in
+/// %LOCALAPPDATA%\RdpDrop\client.json.
 /// Loading never fails: a missing, unreadable or odd file gives the defaults.
 /// </summary>
 internal sealed class ClientSettings
@@ -30,6 +32,9 @@ internal sealed class ClientSettings
     public int KeyboardHookMode { get; set; } = DefaultKeyboardHookMode;
 
     public bool UseAllMonitors { get; set; }
+
+    /// <summary>Full paths of the .rdp files opened lately, most recent first.</summary>
+    public List<string> RecentFiles { get; set; } = [];
 
     public static ClientSettings Load(string path)
     {
@@ -91,6 +96,7 @@ internal sealed class ClientSettings
             KeyboardHookMode = DefaultKeyboardHookMode;
         }
 
+        RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;
     }
 

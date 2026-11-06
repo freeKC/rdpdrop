@@ -2,32 +2,53 @@ using System.Diagnostics;
 using RdpDrop.Client.Logging;
 using RdpDrop.Client.Sessions;
 using RdpDrop.Client.Settings;
-using RdpDrop.Core.RdpFiles;
 
 namespace RdpDrop.Client;
 
 /// <summary>
-/// The main window: menus, the session view and the status bar that shows it.
+/// The main window: menus, one tab per session, and the status bar that follows the
+/// active tab. Menus and shortcuts act on the active tab.
 /// </summary>
 internal sealed partial class MainForm : Form
 {
+    private const string DisconnectedMarker = " (disconnected)";
+
+    private readonly string? _initialPath;
     private readonly ClientSettings _settings;
+    private readonly RecentConnections _recent;
+    private readonly FileMenu _fileMenu = new();
     private readonly ViewMenu _viewMenu = new();
-    private readonly SessionView _session;
+    private readonly TabControl _tabs = new() { Dock = DockStyle.Fill, ShowToolTips = true, Visible = false };
+    private readonly Label _emptyLabel = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleCenter,
+        Text = "No session is open. Use File, Open .rdp or File, Recent to start one.",
+    };
+
     private readonly ToolStripMenuItem _connectItem = new("&Connect");
     private readonly ToolStripMenuItem _disconnectItem = new("&Disconnect");
     private readonly ToolStripMenuItem _findAgentItem = new("&Look for the agent again");
-    private readonly ToolStripStatusLabel _connectionLabel = new() { Text = "Not connected" };
-    private readonly ToolStripStatusLabel _agentLabel = new() { Text = "Agent: not connected" };
+    private readonly ToolStripStatusLabel _connectionLabel = new();
+    private readonly ToolStripStatusLabel _agentLabel = new();
     private readonly ToolStripStatusLabel _dropLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
 
     private bool _closeRequested;
+    private bool _closeScheduled;
 
-    public MainForm(string rdpPath, RdpFile file)
+    /// <summary>
+    /// Creates the window. <paramref name="initialPath"/> is opened in the first tab once
+    /// the window is shown; without it the window starts empty.
+    /// </summary>
+    public MainForm(string? initialPath)
     {
+        _initialPath = initialPath;
         _settings = ClientSettings.Load(ClientSettings.DefaultPath);
+        _recent = new RecentConnections(_settings, ClientSettings.DefaultPath);
+        InitializeFileMenu();
         InitializeViewMenu();
 
+        Text = AppInfo.Name;
         StartPosition = FormStartPosition.CenterScreen;
         var area = Screen.PrimaryScreen?.WorkingArea.Size ?? new Size(1280, 800);
         Size = new Size(area.Width * 4 / 5, area.Height * 4 / 5);
@@ -39,37 +60,53 @@ internal sealed partial class MainForm : Form
         _agentLabel.BorderSides = ToolStripStatusLabelBorderSides.Right;
         status.Items.AddRange([_connectionLabel, _agentLabel, _dropLabel]);
 
-        _session = new SessionView(rdpPath, file, _settings);
-        Controls.Add(_session);
+        Controls.Add(_tabs);
+        Controls.Add(_emptyLabel);
         Controls.Add(status);
         Controls.Add(menu);
         MainMenuStrip = menu;
-
-        _session.StateChanged += (_, _) => UpdateMenu();
-        _session.ConnectionTextChanged += (_, _) => SetLabel(_connectionLabel, _session.ConnectionText);
-        _session.AgentTextChanged += (_, _) => SetLabel(_agentLabel, _session.AgentText);
-        _session.DropTextChanged += (_, _) => SetLabel(_dropLabel, _session.DropText);
-        _session.CloseCompleted += (_, _) => OnSessionClosed();
-        ShowSessionStatus();
+        _tabs.SelectedIndexChanged += (_, _) => OnActiveTabChanged();
 
         ClientLog.Info("Main form created.");
-        UpdateMenu();
-        Shown += (_, _) => _session.Connect();
+        OnActiveTabChanged();
+        Shown += (_, _) => OnShown();
     }
 
-    /// <summary>The session the menus and shortcuts act on.</summary>
-    private SessionView? ActiveSession => _session;
+    /// <summary>The session the menus and shortcuts act on, or null when no tab is open.</summary>
+    private SessionView? ActiveSession => SessionOf(_tabs.SelectedTab);
+
+    private IEnumerable<SessionView> Sessions =>
+        _tabs.TabPages.Cast<TabPage>().Select(SessionOf).OfType<SessionView>();
+
+    /// <summary>
+    /// Shows an open dialog for a .rdp file and returns the chosen path, or null.
+    /// </summary>
+    public static string? AskForRdpFile(IWin32Window? owner)
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Open a Remote Desktop file",
+            Filter = "Remote Desktop files (*.rdp)|*.rdp",
+            CheckFileExists = true,
+        };
+        return dialog.ShowDialog(owner) == DialogResult.OK ? dialog.FileName : null;
+    }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        ClientLog.Info($"Form closing: reason {e.CloseReason}, close requested {_closeRequested}.");
-        if (!_closeRequested && _session.State != SessionState.Disconnected)
+        var open = Sessions.Count(session => session.State != SessionState.Disconnected);
+        ClientLog.Info($"Form closing: reason {e.CloseReason}, {open} session(s) not disconnected, close requested {_closeRequested}.");
+        if (!_closeRequested && open > 0)
         {
-            // Disconnect cleanly first; the session reports when it is closed.
+            // Disconnect every session cleanly first; each one reports when it is closed.
             _closeRequested = true;
             e.Cancel = true;
             ClientLog.Info("Window closing, disconnecting first.");
-            _session.BeginClose();
+            foreach (var session in Sessions.ToList())
+            {
+                session.BeginClose();
+            }
+
             StartExitWatchdog();
             return;
         }
@@ -126,11 +163,162 @@ internal sealed partial class MainForm : Form
         watchdog.Start();
     }
 
-    private void OnSessionClosed()
+    private static SessionView? SessionOf(TabPage? page) =>
+        page?.Controls.OfType<SessionView>().FirstOrDefault();
+
+    private void OnShown()
+    {
+        if (_initialPath is not null)
+        {
+            OpenSession(_initialPath);
+        }
+    }
+
+    /// <summary>
+    /// Opens <paramref name="path"/> in a new tab and connects. A file that cannot be
+    /// read is reported and taken out of the recent connections.
+    /// </summary>
+    private void OpenSession(string path)
     {
         if (_closeRequested)
         {
-            BeginInvoke(Close);
+            return;
+        }
+
+        if (!RdpFileLoader.TryLoad(path, out var fullPath, out var file, out var error))
+        {
+            _recent.Remove(path);
+            MessageBox.Show(this, error, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        _recent.Add(fullPath);
+        var session = new SessionView(fullPath, file, _settings);
+        var page = new TabPage(session.Title) { ToolTipText = fullPath, UseVisualStyleBackColor = true };
+        page.Controls.Add(session);
+        session.StateChanged += (_, _) => OnSessionStateChanged(session);
+        session.ConnectionTextChanged += (_, _) => OnSessionTextChanged(session, _connectionLabel, session.ConnectionText);
+        session.AgentTextChanged += (_, _) => OnSessionTextChanged(session, _agentLabel, session.AgentText);
+        session.DropTextChanged += (_, _) => OnSessionTextChanged(session, _dropLabel, session.DropText);
+        session.CloseCompleted += (_, _) => OnSessionClosed(session);
+
+        ShowTabs(true);
+        _tabs.TabPages.Add(page);
+        _tabs.SelectedTab = page;
+
+        // The first page added is selected without a SelectedIndexChanged event.
+        OnActiveTabChanged();
+        OnSessionStateChanged(session);
+        ClientLog.Info($"Tab opened for {session.Host}, {_tabs.TabCount} tab(s).");
+
+        // Connect once the tab has its final size: the desktop size comes from it.
+        BeginInvoke(session.Connect);
+    }
+
+    private void OpenFromDialog()
+    {
+        var path = AskForRdpFile(this);
+        if (path is not null)
+        {
+            OpenSession(path);
+        }
+    }
+
+    private void OpenRecent(string path)
+    {
+        ClientLog.Info($"Opening recent connection {path}");
+        OpenSession(path);
+    }
+
+    private void ReopenActive()
+    {
+        if (ActiveSession is { } session)
+        {
+            OpenSession(session.RdpPath);
+        }
+    }
+
+    /// <summary>Closes the active tab; its session is disconnected first.</summary>
+    private void CloseActiveTab()
+    {
+        if (ActiveSession is { } session)
+        {
+            ClientLog.Info($"Close tab requested for {session.Host}.");
+            session.BeginClose();
+            UpdateMenu();
+        }
+    }
+
+    private void OnSessionClosed(SessionView session)
+    {
+        if (_closeRequested)
+        {
+            if (!_closeScheduled && Sessions.All(s => s.State == SessionState.Disconnected))
+            {
+                _closeScheduled = true;
+                BeginInvoke(Close);
+            }
+
+            return;
+        }
+
+        // Not from inside the event of the view that is about to be disposed.
+        BeginInvoke(() => RemoveTab(session));
+    }
+
+    private void RemoveTab(SessionView session)
+    {
+        if (session.Parent is not TabPage page || _closeRequested)
+        {
+            return;
+        }
+
+        _tabs.TabPages.Remove(page);
+        page.Dispose();
+        ClientLog.Info($"Tab closed for {session.Host}, {_tabs.TabCount} tab(s) left.");
+        if (_tabs.TabCount == 0)
+        {
+            ShowTabs(false);
+        }
+
+        OnActiveTabChanged();
+    }
+
+    /// <summary>The tab control is hidden while no session is open, so the empty window shows a hint.</summary>
+    private void ShowTabs(bool visible)
+    {
+        _tabs.Visible = visible;
+        _emptyLabel.Visible = !visible;
+    }
+
+    private void OnActiveTabChanged()
+    {
+        ShowSessionStatus();
+        UpdateMenu();
+    }
+
+    private void OnSessionStateChanged(SessionView session)
+    {
+        if (session.Parent is TabPage page)
+        {
+            var text = session.State == SessionState.Disconnected ? session.Title + DisconnectedMarker : session.Title;
+            if (page.Text != text)
+            {
+                page.Text = text;
+            }
+        }
+
+        if (session == ActiveSession)
+        {
+            UpdateMenu();
+        }
+    }
+
+    private void OnSessionTextChanged(SessionView session, ToolStripStatusLabel label, string text)
+    {
+        if (session == ActiveSession)
+        {
+            SetLabel(label, text);
         }
     }
 
@@ -139,11 +327,10 @@ internal sealed partial class MainForm : Form
         _connectItem.Click += (_, _) => ActiveSession?.Connect();
         _disconnectItem.Click += (_, _) => ActiveSession?.Disconnect();
         _findAgentItem.Click += (_, _) => ActiveSession?.LookForAgent();
-        var quit = new ToolStripMenuItem("&Quit");
-        quit.Click += (_, _) => Close();
 
         var session = new ToolStripMenuItem("&Session");
-        session.DropDownItems.AddRange([_connectItem, _disconnectItem, _findAgentItem, new ToolStripSeparator(), quit]);
+        session.DropDownItems.AddRange([_connectItem, _disconnectItem, _findAgentItem]);
+        session.DropDownOpening += (_, _) => UpdateMenu();
 
         var about = new ToolStripMenuItem("&About RdpDrop");
         about.Click += (_, _) => ShowAbout();
@@ -156,7 +343,7 @@ internal sealed partial class MainForm : Form
         help.DropDownItems.AddRange([about, project, logs]);
 
         var menu = new MenuStrip();
-        menu.Items.AddRange([session, _viewMenu.Root, help]);
+        menu.Items.AddRange([_fileMenu.Root, session, _viewMenu.Root, help]);
         return menu;
     }
 
@@ -168,14 +355,16 @@ internal sealed partial class MainForm : Form
         SetLabel(_connectionLabel, session?.ConnectionText ?? "No session");
         SetLabel(_agentLabel, session?.AgentText ?? string.Empty);
         SetLabel(_dropLabel, session?.DropText ?? string.Empty);
+        _agentLabel.Visible = session is not null;
     }
 
     private void UpdateMenu()
     {
         var session = ActiveSession;
         _connectItem.Enabled = session is { State: SessionState.Disconnected, IsClosing: false };
-        _disconnectItem.Enabled = session is not null && session.State != SessionState.Disconnected;
+        _disconnectItem.Enabled = session is { IsClosing: false } && session.State != SessionState.Disconnected;
         _findAgentItem.Enabled = session?.CanLookForAgent == true;
+        _fileMenu.ShowActiveSession(session is { IsClosing: false });
         ShowViewChoices();
     }
 

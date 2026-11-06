@@ -20,6 +20,11 @@ internal sealed partial class MainForm
             return true;
         }
 
+        if (ProcessFileShortcut(keyData))
+        {
+            return true;
+        }
+
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
