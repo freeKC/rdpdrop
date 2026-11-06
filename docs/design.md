@@ -308,7 +308,8 @@ each one built, tested and committed before the next starts.
   with the connection bar shown and pinnable; "Use all monitors" (View menu,
   needs a reconnect) sets `UseMultimon`. Drops from the local desktop are
   only possible in windowed mode or from a monitor the session does not
-  cover; the status bar says so when a full screen session has focus.
+  cover; in full screen the drop point is mapped against the screen area
+  the session covers (one monitor, or the virtual screen with all monitors).
 * Keyboard: View menu "Windows keys" with the three `KeyboardHookMode`
   values (local, remote, remote in full screen; default remote in full
   screen like mstsc).
