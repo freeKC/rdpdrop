@@ -67,6 +67,8 @@ internal sealed class DragSession
     private long _dropTicks;
     private int _feedbackAtDrop;
     private bool _pressed;
+    private bool _inDoDragDrop;
+    private bool _startedRaised;
     private bool _woken;
     private int _moves;
     private TargetWindowInfo? _target;
@@ -100,9 +102,6 @@ internal sealed class DragSession
 
     /// <summary>Raised once on the drag thread when the session is over.</summary>
     public event Action<DragSession, DragCompletion>? Completed;
-
-    /// <summary>True once the session is over and its thread is gone or about to be.</summary>
-    public bool IsFinished => _finished.IsSet;
 
     /// <summary>Starts the drag thread.</summary>
     public void Start()
@@ -188,6 +187,10 @@ internal sealed class DragSession
 
     private void Run()
     {
+        // Application.ThreadException is kept per thread. Without a handler here, an error
+        // in a handler of the proxy or of the timer would open the WinForms error dialog
+        // on this thread and leave the drag hanging with the button down.
+        Application.ThreadException += OnThreadException;
         try
         {
             // DoDragDrop needs OleInitialize; an STA apartment alone is not enough.
@@ -214,13 +217,43 @@ internal sealed class DragSession
         catch (Exception ex)
         {
             _logger.Error($"Drag {Id}: the drag thread failed.", ex);
+            ReleaseIfStillDown();
             Complete(DragOutcome.Failed, DragDropEffects.None, "The drag in the session failed: " + ex.Message);
         }
         finally
         {
+            Application.ThreadException -= OnThreadException;
+            ReleaseIfStillDown();
             _proxy = null;
             _finished.Set();
         }
+    }
+
+    /// <summary>
+    /// An error in a handler of the drag thread. Inside DoDragDrop the drag is cancelled and
+    /// the mouse down handler completes the session once DoDragDrop returns; anywhere else
+    /// the session completes at once.
+    /// </summary>
+    private void OnThreadException(object? sender, ThreadExceptionEventArgs e)
+    {
+        _logger.Error($"Drag {Id}: unexpected error on the drag thread.", e.Exception);
+        _source.RequestCancel("the agent hit an unexpected error");
+        ReleaseIfStillDown();
+        if (_inDoDragDrop)
+        {
+            User32.PostMessage(_proxyHandle, User32.WmKeyDown, User32.VkEscape, IntPtr.Zero);
+            return;
+        }
+
+        if (_phase == Phase.Done)
+        {
+            // The error came after the end, for example while the window closed: the
+            // thread must still leave its message loop.
+            _context?.ExitThread();
+            return;
+        }
+
+        Complete(DragOutcome.Failed, DragDropEffects.None, "The drag in the session failed: " + e.Exception.Message);
     }
 
     private void Arm()
@@ -375,12 +408,20 @@ internal sealed class DragSession
         SetPhase(Phase.Dragging);
         Touch();
         _logger.Info($"Drag {Id}: drag loop started with {_paths.Count} item(s).");
-        Started?.Invoke(this, true, null);
+        RaiseStarted(true, null);
 
         User32.Point latest;
         lock (_gate)
         {
             latest = _latestPoint;
+
+            // A drop that came before the drag loop waits, like any other drop, for the
+            // target to answer at the final point before the button is released.
+            if (_source.DropRequested)
+            {
+                _feedbackAtDrop = _source.FeedbackCount;
+                _dropTicks = Environment.TickCount64;
+            }
         }
 
         if (latest.X != _startPoint.X || latest.Y != _startPoint.Y)
@@ -394,12 +435,17 @@ internal sealed class DragSession
         {
             // Copy and link only: a move accepted by the remote Explorer would delete the
             // file on the local disk through the redirected drive.
+            _inDoDragDrop = true;
             effect = _proxy.DoDragDrop(DragDataObject.Create(_paths), DragDropEffects.Copy | DragDropEffects.Link);
         }
         catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException or InvalidOperationException)
         {
             error = "DoDragDrop failed: " + ex.Message;
             _logger.Warn($"Drag {Id}: {error}");
+        }
+        finally
+        {
+            _inDoDragDrop = false;
         }
 
         ReleaseIfStillDown();
@@ -469,12 +515,26 @@ internal sealed class DragSession
     private void Fail(string reason)
     {
         _logger.Warn($"Drag {Id}: {reason}");
-        if (_phase is Phase.Arming or Phase.Pressed or Phase.Created)
+        Complete(DragOutcome.Failed, DragDropEffects.None, reason);
+    }
+
+    /// <summary>Raises <see cref="Started"/> once, whatever the path that ends the start.</summary>
+    private void RaiseStarted(bool started, string? reason)
+    {
+        if (_startedRaised)
         {
-            Started?.Invoke(this, false, reason);
+            return;
         }
 
-        Complete(DragOutcome.Failed, DragDropEffects.None, reason);
+        _startedRaised = true;
+        try
+        {
+            Started?.Invoke(this, started, reason);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Drag {Id}: the start handler failed.", ex);
+        }
     }
 
     private void Complete(DragOutcome outcome, DragDropEffects effect, string? message)
@@ -489,9 +549,11 @@ internal sealed class DragSession
         _timer?.Stop();
         _logger.Info($"Drag {Id}: {outcome}, effect {effect}{(_source.CancelReason is null ? string.Empty : ", " + _source.CancelReason)}.");
 
-        if (!wasDragging && outcome == DragOutcome.Cancelled)
+        // A session that ends before its drag loop ran always answers the start, so that
+        // the client gets a refusal instead of waiting.
+        if (!wasDragging)
         {
-            Started?.Invoke(this, false, "The drag was cancelled before it started.");
+            RaiseStarted(false, outcome == DragOutcome.Cancelled ? "The drag was cancelled before it started." : message);
         }
 
         var cancelText = outcome == DragOutcome.Cancelled ? "The drag was cancelled: " + (_source.CancelReason ?? "no reason given") + "." : null;

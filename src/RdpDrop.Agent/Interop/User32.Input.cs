@@ -49,12 +49,6 @@ internal static partial class User32
     /// <summary>GA_ROOTOWNER: the owner chain of the top level window, up to its root.</summary>
     public const uint GaRootOwner = 3;
 
-    /// <summary>VK_LBUTTON: virtual key of the logical left button.</summary>
-    public const int VkLButton = 0x01;
-
-    /// <summary>VK_RBUTTON: virtual key of the logical right button.</summary>
-    public const int VkRButton = 0x02;
-
     /// <summary>VK_ESCAPE: virtual key of Escape.</summary>
     public const int VkEscape = 0x1B;
 
@@ -128,10 +122,6 @@ internal static partial class User32
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetCursorPos(int x, int y);
-
-    /// <summary>Returns the state of a key or button right now; the high bit is set while it is down.</summary>
-    [LibraryImport("user32.dll")]
-    public static partial short GetAsyncKeyState(int vKey);
 
     /// <summary>Sets the opacity of a layered window.</summary>
     [LibraryImport("user32.dll", SetLastError = true)]

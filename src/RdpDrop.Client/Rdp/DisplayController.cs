@@ -26,6 +26,7 @@ internal sealed class DisplayController : IDisposable
     private readonly Control _owner;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = DebounceMilliseconds };
 
+    private bool _disposed;
     private bool _loggedOn;
     private bool _fullScreen;
     private bool _updateRefused;
@@ -105,7 +106,7 @@ internal sealed class DisplayController : IDisposable
     /// <summary>Called on every resize of the window; the update waits until the resize settles.</summary>
     public void OnWindowResized()
     {
-        if (Mode == DisplayMode.ResizeSession && _loggedOn && !_fullScreen)
+        if (!_disposed && Mode == DisplayMode.ResizeSession && _loggedOn && !_fullScreen)
         {
             _timer.Stop();
             _timer.Start();
@@ -156,10 +157,19 @@ internal sealed class DisplayController : IDisposable
         }
     }
 
-    public void Dispose() => _timer.Dispose();
+    public void Dispose()
+    {
+        _disposed = true;
+        _timer.Dispose();
+    }
 
     private void ScheduleUpdate(string reason)
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         ClientLog.Info($"Display update scheduled: {reason}");
         _forceNextUpdate = true;
         _timer.Stop();

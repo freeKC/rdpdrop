@@ -37,13 +37,23 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
     /// Answers a drag enter or drag over at <paramref name="screenPoint"/>.
     /// </summary>
     public DragDropEffects ProcessDragOver(IDataObject? data, Point screenPoint, DragDropEffects allowed, int oleKeyState = 0) =>
-        Raise(FileDragOver, data, screenPoint, allowed, oleKeyState);
+        Raise(FileDragOver, data, screenPoint, allowed, oleKeyState, out _);
 
     /// <summary>
     /// Handles a drop at <paramref name="screenPoint"/> and returns the effect to report.
     /// </summary>
-    public DragDropEffects ProcessDrop(IDataObject? data, Point screenPoint, DragDropEffects allowed, int oleKeyState = 0) =>
-        Raise(FileDropped, data, screenPoint, allowed, oleKeyState);
+    public DragDropEffects ProcessDrop(IDataObject? data, Point screenPoint, DragDropEffects allowed, int oleKeyState = 0)
+    {
+        var effect = Raise(FileDropped, data, screenPoint, allowed, oleKeyState, out var raised);
+        if (!raised)
+        {
+            // The drop landed outside the session, for example on the status bar of the
+            // host window: the drag over the session ends here, as after a leave.
+            ProcessDragLeave();
+        }
+
+        return effect;
+    }
 
     /// <summary>
     /// Handles the end of a drag that did not drop here.
@@ -70,8 +80,9 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
         ProcessDragLeave();
     }
 
-    private DragDropEffects Raise(EventHandler<FileDragEventArgs>? handler, IDataObject? data, Point screenPoint, DragDropEffects allowed, int oleKeyState)
+    private DragDropEffects Raise(EventHandler<FileDragEventArgs>? handler, IDataObject? data, Point screenPoint, DragDropEffects allowed, int oleKeyState, out bool raised)
     {
+        raised = false;
         if (handler is null || (allowed & DragDropEffects.Copy) == 0 || !IsHandleCreated)
         {
             return DragDropEffects.None;
@@ -92,6 +103,7 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
         }
 
         var args = new FileDragEventArgs(files, clientPoint, FileDragEventArgs.FromOleKeyState(oleKeyState));
+        raised = true;
         handler(this, args);
         return args.Effect == DragDropEffects.Copy ? DragDropEffects.Copy : DragDropEffects.None;
     }

@@ -49,15 +49,23 @@ internal static class SavedCredentials
             var credential = Marshal.PtrToStructure<NativeMethods.Credential>(pointer);
             var (userName, domain) = AccountName.Split(Marshal.PtrToStringUni(credential.UserName));
             var password = new char[credential.CredentialBlobSize / sizeof(char)];
-            if (credential.CredentialBlob != IntPtr.Zero && credential.CredentialBlobSize > 0)
+            try
             {
-                Marshal.Copy(credential.CredentialBlob, password, 0, password.Length);
+                if (credential.CredentialBlob != IntPtr.Zero && credential.CredentialBlobSize > 0)
+                {
+                    Marshal.Copy(credential.CredentialBlob, password, 0, password.Length);
 
-                // The buffer belongs to this process until CredFree; clear it first.
-                Marshal.Copy(new byte[credential.CredentialBlobSize], 0, credential.CredentialBlob, (int)credential.CredentialBlobSize);
+                    // The buffer belongs to this process until CredFree; clear it first.
+                    Marshal.Copy(new byte[credential.CredentialBlobSize], 0, credential.CredentialBlob, (int)credential.CredentialBlobSize);
+                }
+
+                return new SavedCredential(userName, domain, password);
             }
-
-            return new SavedCredential(userName, domain, password);
+            catch
+            {
+                Array.Clear(password);
+                throw;
+            }
         }
         finally
         {

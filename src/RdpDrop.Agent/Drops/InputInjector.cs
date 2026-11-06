@@ -69,13 +69,6 @@ internal static class InputInjector
         }
     }
 
-    /// <summary>True while the logical left button is down, real or simulated.</summary>
-    public static bool IsLeftButtonDown()
-    {
-        var key = User32.GetSystemMetrics(User32.SmSwapButton) != 0 ? User32.VkRButton : User32.VkLButton;
-        return (User32.GetAsyncKeyState(key) & 0x8000) != 0;
-    }
-
     /// <summary>Current cursor position, or the given point when it cannot be read.</summary>
     public static User32.Point CursorOr(User32.Point fallback) =>
         User32.GetCursorPos(out var point) ? point : fallback;

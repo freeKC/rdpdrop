@@ -92,7 +92,7 @@ internal sealed class StagingFolder : IDisposable
     public void ScheduleDelete(string id) => ScheduleDelete(id, KeepFor);
 
     /// <summary>Deletes the folder of drag <paramref name="id"/> after <paramref name="delay"/>.</summary>
-    public void ScheduleDelete(string id, TimeSpan delay)
+    private void ScheduleDelete(string id, TimeSpan delay)
     {
         var folder = Path.Combine(_root, SafeName(id));
         lock (_gate)

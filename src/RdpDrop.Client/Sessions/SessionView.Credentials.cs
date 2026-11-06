@@ -56,6 +56,8 @@ internal sealed partial class SessionView
 
         try
         {
+            // Set first, so that a failure halfway still clears what reached the control.
+            _savedCredentialsApplied = true;
             _rdp.UserName = credential.UserName;
             _rdp.Domain = credential.Domain;
             var hasPassword = false;
@@ -68,7 +70,6 @@ internal sealed partial class SessionView
                 }
             });
 
-            _savedCredentialsApplied = true;
             if (hasPassword)
             {
                 nonScriptable.PromptForCredentials = false;

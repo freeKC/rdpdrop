@@ -21,6 +21,9 @@ internal sealed class NativeDropCoordinator : IDisposable
     /// <summary>How long a new drag waits for the previous one to end.</summary>
     private static readonly TimeSpan PreviousDragWait = TimeSpan.FromSeconds(2);
 
+    /// <summary>How long the agent waits, when it stops, for the drag in progress to end.</summary>
+    private static readonly TimeSpan StopWait = TimeSpan.FromSeconds(2);
+
     private const int RememberedDrags = 16;
 
     private readonly FileLogger _logger;
@@ -53,13 +56,28 @@ internal sealed class NativeDropCoordinator : IDisposable
         lock (_gate)
         {
             previous = _current;
+            if (previous?.Id == enter.Id)
+            {
+                // A repeated dragEnter must not start a second drag that nothing would end.
+                _logger.Info($"Drag {enter.Id}: repeated enter ignored, the drag is already known.");
+                return;
+            }
+
             _current = drag;
         }
 
-        if (previous is not null && previous.Id != enter.Id)
+        if (previous is not null)
         {
-            previous.Abandoned = true;
-            previous.Session?.Cancel("a newer drag started");
+            // Under the lock of the previous drag, so that its preparation either sees the
+            // flag or has already published the session cancelled here.
+            DragSession? previousSession;
+            lock (previous.Gate)
+            {
+                previous.Abandoned = true;
+                previousSession = previous.Session;
+            }
+
+            previousSession?.Cancel("a newer drag started");
         }
 
         drag.AckTimer = new Timer(_ => SendProvisionalAck(drag), null, ProvisionalAckDelay, Timeout.InfiniteTimeSpan);
@@ -166,8 +184,17 @@ internal sealed class NativeDropCoordinator : IDisposable
             _current = null;
         }
 
-        current?.Session?.Cancel("the agent is stopping");
         current?.AckTimer?.Dispose();
+        if (current?.Session is { } session)
+        {
+            // The drag thread releases the simulated button when it ends; waiting a little
+            // keeps the agent from exiting with the button still down in the session.
+            session.Cancel("the agent is stopping");
+            if (!session.WaitFinished(StopWait))
+            {
+                _logger.Warn($"Drag {current.Id}: the drag did not end before the agent stopped.");
+            }
+        }
     }
 
     private NativeDrag? Find(string id)
@@ -185,6 +212,12 @@ internal sealed class NativeDropCoordinator : IDisposable
             if (previous?.Session is { } previousSession && !previousSession.WaitFinished(PreviousDragWait))
             {
                 Refuse(drag, "The previous drop is still being delivered in the session. Try again once it is done.");
+                return;
+            }
+
+            if (drag.Enter.Items.Count == 0)
+            {
+                Refuse(drag, "The drag holds no file or folder.");
                 return;
             }
 
@@ -213,6 +246,12 @@ internal sealed class NativeDropCoordinator : IDisposable
 
             if (drag.Left || drag.Abandoned)
             {
+                drag.AckTimer?.Dispose();
+                if (drag.Staged)
+                {
+                    _staging.ScheduleDelete(drag.Id);
+                }
+
                 Forget(drag, "The drag was cancelled before it started.");
                 return;
             }
@@ -251,45 +290,56 @@ internal sealed class NativeDropCoordinator : IDisposable
         }
     }
 
+    /// <summary>
+    /// Runs on a timer thread. Every dragAck of a drag is sent under its AckGate, so a
+    /// provisional accept can never reach the client after the refusal that follows it.
+    /// </summary>
     private void SendProvisionalAck(NativeDrag drag)
     {
-        if (drag.Abandoned || !drag.TryMarkAck())
+        lock (drag.AckGate)
         {
-            return;
-        }
+            if (drag.Abandoned || !drag.TryMarkAck())
+            {
+                return;
+            }
 
-        var text = drag.Staging
-            ? $"Copying {drag.Enter.Items.Count} item(s) into the session before the drag starts..."
-            : "Starting the drag in the session...";
-        _logger.Info($"Drag {drag.Id}: provisional dragAck, {text}");
-        _send(new DragAckMessage(drag.Id, true, text));
+            var text = drag.Staging
+                ? $"Copying {drag.Enter.Items.Count} item(s) into the session before the drag starts..."
+                : "Starting the drag in the session...";
+            _logger.Info($"Drag {drag.Id}: provisional dragAck, {text}");
+            _send(new DragAckMessage(drag.Id, true, text));
+        }
     }
 
     private void OnStarted(NativeDrag drag, bool started, string? reason)
     {
         drag.AckTimer?.Dispose();
-        if (started)
+        lock (drag.AckGate)
         {
-            if (drag.TryMarkAck())
+            if (started)
             {
-                _logger.Info($"Drag {drag.Id}: dragAck accepted.");
-                _send(new DragAckMessage(drag.Id, true));
+                if (drag.TryMarkAck())
+                {
+                    _logger.Info($"Drag {drag.Id}: dragAck accepted.");
+                    _send(new DragAckMessage(drag.Id, true));
+                }
+
+                return;
             }
 
-            return;
-        }
-
-        // A refusal is always sent, even after a provisional accept.
-        drag.TryMarkAck();
-        if (!drag.Left && !drag.Abandoned)
-        {
-            _logger.Info($"Drag {drag.Id}: dragAck refused, {reason}");
-            _send(new DragAckMessage(drag.Id, false, reason));
+            // A refusal is always sent, even after a provisional accept.
+            drag.TryMarkAck();
+            if (!drag.Left && !drag.Abandoned)
+            {
+                _logger.Info($"Drag {drag.Id}: dragAck refused, {reason}");
+                _send(new DragAckMessage(drag.Id, false, reason));
+            }
         }
     }
 
     private void OnCompleted(NativeDrag drag, DragCompletion completion)
     {
+        drag.AckTimer?.Dispose();
         if (drag.Staged)
         {
             _staging.ScheduleDelete(drag.Id);
@@ -330,9 +380,12 @@ internal sealed class NativeDropCoordinator : IDisposable
             case DragOutcome.Cancelled:
                 // The client is still dragging when the watchdog fires; tell it the drag is over.
                 Forget(drag, completion.Message ?? "The drag was cancelled.");
-                if (!drag.Left && !drag.Abandoned && drag.HasAck)
+                lock (drag.AckGate)
                 {
-                    _send(new DragAckMessage(drag.Id, false, completion.Message));
+                    if (!drag.Left && !drag.Abandoned && drag.HasAck)
+                    {
+                        _send(new DragAckMessage(drag.Id, false, completion.Message));
+                    }
                 }
 
                 break;
@@ -380,13 +433,18 @@ internal sealed class NativeDropCoordinator : IDisposable
         }
 
         Forget(drag, reason);
-        drag.TryMarkAck();
         if (drag.Abandoned)
         {
+            drag.TryMarkAck();
             return;
         }
 
-        _send(new DragAckMessage(drag.Id, false, reason));
+        lock (drag.AckGate)
+        {
+            drag.TryMarkAck();
+            _send(new DragAckMessage(drag.Id, false, reason));
+        }
+
         if (drag.Drop is not null)
         {
             _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: reason, Effect: DropEffect.None));
@@ -425,6 +483,9 @@ internal sealed class NativeDropCoordinator : IDisposable
 
         /// <summary>Guards <see cref="Session"/> against the messages that arrive while it is created.</summary>
         public Lock Gate { get; } = new();
+
+        /// <summary>Keeps the dragAck messages of the drag in the order they were decided.</summary>
+        public Lock AckGate { get; } = new();
 
         public volatile DragSession? Session;
 

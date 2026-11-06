@@ -109,8 +109,10 @@ internal sealed class TrayContext : ApplicationContext
             _menu.Dispose();
             _iconFactory.Dispose();
             _sessionWindow.Dispose();
-            _loop.Dispose();
+
+            // The drag in progress ends first, while its result can still be sent.
             _native.Dispose();
+            _loop.Dispose();
             _staging.Dispose();
         }
 
