@@ -40,10 +40,23 @@ jobs:
         run: dotnet test RdpDrop.sln -c Release --no-build --logger trx
 
       - name: Publish client
-        run: dotnet publish src/RdpDrop.Client/RdpDrop.Client.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/RdpDrop.Client
+        run: dotnet publish src/RdpDrop.Client/RdpDrop.Client.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false -o artifacts/RdpDrop.Client
 
       - name: Publish agent
-        run: dotnet publish src/RdpDrop.Agent/RdpDrop.Agent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/RdpDrop.Agent
+        run: dotnet publish src/RdpDrop.Agent/RdpDrop.Agent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false -o artifacts/RdpDrop.Agent
+
+      - name: Keep only the executables
+        shell: pwsh
+        run: |
+          foreach ($folder in 'artifacts/RdpDrop.Client', 'artifacts/RdpDrop.Agent') {
+            Get-ChildItem -Path $folder -Exclude *.exe | Remove-Item -Recurse -Force
+            $files = @(Get-ChildItem -Path $folder -Recurse -File)
+            if ($files.Count -ne 1) {
+              Write-Error "$folder must hold exactly one file, found $($files.Count): $($files.Name -join ', ')"
+              exit 1
+            }
+            Write-Host "$folder holds $($files[0].Name) ($($files[0].Length) bytes)"
+          }
 
       - name: Zip
         shell: pwsh

@@ -9,6 +9,7 @@
     <AssemblyName>RdpDrop.Client</AssemblyName>
     <RootNamespace>RdpDrop.Client</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
     <!-- Classic COM interop for the Remote Desktop ActiveX control (AxMSTSCLib). -->
     <MsRdpExComInterop>Legacy</MsRdpExComInterop>

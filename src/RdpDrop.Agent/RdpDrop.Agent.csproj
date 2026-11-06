@@ -9,6 +9,7 @@
     <AssemblyName>RdpDrop.Agent</AssemblyName>
     <RootNamespace>RdpDrop.Agent</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Description>RdpDrop agent: receives drops from the RdpDrop client inside a Remote Desktop session.</Description>
