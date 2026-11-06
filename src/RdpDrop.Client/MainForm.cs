@@ -4,13 +4,14 @@ using System.Runtime.InteropServices;
 using RdpDrop.Client.Channel;
 using RdpDrop.Client.Logging;
 using RdpDrop.Client.Rdp;
+using RdpDrop.Client.Settings;
 using RdpDrop.Core.Paths;
 using RdpDrop.Core.Protocol;
 using RdpDrop.Core.RdpFiles;
 
 namespace RdpDrop.Client;
 
-internal sealed class MainForm : Form
+internal sealed partial class MainForm : Form
 {
     private readonly string _rdpPath;
     private readonly RdpFile _file;
@@ -18,6 +19,9 @@ internal sealed class MainForm : Form
     private readonly RdpControl _rdp = new();
     private readonly ChildDropTargets _childTargets;
     private readonly AgentLink _agent;
+    private readonly ClientSettings _settings;
+    private readonly DisplayController _display;
+    private readonly ViewMenu _viewMenu = new();
     private readonly ToolStripMenuItem _connectItem = new("&Connect");
     private readonly ToolStripMenuItem _disconnectItem = new("&Disconnect");
     private readonly ToolStripMenuItem _findAgentItem = new("&Look for the agent again");
@@ -28,7 +32,7 @@ internal sealed class MainForm : Form
     private ConnectionState _state = ConnectionState.Disconnected;
     private bool _channelCreated;
     private bool _closeRequested;
-    private Size _desktopSize;
+    private bool _reconnectRequested;
     private string? _pendingDropId;
     private string? _dropTextBeforeDrag;
     private string _dropStatus = string.Empty;
@@ -40,6 +44,9 @@ internal sealed class MainForm : Form
         _host = RdpAddress.Split(file.FullAddress ?? string.Empty).Host;
         _childTargets = new ChildDropTargets(_rdp);
         _agent = new AgentLink(_rdp);
+        _settings = ClientSettings.Load(ClientSettings.DefaultPath);
+        _display = new DisplayController(_rdp, this, _settings.DisplayMode);
+        InitializeViewChoices();
 
         Text = $"{AppInfo.Name}: {file.FullAddress}";
         StartPosition = FormStartPosition.CenterScreen;
@@ -69,9 +76,11 @@ internal sealed class MainForm : Form
         _rdp.OnFatalError += (_, e) => OnRdpFatalError(e.errorCode);
         _rdp.OnWarning += (_, e) => ClientLog.Warn(Invariant($"Control warning {e.warningCode}"));
         _rdp.OnLogonError += (_, e) => ClientLog.Warn(Invariant($"Logon error {e.lError}"));
-        _rdp.OnRemoteDesktopSizeChange += (_, e) => OnRemoteDesktopSizeChange(e.width, e.height);
+        _rdp.OnRemoteDesktopSizeChange += (_, e) => _display.OnRemoteDesktopSizeChange(e.width, e.height);
         _rdp.OnAutoReconnecting2 += (_, e) => OnAutoReconnecting(e.disconnectReason, e.attemptCount);
         _rdp.OnAutoReconnected += (_, _) => OnAutoReconnected();
+        _rdp.OnEnterFullScreenMode += (_, _) => OnFullScreenChanged(true);
+        _rdp.OnLeaveFullScreenMode += (_, _) => OnFullScreenChanged(false);
         _rdp.FileDragOver += OnFileDragOver;
         _rdp.FileDropped += OnFileDropped;
         _rdp.FileDragLeft += (_, _) => OnFileDragLeft();
@@ -169,6 +178,7 @@ internal sealed class MainForm : Form
         ClientLog.Info("Form closed.");
         _childTargets.RevokeAll();
         _agent.Dispose();
+        _display.Dispose();
         base.OnFormClosed(e);
     }
 
@@ -194,7 +204,7 @@ internal sealed class MainForm : Form
         help.DropDownItems.AddRange([about, project, logs]);
 
         var menu = new MenuStrip();
-        menu.Items.AddRange([session, help]);
+        menu.Items.AddRange([session, _viewMenu.Root, help]);
         return menu;
     }
 
@@ -207,7 +217,11 @@ internal sealed class MainForm : Form
 
         try
         {
-            _desktopSize = RdpSettingsApplier.Apply(_rdp, _file, createChannel: !_channelCreated);
+            _reconnectRequested = false;
+            var options = _display.PrepareConnection(_scaleChoice, _keyboardHookMode, _useAllMonitors, Text);
+            var desktop = RdpSettingsApplier.Apply(_rdp, _file, options, createChannel: !_channelCreated);
+            _display.OnConnecting(desktop);
+            _sessionUsesAllMonitors = _useAllMonitors;
             _channelCreated = true;
             SetConnection(ConnectionState.Connecting, $"Connecting to {_host}...");
             ClientLog.Info($"Connecting to {_host} with {_rdpPath}");
@@ -258,6 +272,7 @@ internal sealed class MainForm : Form
         ClientLog.Info("Event OnLoginComplete");
         SetConnection(ConnectionState.Connected, $"Logged on to {_host}");
         _childTargets.Refresh("logged on");
+        _display.OnLoggedOn();
         _agent.RestartDiscovery("logged on");
     }
 
@@ -267,12 +282,20 @@ internal sealed class MainForm : Form
         var text = SafeErrorDescription(reason, extended);
         ClientLog.Info(Invariant($"Event OnDisconnected reason={reason} extended={extended} text=\"{text}\""));
         _agent.Stop();
+        _display.OnDisconnected();
         _pendingDropId = null;
+        ShowFullScreenState(false);
         SetConnection(ConnectionState.Disconnected, DescribeDisconnect(reason, text));
 
         if (_closeRequested)
         {
             BeginInvoke(Close);
+        }
+        else if (_reconnectRequested)
+        {
+            _reconnectRequested = false;
+            ClientLog.Info("Reconnecting to apply the new display settings.");
+            BeginInvoke(Connect);
         }
     }
 
@@ -293,16 +316,10 @@ internal sealed class MainForm : Form
     {
         ClientLog.Error(Invariant($"Event OnFatalError code={errorCode}"));
         _agent.Stop();
+        _display.OnDisconnected();
+        _reconnectRequested = false;
+        ShowFullScreenState(false);
         SetConnection(ConnectionState.Disconnected, Invariant($"Fatal error {errorCode} in the Remote Desktop control"));
-    }
-
-    private void OnRemoteDesktopSizeChange(int width, int height)
-    {
-        ClientLog.Info(Invariant($"Remote desktop size is now {width}x{height}"));
-        if (width > 0 && height > 0)
-        {
-            _desktopSize = new Size(width, height);
-        }
     }
 
     private void OnAutoReconnecting(int reason, int attempt)
@@ -330,6 +347,7 @@ internal sealed class MainForm : Form
         _connectItem.Enabled = _state == ConnectionState.Disconnected;
         _disconnectItem.Enabled = _state != ConnectionState.Disconnected;
         _findAgentItem.Enabled = _state == ConnectionState.Connected && _agent.State != AgentState.Ready;
+        _viewMenu.ShowFullScreen(_rdp.FullScreenBounds is not null, _state == ConnectionState.Connected);
     }
 
     private void ShowDropStatus(string text)
@@ -433,10 +451,12 @@ internal sealed class MainForm : Form
             items.Add(new DropItem(path, Directory.Exists(path)));
         }
 
-        var remote = DropCoordinateMapper.ToRemote(e.ClientPoint, _rdp.ClientSize, _desktopSize);
+        var viewSize = _rdp.ViewSize;
+        var desktopSize = _display.RemoteDesktopSize;
+        var remote = DropCoordinateMapper.ToRemote(e.ClientPoint, viewSize, desktopSize);
         var drop = new DropMessage(Guid.NewGuid().ToString("N"), remote.X, remote.Y, items);
         ClientLog.Info(Invariant(
-            $"Drop {drop.Id}: {items.Count} item(s) at control ({e.ClientPoint.X}, {e.ClientPoint.Y}) of {_rdp.ClientSize.Width}x{_rdp.ClientSize.Height}, remote ({remote.X}, {remote.Y}) of {_desktopSize.Width}x{_desktopSize.Height}, model {_agent.Model}: {string.Join("; ", e.Files)}"));
+            $"Drop {drop.Id}: {items.Count} item(s) at view ({e.ClientPoint.X}, {e.ClientPoint.Y}) of {viewSize.Width}x{viewSize.Height}{(_rdp.FullScreenBounds is null ? string.Empty : " full screen")}, remote ({remote.X}, {remote.Y}) of {desktopSize.Width}x{desktopSize.Height}, model {_agent.Model}: {string.Join("; ", e.Files)}"));
 
         if (!_agent.SendDrop(drop))
         {

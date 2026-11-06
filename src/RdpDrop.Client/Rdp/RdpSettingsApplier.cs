@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using MSTSCLib;
 using RdpDrop.Client.Logging;
+using RdpDrop.Core.Display;
 using RdpDrop.Core.Protocol;
 using RdpDrop.Core.RdpFiles;
 
@@ -18,8 +19,6 @@ namespace RdpDrop.Client.Rdp;
 internal static class RdpSettingsApplier
 {
     private const int DefaultRdpPort = 3389;
-    private const int MinDesktopSize = 200;
-    private const int MaxDesktopSize = 8192;
 
     // Keys read on top of the ones exposed by RdpFile.
     private const string LoadBalanceInfoKey = "loadbalanceinfo";
@@ -31,11 +30,12 @@ internal static class RdpSettingsApplier
     private const string EnableCredSspSupportKey = "enablecredsspsupport";
 
     /// <summary>
-    /// Applies <paramref name="file"/> to <paramref name="control"/>, creates the RdpDrop
-    /// virtual channel when <paramref name="createChannel"/> is true, and returns the
-    /// desktop size that was set. Throws when the file has no address.
+    /// Applies <paramref name="file"/> and the display choices in <paramref name="options"/>
+    /// to <paramref name="control"/>, creates the RdpDrop virtual channel when
+    /// <paramref name="createChannel"/> is true, and returns the desktop size that was
+    /// set. Throws when the file has no address.
     /// </summary>
-    public static Size Apply(RdpControl control, RdpFile file, bool createChannel)
+    public static Size Apply(RdpControl control, RdpFile file, SessionOptions options, bool createChannel)
     {
         var log = new List<string>();
 
@@ -83,10 +83,12 @@ internal static class RdpSettingsApplier
 
         var advanced = control.AdvancedSettings9;
 
-        // Smart sizing keeps the drop coordinates right after a resize; it is required.
-        advanced.SmartSizing = true;
-        log.Add("smartSizing=True");
+        // Smart sizing scales the picture in "scale to window" mode; in "resize session"
+        // mode the session follows the window and the picture is never scaled.
+        TrySet(log, $"smartSizing={options.SmartSizing}", () => advanced.SmartSizing = options.SmartSizing);
         TrySet(log, $"redirectClipboard={file.RedirectClipboard}", () => advanced.RedirectClipboard = file.RedirectClipboard);
+        ApplyDevices(control, file, options, log);
+        ApplyFullScreen(control, options, log);
 
         // The control leaves CredSSP (network level authentication) off unless asked;
         // mstsc turns it on unless the file says otherwise.
@@ -116,12 +118,15 @@ internal static class RdpSettingsApplier
             }
 
             ApplyDrives(control, nonScriptable, file, log);
+            TrySet(log, $"useMultimon={options.UseMultimon}", () => nonScriptable.UseMultimon = options.UseMultimon);
         }
         else
         {
-            log.Add("IMsRdpClientNonScriptable5 not available, prompt and drive settings left as they are");
+            log.Add("IMsRdpClientNonScriptable5 not available, prompt, drive and multimon settings left as they are");
             TrySet(log, $"redirectDrives={file.RequestsDriveRedirection}", () => advanced.RedirectDrives = file.RequestsDriveRedirection);
         }
+
+        ApplyScaleFactors(ocx, options, log);
 
         if (ocx is IMsRdpPreferredRedirectionInfo redirectionInfo && file.GetInt(UseRedirectionServerNameKey) is int useName)
         {
@@ -146,7 +151,7 @@ internal static class RdpSettingsApplier
     {
         int width;
         int height;
-        if (controlClientSize.Width >= MinDesktopSize && controlClientSize.Height >= MinDesktopSize)
+        if (controlClientSize.Width >= SessionDisplay.MinSize && controlClientSize.Height >= SessionDisplay.MinSize)
         {
             width = controlClientSize.Width;
             height = controlClientSize.Height;
@@ -158,9 +163,56 @@ internal static class RdpSettingsApplier
         }
 
         // An even width avoids the padding some servers add to odd widths.
-        width = Math.Clamp(width, MinDesktopSize, MaxDesktopSize) & ~1;
-        height = Math.Clamp(height, MinDesktopSize, MaxDesktopSize);
-        return new Size(width, height);
+        var (clampedWidth, clampedHeight) = SessionDisplay.ClampSize(width, height);
+        return new Size(clampedWidth, clampedHeight);
+    }
+
+    /// <summary>
+    /// Sound, printers, serial ports, smart cards and the Windows keys.
+    /// </summary>
+    private static void ApplyDevices(RdpControl control, RdpFile file, SessionOptions options, List<string> log)
+    {
+        var advanced = control.AdvancedSettings9;
+        TrySet(log, Invariant($"audioRedirectionMode={file.AudioMode}"), () => control.SecuredSettings2.AudioRedirectionMode = file.AudioMode);
+        TrySet(log, $"audioCaptureRedirectionMode={file.AudioCaptureMode}", () => advanced.AudioCaptureRedirectionMode = file.AudioCaptureMode);
+        TrySet(log, $"redirectPrinters={file.RedirectPrinters}", () => advanced.RedirectPrinters = file.RedirectPrinters);
+        TrySet(log, $"redirectPorts={file.RedirectComPorts}", () => advanced.RedirectPorts = file.RedirectComPorts);
+        TrySet(log, $"redirectSmartCards={file.RedirectSmartCards}", () => advanced.RedirectSmartCards = file.RedirectSmartCards);
+        TrySet(log, Invariant($"keyboardHookMode={options.KeyboardHookMode}"), () => control.SecuredSettings2.KeyboardHookMode = options.KeyboardHookMode);
+    }
+
+    /// <summary>
+    /// The control runs full screen itself (ContainerHandledFullScreen 0), with its
+    /// connection bar shown and not pinned, so that the user can pin it.
+    /// </summary>
+    private static void ApplyFullScreen(RdpControl control, SessionOptions options, List<string> log)
+    {
+        var advanced = control.AdvancedSettings9;
+        TrySet(log, "containerHandledFullScreen=0", () => advanced.ContainerHandledFullScreen = 0);
+        TrySet(log, "displayConnectionBar=True", () => advanced.DisplayConnectionBar = true);
+        TrySet(log, "pinConnectionBar=False", () => advanced.PinConnectionBar = false);
+        TrySet(log, "connectionBarShowPinButton=True", () => advanced.ConnectionBarShowPinButton = true);
+        TrySet(log, $"fullScreenTitle={options.FullScreenTitle}", () => control.FullScreenTitle = options.FullScreenTitle);
+    }
+
+    /// <summary>
+    /// Both factors are VT_UI4 extended properties that cannot change once connected.
+    /// </summary>
+    private static void ApplyScaleFactors(object? ocx, SessionOptions options, List<string> log)
+    {
+        if (ocx is not IMsRdpExtendedSettings extended)
+        {
+            log.Add("IMsRdpExtendedSettings not available, scale factors left as they are");
+            return;
+        }
+
+        TrySet(log, Invariant($"desktopScaleFactor={options.DesktopScaleFactor}"), () => SetExtended(extended, "DesktopScaleFactor", (uint)options.DesktopScaleFactor));
+        TrySet(log, Invariant($"deviceScaleFactor={options.DeviceScaleFactor}"), () => SetExtended(extended, "DeviceScaleFactor", (uint)options.DeviceScaleFactor));
+    }
+
+    private static void SetExtended(IMsRdpExtendedSettings extended, string name, object value)
+    {
+        extended.set_Property(name, ref value);
     }
 
     private static void ApplyGateway(RdpControl control, RdpFile file, List<string> log)

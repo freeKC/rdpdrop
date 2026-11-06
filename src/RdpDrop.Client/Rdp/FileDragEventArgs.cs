@@ -14,7 +14,10 @@ internal sealed class FileDragEventArgs : EventArgs
     /// <summary>Paths taken from the CF_HDROP data, in the order of the source.</summary>
     public IReadOnlyList<string> Files { get; }
 
-    /// <summary>Cursor position in the client coordinates of the RDP control.</summary>
+    /// <summary>
+    /// Cursor position relative to the area that shows the session: the client area of the
+    /// control, or the full screen area while the control runs full screen.
+    /// </summary>
     public Point ClientPoint { get; }
 
     /// <summary>

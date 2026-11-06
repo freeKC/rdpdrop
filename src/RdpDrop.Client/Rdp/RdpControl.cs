@@ -23,6 +23,17 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
     public event EventHandler? FileDragLeft;
 
     /// <summary>
+    /// Screen area covered by the session while the control runs full screen in its own
+    /// window, or null in a window. Drop points are then taken relative to this area.
+    /// </summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Rectangle? FullScreenBounds { get; set; }
+
+    /// <summary>Size of the area that shows the session: the full screen area or the client area.</summary>
+    public Size ViewSize => FullScreenBounds?.Size ?? ClientSize;
+
+    /// <summary>
     /// Answers a drag enter or drag over at <paramref name="screenPoint"/>.
     /// </summary>
     public DragDropEffects ProcessDragOver(IDataObject? data, Point screenPoint, DragDropEffects allowed) =>
@@ -72,8 +83,10 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
             return DragDropEffects.None;
         }
 
-        var clientPoint = PointToClient(screenPoint);
-        if (!ClientRectangle.Contains(clientPoint))
+        var clientPoint = FullScreenBounds is { } bounds
+            ? new Point(screenPoint.X - bounds.X, screenPoint.Y - bounds.Y)
+            : PointToClient(screenPoint);
+        if (!new Rectangle(Point.Empty, ViewSize).Contains(clientPoint))
         {
             return DragDropEffects.None;
         }

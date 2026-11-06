@@ -4,8 +4,11 @@ namespace RdpDrop.Client.Rdp;
 /// Converts a point of the RDP control to a pixel of the remote desktop.
 /// </summary>
 /// <remarks>
-/// Smart sizing stretches the remote desktop over the whole control, so each axis is
-/// scaled by the ratio between the desktop size and the control size.
+/// In "scale to window" mode smart sizing stretches the remote desktop over the whole
+/// view, so each axis is scaled by the ratio between the desktop size and the view size.
+/// In "resize session" mode the session follows the view and the ratio is 1:1 once the
+/// size change event of the control has arrived. In full screen the view is the area
+/// covered by the full screen window.
 /// </remarks>
 internal static class DropCoordinateMapper
 {
