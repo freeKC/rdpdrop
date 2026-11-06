@@ -333,7 +333,9 @@ the user released the button.
 * Live drag messages from the client, on the same channel and in the same
   ASCII line format: `dragEnter` (id, x, y, items, key state), `dragMove`
   (id, x, y, key state, throttled to about thirty per second and only when
-  the point or the keys changed), `drop` (id, x, y, key state) and
+  the point or the keys changed, plus one every second while the cursor
+  rests, so that the five second watchdog of the agent does not end a
+  drag that is only paused), `drop` (id, x, y, key state) and
   `dragLeave` (id). Key state carries the Ctrl, Shift and Alt flags for
   logging and for a later version; in 0.2 the agent injects no modifier
   key, and the allowed effects are copy and link only. Move is never
@@ -345,37 +347,56 @@ the user released the button.
   remote cursor to the point and simulate a left button press on that
   window with `SendInput`; from the mouse down handler of the proxy, call
   `DoDragDrop` with a data object that offers
-  `CF_HDROP` (the `\tsclient\<drive>\...` paths) and, for applications
-  that do not accept UNC paths, the same files staged in
-  `%LOCALAPPDATA%\RdpDrop\staging\<id>\` when the setting "stage files in
-  the session before the drop" is on (off by default, staging happens
-  before `DoDragDrop` and can take time for large files).
+  `CF_HDROP` with the `\\tsclient\<drive>\...` paths or, for applications
+  that do not accept UNC paths, with the same files staged in
+  `%LOCALAPPDATA%\RdpDrop\staging\<id>\` instead, when the setting "stage
+  files in the session before the drop" is on (off by default, staging
+  happens before `DoDragDrop` and can take time for large files). The
+  points are offsets from the top left corner of the session desktop; the
+  agent adds the virtual screen origin, which is negative when a monitor
+  sits left of or above the primary one. The press is only injected once
+  `WindowFromPoint` returns the proxy, so that it can never click the
+  application under the cursor.
 * The agent implements `IDropSource`: `QueryContinueDrag` returns continue
   while the client keeps sending `dragMove`, drop when `drop` arrived,
   cancel when `dragLeave` arrived or no message came for five seconds.
   Each `dragMove` moves the remote cursor with `SendInput` so that OLE
   delivers `DragOver` to the window under it and the target shows its own
   feedback. On `drop`, the agent moves the cursor to the final point and
-  releases the simulated button; on cancel it releases the button and
-  returns cancel from `QueryContinueDrag`.
-* Result: `dropResult` carries the effect the target returned (copy, move,
-  link, none) and, when known, the window class and title of the target.
+  releases the simulated button once the target answered a `DragOver`
+  there (or after 300 ms), since a target that never saw the drag at that
+  point refuses the drop; on cancel it releases the button and returns
+  cancel from `QueryContinueDrag`. The five second watchdog stops once the
+  client dropped, because the target may keep its `Drop` call open while
+  it shows a dialog.
+* Result: `dropResult` carries an `effect` (`copy` or `link` when the
+  target accepted, `none`, or `fallbackCopy` when the agent copied to the
+  fallback folder; move cannot happen since it is never offered) and, when
+  known, `targetWindow` with the class and title of the target.
   When the target returned none and the setting "copy to the fallback
   folder when nothing accepts the drop" is on (default on, so that 0.1
   behaviour is kept), the agent performs the 0.1 copy into the fallback
   folder and says so in the result.
 * Acknowledgement and timeouts: the agent answers `dragEnter` with
-  `dragAck` within a second; without it the client shows "no answer from
-  the agent" and refuses the drop. `dropResult` has no timeout because the
-  target may show dialogs.
-* Client side: the drop zone banner from the previous plan stays; the
+  `dragAck` once the drag loop runs, or with a refusal and its reason.
+  When that takes more than 700 ms (staging of large files), it first
+  sends an accepted `dragAck` with a message ("Copying N item(s) into the
+  session before the drag starts...") and sends a refusal later if the
+  drag cannot start. Without any `dragAck` within a second the client
+  shows "The agent did not acknowledge the drag", sends `dragLeave` and
+  refuses the drop. `dropResult` has no timeout because the target may
+  show dialogs.
+* Client side: a drop zone banner (a translucent strip at the top of the
+  session that lets the mouse through) is shown during the drag; the
   client sends `dragEnter` on the first `DragOver` over the session (not on
   `DragEnter`, so that the point is known), `dragMove` while hovering,
   `drop` or `dragLeave` at the end. The local drag effect shown to the user
   is copy while the agent is in the drag, none when it refused.
 * Compatibility: a 0.1 agent ignores the new message types; the client
-  detects a 0.1 agent from its hello version and falls back to the 0.1
-  `drop` message, which keeps the copy to the folder under the cursor.
+  detects a 0.1 agent from the absence of `nativeDrop: true` in its hello
+  and falls back to the 0.1 `drop` message, which keeps the copy to the
+  folder under the cursor. A 0.2 agent treats a `drop` whose id matches no
+  live drag the same way, so a 0.1 client keeps working with it.
 * Security: the simulated input happens only inside the user's own
   session, only between a `dragEnter` and the matching `drop` or
   `dragLeave`, and only with the left button. Cancelling posts an Escape
