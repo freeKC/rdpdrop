@@ -334,12 +334,17 @@ the user released the button.
   ASCII line format: `dragEnter` (id, x, y, items, key state), `dragMove`
   (id, x, y, key state, throttled to about thirty per second and only when
   the point or the keys changed), `drop` (id, x, y, key state) and
-  `dragLeave` (id). Key state carries the Ctrl, Shift and Alt flags so that
-  the remote target applies its own copy, move or link semantics.
-* Agent side, on `dragEnter`: on a dedicated STA thread, create a tiny
-  invisible layered window, move it under the cursor point, move the remote
-  cursor there and simulate a left button press on that window with
-  `SendInput`, then call `DoDragDrop` with a data object that offers
+  `dragLeave` (id). Key state carries the Ctrl, Shift and Alt flags for
+  logging and for a later version; in 0.2 the agent injects no modifier
+  key, and the allowed effects are copy and link only. Move is never
+  offered: a move accepted by the remote Explorer would delete the file on
+  the user's local disk through the redirected drive.
+* Agent side, on `dragEnter`: on a dedicated STA thread with `OleInitialize`,
+  create an invisible layered proxy window that covers the whole virtual
+  screen (alpha 1, not 0, so that it really receives the click), move the
+  remote cursor to the point and simulate a left button press on that
+  window with `SendInput`; from the mouse down handler of the proxy, call
+  `DoDragDrop` with a data object that offers
   `CF_HDROP` (the `\tsclient\<drive>\...` paths) and, for applications
   that do not accept UNC paths, the same files staged in
   `%LOCALAPPDATA%\RdpDrop\staging\<id>\` when the setting "stage files in
@@ -373,8 +378,11 @@ the user released the button.
   `drop` message, which keeps the copy to the folder under the cursor.
 * Security: the simulated input happens only inside the user's own
   session, only between a `dragEnter` and the matching `drop` or
-  `dragLeave`, and only with the left button. The staging folder is wiped
-  when the agent starts and after each drop.
+  `dragLeave`, and only with the left button. Cancelling posts an Escape
+  key message to the proxy window, never through `SendInput`, so that no
+  key reaches the foreground application. Staged folders are deleted when
+  the agent starts and one hour after their drop, not right after it: the
+  target may still be reading the files.
 
 ### Step 3: connections
 
