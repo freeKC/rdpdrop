@@ -279,3 +279,83 @@ Behaviour:
   `docs/releases/vX.Y.Z.md` as body and attach both zips.
 * Self contained publishing means the user installs nothing, at the cost of a
   larger download.
+
+## Version 0.2 plan
+
+Scope chosen on 2026-11-06 after the first successful test against a real
+server (channel byte model observed: one byte per character in both
+directions; the control registers no drop target of its own; a drop landed
+on the remote desktop as expected). Work is done in four sequential steps,
+each one built, tested and committed before the next starts.
+
+### Step 1: packaging and display
+
+* Release archives contain one portable executable only: no `.pdb`, no
+  extra file. Publish with `-p:DebugType=none -p:DebugSymbols=false`, and
+  delete anything that is not the `.exe` before zipping. The executable runs
+  without elevation (manifest `asInvoker`, extraction of native libraries
+  to the user temp folder).
+* View menu with "Scale to window" (smart sizing, the 0.1 behaviour) and
+  "Resize session to window" (default): on a window resize, debounced by
+  about 300 ms, call `UpdateSessionDisplaySettings` on the control
+  (`IMsRdpClient9` or later) so that the session resolution follows the
+  window. If the server refuses, fall back to `Reconnect(width, height)`.
+* DPI: before connecting, set `DesktopScaleFactor` and `DeviceScaleFactor`
+  through `IMsRdpExtendedSettings` from the DPI of the monitor that holds
+  the window. View menu entry to override the scale factor (100, 125, 150,
+  175, 200) and reconnect.
+* Full screen: F11 and Ctrl+Alt+Pause toggle `FullScreen` on the control,
+  with the connection bar shown and pinnable; "Use all monitors" (View menu,
+  needs a reconnect) sets `UseMultimon`. Drops from the local desktop are
+  only possible in windowed mode or from a monitor the session does not
+  cover; the status bar says so when a full screen session has focus.
+* Keyboard: View menu "Windows keys" with the three `KeyboardHookMode`
+  values (local, remote, remote in full screen; default remote in full
+  screen like mstsc).
+* Apply more `.rdp` keys: `audiomode`, `audiocapturemode`,
+  `redirectprinters`, `redirectcomports`, `redirectsmartcards`,
+  `keyboardhook`, `use multimon`, `desktopscalefactor`.
+* Coordinates: the drop mapper keeps using the ratio between the session
+  size and the control size, which is 1:1 after a resize in "resize" mode.
+
+### Step 2: richer drop
+
+* Visible drop zone: while a file drag is over the session, a translucent
+  banner "Drop here to copy into the session" appears at the top of the
+  control and disappears on leave or drop.
+* Modifiers: Shift held at drop time asks the agent to show a folder picker
+  in the session instead of using the folder under the cursor; Ctrl held
+  asks for a move (the source on the local drive is deleted after a
+  successful copy, with the Windows dialogs). Both are optional fields on
+  the `drop` message: `"target": "cursor" | "ask"` and
+  `"operation": "copy" | "move"`. A 0.1 agent ignores unknown fields and
+  copies to the cursor folder, which is acceptable.
+* Acknowledgement: the agent sends `{ "type": "dropAck", "id": "<guid>" }`
+  as soon as it accepts a drop. If no acknowledgement arrives within
+  fifteen seconds, the client marks the drop as "no answer from the agent"
+  and allows new drops; a late result still updates the status bar. The
+  final result has no timeout because the copy dialog can stay open as
+  long as the user wants.
+* Protocol version stays 1; these additions are backward compatible.
+
+### Step 3: connections
+
+* `SessionView` user control that owns one control, one agent link and the
+  drop logic; `MainForm` becomes a host with tabs, one per session, and a
+  status bar that follows the active tab. Keyboard shortcuts and menus act
+  on the active tab.
+* File menu: Open .rdp, Recent connections (ten entries, stored in
+  `%LOCALAPPDATA%\RdpDrop\client.json`), New tab from the same file,
+  Close tab.
+* Credentials: before connecting, read the generic credential
+  `TERMSRV/<host>` from the Windows Credential Manager, like mstsc does; if
+  present, apply user name, domain and password to the control and skip the
+  prompt. Nothing is written by RdpDrop; saving happens through the Windows
+  prompt of the control, which offers "Remember me". A File menu entry
+  forgets the saved credential for the current host.
+
+### Step 4: review, documentation, release
+
+* Code review of the three steps, README update (new menus, modifiers,
+  tabs, credentials), release notes `docs/releases/v0.2.0.md`, tag
+  `v0.2.0`.
