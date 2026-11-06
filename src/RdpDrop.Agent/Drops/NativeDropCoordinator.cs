@@ -1,0 +1,454 @@
+using Timer = System.Threading.Timer;
+using RdpDrop.Agent.Logging;
+using RdpDrop.Agent.Settings;
+using RdpDrop.Core.Protocol;
+using Message = RdpDrop.Core.Protocol.Message;
+
+namespace RdpDrop.Agent.Drops;
+
+/// <summary>
+/// Runs the live drag protocol of the agent: prepares a drag on <c>dragEnter</c> (checks
+/// and optionally stages the items, then starts a <see cref="DragSession"/>), answers
+/// with <c>dragAck</c>, forwards <c>dragMove</c>, <c>drop</c> and <c>dragLeave</c>, and
+/// sends the <c>dropResult</c>, with the 0.1 copy as a fallback when nothing accepted
+/// the drop. One drag at a time: a new <c>dragEnter</c> cancels the current one.
+/// </summary>
+internal sealed class NativeDropCoordinator : IDisposable
+{
+    /// <summary>Without a final answer by then, a provisional accepted dragAck is sent.</summary>
+    private static readonly TimeSpan ProvisionalAckDelay = TimeSpan.FromMilliseconds(700);
+
+    /// <summary>How long a new drag waits for the previous one to end.</summary>
+    private static readonly TimeSpan PreviousDragWait = TimeSpan.FromSeconds(2);
+
+    private const int RememberedDrags = 16;
+
+    private readonly FileLogger _logger;
+    private readonly Func<Message, bool> _send;
+    private readonly AgentSettings _settings;
+    private readonly DriveRedirectionProbe _probe;
+    private readonly DropExecutor _executor;
+    private readonly StagingFolder _staging;
+    private readonly Lock _gate = new();
+    private readonly Queue<string> _endedOrder = new();
+    private readonly Dictionary<string, string> _ended = [];
+    private NativeDrag? _current;
+
+    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, DropExecutor executor, StagingFolder staging)
+    {
+        _logger = logger;
+        _send = send;
+        _settings = settings;
+        _probe = probe;
+        _executor = executor;
+        _staging = staging;
+    }
+
+    /// <summary>Starts a drag in the session. Called on the channel thread; returns at once.</summary>
+    public void OnDragEnter(DragEnterMessage enter)
+    {
+        _logger.Info($"Drag {enter.Id}: enter with {enter.Items.Count} item(s) at ({enter.X}, {enter.Y}), keys {KeyStates.Describe(enter.KeyState)}.");
+        NativeDrag? previous;
+        var drag = new NativeDrag(enter);
+        lock (_gate)
+        {
+            previous = _current;
+            _current = drag;
+        }
+
+        if (previous is not null && previous.Id != enter.Id)
+        {
+            previous.Abandoned = true;
+            previous.Session?.Cancel("a newer drag started");
+        }
+
+        drag.AckTimer = new Timer(_ => SendProvisionalAck(drag), null, ProvisionalAckDelay, Timeout.InfiniteTimeSpan);
+        var worker = new Thread(() => Prepare(drag, previous))
+        {
+            IsBackground = true,
+            Name = "RdpDrop prepare " + enter.Id,
+        };
+        worker.Start();
+    }
+
+    /// <summary>Forwards a move. Called on the channel thread.</summary>
+    public void OnDragMove(DragMoveMessage move)
+    {
+        var drag = Find(move.Id);
+        if (drag is null)
+        {
+            _logger.Debug($"Drag {move.Id}: move ignored, no such drag.");
+            return;
+        }
+
+        if (move.KeyState != drag.KeyState)
+        {
+            _logger.Info($"Drag {move.Id}: keys {KeyStates.Describe(move.KeyState)} (logged only, not sent to the session).");
+            drag.KeyState = move.KeyState;
+        }
+
+        DragSession? session;
+        lock (drag.Gate)
+        {
+            drag.LastX = move.X;
+            drag.LastY = move.Y;
+            session = drag.Session;
+        }
+
+        session?.Move(move.X, move.Y);
+    }
+
+    /// <summary>Cancels the drag. Called on the channel thread.</summary>
+    public void OnDragLeave(DragLeaveMessage leave)
+    {
+        var drag = Find(leave.Id);
+        if (drag is null)
+        {
+            _logger.Info($"Drag {leave.Id}: leave ignored, no such drag.");
+            return;
+        }
+
+        _logger.Info($"Drag {leave.Id}: the drag left the session on the client.");
+        DragSession? session;
+        lock (drag.Gate)
+        {
+            drag.Left = true;
+            session = drag.Session;
+        }
+
+        session?.Cancel("the drag left the session on the client");
+    }
+
+    /// <summary>
+    /// Ends the drag with id <paramref name="drop"/>.Id natively and returns true, or
+    /// returns false when no drag with this id is known, so that the caller does the 0.1
+    /// copy. Called on the channel thread.
+    /// </summary>
+    public bool TryDrop(DropMessage drop)
+    {
+        var drag = Find(drop.Id);
+        if (drag is null)
+        {
+            string? reason;
+            lock (_gate)
+            {
+                _ended.TryGetValue(drop.Id, out reason);
+            }
+
+            if (reason is null)
+            {
+                return false;
+            }
+
+            _logger.Info($"Drag {drop.Id}: drop after the drag already ended ({reason}).");
+            _send(new DropResultMessage(drop.Id, DropStatus.Error, Message: reason, Effect: DropEffect.None));
+            return true;
+        }
+
+        _logger.Info($"Drag {drop.Id}: drop at ({drop.X}, {drop.Y}), keys {KeyStates.Describe(drop.KeyState)}.");
+        DragSession? session;
+        lock (drag.Gate)
+        {
+            drag.Drop = drop;
+            session = drag.Session;
+        }
+
+        session?.Drop(drop.X, drop.Y);
+        return true;
+    }
+
+    public void Dispose()
+    {
+        NativeDrag? current;
+        lock (_gate)
+        {
+            current = _current;
+            _current = null;
+        }
+
+        current?.Session?.Cancel("the agent is stopping");
+        current?.AckTimer?.Dispose();
+    }
+
+    private NativeDrag? Find(string id)
+    {
+        lock (_gate)
+        {
+            return _current is { } current && current.Id == id ? current : null;
+        }
+    }
+
+    private void Prepare(NativeDrag drag, NativeDrag? previous)
+    {
+        try
+        {
+            if (previous?.Session is { } previousSession && !previousSession.WaitFinished(PreviousDragWait))
+            {
+                Refuse(drag, "The previous drop is still being delivered in the session. Try again once it is done.");
+                return;
+            }
+
+            var items = ItemMapper.Map(drag.Enter.Items, _probe, out var error);
+            if (items is null)
+            {
+                Refuse(drag, error ?? "The items cannot be dropped.");
+                return;
+            }
+
+            IReadOnlyList<string> paths = [.. items.Select(item => item.Path)];
+            if (_settings.StageFiles)
+            {
+                drag.Staging = true;
+                try
+                {
+                    paths = _staging.Stage(drag.Id, items);
+                    drag.Staged = true;
+                }
+                catch (Exception ex) when (ItemMapper.IsFileError(ex))
+                {
+                    Refuse(drag, "The files could not be copied into the session before the drag. " + ex.Message);
+                    return;
+                }
+            }
+
+            if (drag.Left || drag.Abandoned)
+            {
+                Forget(drag, "The drag was cancelled before it started.");
+                return;
+            }
+
+            var session = new DragSession(_logger, drag.Id, paths, drag.Enter.X, drag.Enter.Y);
+            session.Started += (_, started, reason) => OnStarted(drag, started, reason);
+            session.Completed += (_, completion) => OnCompleted(drag, completion);
+            // Messages that arrived during the preparation are replayed on the session; the
+            // lock makes sure each later message sees the session instead.
+            lock (drag.Gate)
+            {
+                drag.Session = session;
+                if (drag.LastX is { } x && drag.LastY is { } y)
+                {
+                    session.Move(x, y);
+                }
+
+                if (drag.Drop is { } drop)
+                {
+                    session.Drop(drop.X, drop.Y);
+                }
+
+                if (drag.Left || drag.Abandoned)
+                {
+                    session.Cancel("the drag left the session on the client");
+                }
+            }
+
+            _logger.Info($"Drag {drag.Id}: starting the drag in the session with {paths.Count} {(drag.Staged ? "staged copies" : "redirected paths")}.");
+            session.Start();
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Drag {drag.Id}: preparing the drag failed.", ex);
+            Refuse(drag, "The agent hit an unexpected error: " + ex.Message);
+        }
+    }
+
+    private void SendProvisionalAck(NativeDrag drag)
+    {
+        if (drag.Abandoned || !drag.TryMarkAck())
+        {
+            return;
+        }
+
+        var text = drag.Staging
+            ? $"Copying {drag.Enter.Items.Count} item(s) into the session before the drag starts..."
+            : "Starting the drag in the session...";
+        _logger.Info($"Drag {drag.Id}: provisional dragAck, {text}");
+        _send(new DragAckMessage(drag.Id, true, text));
+    }
+
+    private void OnStarted(NativeDrag drag, bool started, string? reason)
+    {
+        drag.AckTimer?.Dispose();
+        if (started)
+        {
+            if (drag.TryMarkAck())
+            {
+                _logger.Info($"Drag {drag.Id}: dragAck accepted.");
+                _send(new DragAckMessage(drag.Id, true));
+            }
+
+            return;
+        }
+
+        // A refusal is always sent, even after a provisional accept.
+        drag.TryMarkAck();
+        if (!drag.Left && !drag.Abandoned)
+        {
+            _logger.Info($"Drag {drag.Id}: dragAck refused, {reason}");
+            _send(new DragAckMessage(drag.Id, false, reason));
+        }
+    }
+
+    private void OnCompleted(NativeDrag drag, DragCompletion completion)
+    {
+        if (drag.Staged)
+        {
+            _staging.ScheduleDelete(drag.Id);
+        }
+
+        var drop = drag.Drop;
+        var target = completion.Target;
+        switch (completion.Outcome)
+        {
+            case DragOutcome.Dropped when completion.Effect.HasFlag(DragDropEffects.Copy) || completion.Effect.HasFlag(DragDropEffects.Link):
+                var effect = completion.Effect.HasFlag(DragDropEffects.Copy) ? DropEffect.Copy : DropEffect.Link;
+                var where = target?.Title ?? target?.ClassName ?? "the window under the cursor";
+                Forget(drag, "The drag already ended with a drop.");
+                _send(new DropResultMessage(drag.Id, DropStatus.Ok, Message: $"Dropped on {where}", Effect: effect, TargetWindow: target));
+                break;
+
+            case DragOutcome.Dropped when drop is not null && _settings.FallbackCopy:
+                Forget(drag, "The drag already ended with a drop.");
+                _logger.Info($"Drag {drag.Id}: nothing accepted the drop; copying to the fallback folder.");
+                StaThread.Start("RdpDrop fallback " + drag.Id, () => RunFallback(drop, target));
+                break;
+
+            case DragOutcome.Dropped:
+                Forget(drag, "The drag already ended with a drop.");
+                _send(new DropResultMessage(
+                    drag.Id,
+                    DropStatus.Error,
+                    Message: "Nothing under the cursor accepted the drop, and the copy to the fallback folder is turned off.",
+                    Effect: DropEffect.None,
+                    TargetWindow: target));
+                break;
+
+            case DragOutcome.Cancelled when drop is not null:
+                Forget(drag, completion.Message ?? "The drag was cancelled.");
+                _send(new DropResultMessage(drag.Id, DropStatus.Cancelled, Message: completion.Message, Effect: DropEffect.None));
+                break;
+
+            case DragOutcome.Cancelled:
+                // The client is still dragging when the watchdog fires; tell it the drag is over.
+                Forget(drag, completion.Message ?? "The drag was cancelled.");
+                if (!drag.Left && !drag.Abandoned && drag.HasAck)
+                {
+                    _send(new DragAckMessage(drag.Id, false, completion.Message));
+                }
+
+                break;
+
+            default:
+                Forget(drag, completion.Message ?? "The drag in the session failed.");
+                if (drop is not null)
+                {
+                    _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: completion.Message, Effect: DropEffect.None));
+                }
+
+                break;
+        }
+    }
+
+    private void RunFallback(DropMessage drop, TargetWindowInfo? target)
+    {
+        DropResultMessage result;
+        try
+        {
+            result = _executor.Execute(drop);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Drag {drop.Id}: the fallback copy failed unexpectedly.", ex);
+            result = new DropResultMessage(drop.Id, DropStatus.Error, Message: "The agent hit an unexpected error: " + ex.Message);
+        }
+
+        result = result with
+        {
+            Effect = result.Status == DropStatus.Ok ? DropEffect.FallbackCopy : DropEffect.None,
+            TargetWindow = target,
+        };
+        _logger.Info($"Drag {drop.Id}: fallback copy finished: {result.Status}. {result.Message}");
+        _send(result);
+    }
+
+    private void Refuse(NativeDrag drag, string reason)
+    {
+        drag.AckTimer?.Dispose();
+        _logger.Info($"Drag {drag.Id}: refused, {reason}");
+        if (drag.Staged)
+        {
+            _staging.ScheduleDelete(drag.Id);
+        }
+
+        Forget(drag, reason);
+        drag.TryMarkAck();
+        if (drag.Abandoned)
+        {
+            return;
+        }
+
+        _send(new DragAckMessage(drag.Id, false, reason));
+        if (drag.Drop is not null)
+        {
+            _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: reason, Effect: DropEffect.None));
+        }
+    }
+
+    /// <summary>Clears the drag if it is the current one and remembers why it ended, for a late drop.</summary>
+    private void Forget(NativeDrag drag, string reason)
+    {
+        lock (_gate)
+        {
+            if (_current == drag)
+            {
+                _current = null;
+            }
+
+            if (_ended.TryAdd(drag.Id, reason))
+            {
+                _endedOrder.Enqueue(drag.Id);
+                while (_endedOrder.Count > RememberedDrags)
+                {
+                    _ended.Remove(_endedOrder.Dequeue());
+                }
+            }
+        }
+    }
+
+    /// <summary>State of one drag, shared by the channel, preparation and drag threads.</summary>
+    private sealed class NativeDrag(DragEnterMessage enter)
+    {
+        private int _ackSent;
+
+        public DragEnterMessage Enter { get; } = enter;
+
+        public string Id => Enter.Id;
+
+        /// <summary>Guards <see cref="Session"/> against the messages that arrive while it is created.</summary>
+        public Lock Gate { get; } = new();
+
+        public volatile DragSession? Session;
+
+        public volatile DropMessage? Drop;
+
+        public volatile bool Left;
+
+        public volatile bool Abandoned;
+
+        public volatile bool Staging;
+
+        public volatile bool Staged;
+
+        public int KeyState = enter.KeyState;
+
+        public int? LastX;
+
+        public int? LastY;
+
+        public Timer? AckTimer;
+
+        public bool HasAck => Volatile.Read(ref _ackSent) != 0;
+
+        /// <summary>Returns true for the first caller only.</summary>
+        public bool TryMarkAck() => Interlocked.Exchange(ref _ackSent, 1) == 0;
+    }
+}

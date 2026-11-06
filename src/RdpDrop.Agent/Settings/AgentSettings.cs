@@ -7,8 +7,8 @@ namespace RdpDrop.Agent.Settings;
 
 /// <summary>
 /// Settings stored in %LOCALAPPDATA%\RdpDrop\agent.json. Loading never fails: a missing
-/// or unreadable file gives the defaults. Thread safe: the fallback folder is read by
-/// drop threads and changed from the tray menu.
+/// or unreadable file gives the defaults. Thread safe: the values are read by drop and
+/// channel threads and changed from the tray menu.
 /// </summary>
 internal sealed class AgentSettings
 {
@@ -16,18 +16,35 @@ internal sealed class AgentSettings
 
     private readonly string _path;
     private readonly FileLogger _logger;
+    private readonly Lock _saveGate = new();
     private FallbackFolder _fallback;
+    private volatile bool _stageFiles;
+    private volatile bool _fallbackCopy;
 
-    private AgentSettings(string path, FileLogger logger, FallbackFolder fallback, LogLevel logLevel)
+    private AgentSettings(string path, FileLogger logger, FallbackFolder fallback, LogLevel logLevel, bool stageFiles, bool fallbackCopy)
     {
         _path = path;
         _logger = logger;
         _fallback = fallback;
         LogLevel = logLevel;
+        _stageFiles = stageFiles;
+        _fallbackCopy = fallbackCopy;
     }
 
     /// <summary>Folder used when the cursor is not over a usable folder.</summary>
     public FallbackFolder Fallback => Volatile.Read(ref _fallback);
+
+    /// <summary>
+    /// "Stage files in the session before the drop": the drag inside the session offers
+    /// local copies instead of the redirected drive paths. Off by default.
+    /// </summary>
+    public bool StageFiles => _stageFiles;
+
+    /// <summary>
+    /// "Copy to the fallback folder when nothing accepts the drop": after a drag inside the
+    /// session that no window accepted, the agent does the 0.1 copy. On by default.
+    /// </summary>
+    public bool FallbackCopy => _fallbackCopy;
 
     /// <summary>Lowest level written to the log. Only editable in the file.</summary>
     public LogLevel LogLevel { get; }
@@ -36,6 +53,8 @@ internal sealed class AgentSettings
     {
         var fallback = FallbackFolder.Default;
         var logLevel = LogLevel.Info;
+        var stageFiles = false;
+        var fallbackCopy = true;
         try
         {
             if (File.Exists(path))
@@ -46,6 +65,8 @@ internal sealed class AgentSettings
                     fallback = ToFallback(data);
                     // A number out of range would silence the log entirely.
                     logLevel = data.LogLevel is { } level && Enum.IsDefined(level) ? level : LogLevel.Info;
+                    stageFiles = data.StageFiles ?? false;
+                    fallbackCopy = data.FallbackCopy ?? true;
                 }
             }
         }
@@ -54,7 +75,7 @@ internal sealed class AgentSettings
             logger.Warn($"Could not read the settings file {path}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, fallback, logLevel);
+        return new AgentSettings(path, logger, fallback, logLevel, stageFiles, fallbackCopy);
     }
 
     /// <summary>
@@ -64,25 +85,54 @@ internal sealed class AgentSettings
     public bool SetFallback(FallbackFolder fallback)
     {
         Volatile.Write(ref _fallback, fallback);
+        return Save();
+    }
+
+    /// <summary>Changes <see cref="StageFiles"/> and saves the file.</summary>
+    public bool SetStageFiles(bool value)
+    {
+        _stageFiles = value;
+        return Save();
+    }
+
+    /// <summary>Changes <see cref="FallbackCopy"/> and saves the file.</summary>
+    public bool SetFallbackCopy(bool value)
+    {
+        _fallbackCopy = value;
+        return Save();
+    }
+
+    /// <summary>Readable summary for the log.</summary>
+    public override string ToString() =>
+        $"fallback {Fallback.Kind}{(Fallback.CustomPath is null ? string.Empty : " " + Fallback.CustomPath)}, stage files {StageFiles}, fallback copy {FallbackCopy}, log level {LogLevel}";
+
+    private bool Save()
+    {
+        var fallback = Fallback;
         var data = new SettingsData
         {
             Fallback = fallback.Kind,
             CustomFolder = fallback.Kind == FallbackKind.Custom ? fallback.CustomPath : null,
             LogLevel = LogLevel == LogLevel.Info ? null : LogLevel,
+            StageFiles = StageFiles,
+            FallbackCopy = FallbackCopy,
         };
 
-        try
+        lock (_saveGate)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            var temp = _path + ".tmp";
-            File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(data, JsonOptions));
-            File.Move(temp, _path, overwrite: true);
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _logger.Warn($"Could not save the settings file {_path}. {ex.Message}");
-            return false;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+                var temp = _path + ".tmp";
+                File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(data, JsonOptions));
+                File.Move(temp, _path, overwrite: true);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warn($"Could not save the settings file {_path}. {ex.Message}");
+                return false;
+            }
         }
     }
 
@@ -117,5 +167,11 @@ internal sealed class AgentSettings
 
         /// <summary>"debug", "info", "warn" or "error". Info when absent.</summary>
         public LogLevel? LogLevel { get; set; }
+
+        /// <summary>Offer staged local copies to the drag in the session. False when absent.</summary>
+        public bool? StageFiles { get; set; }
+
+        /// <summary>Copy to the fallback folder when nothing accepts a drop. True when absent.</summary>
+        public bool? FallbackCopy { get; set; }
     }
 }

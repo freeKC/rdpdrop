@@ -15,13 +15,15 @@ internal sealed class AgentProtocolHandler
     private readonly Func<Message, bool> _send;
     private readonly DriveRedirectionProbe _probe;
     private readonly DropExecutor _executor;
+    private readonly NativeDropCoordinator _native;
 
-    public AgentProtocolHandler(FileLogger logger, Func<Message, bool> send, DriveRedirectionProbe probe, DropExecutor executor)
+    public AgentProtocolHandler(FileLogger logger, Func<Message, bool> send, DriveRedirectionProbe probe, DropExecutor executor, NativeDropCoordinator native)
     {
         _logger = logger;
         _send = send;
         _probe = probe;
         _executor = executor;
+        _native = native;
     }
 
     /// <summary>Handles one line, given as its ASCII bytes.</summary>
@@ -51,6 +53,18 @@ internal sealed class AgentProtocolHandler
                 OnDrop(drop);
                 break;
 
+            case DragEnterMessage enter:
+                _native.OnDragEnter(enter);
+                break;
+
+            case DragMoveMessage move:
+                _native.OnDragMove(move);
+                break;
+
+            case DragLeaveMessage leave:
+                _native.OnDragLeave(leave);
+                break;
+
             case null:
                 _logger.Warn($"Protocol error: the \"{envelope.Type ?? "(none)"}\" message is unknown or malformed. Ignored.");
                 break;
@@ -65,21 +79,20 @@ internal sealed class AgentProtocolHandler
     {
         var available = _probe.IsAvailable();
         _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}; drive redirection available: {available}.");
-        _send(HelloMessage.FromAgent(AgentInfo.Version, available));
+        _send(HelloMessage.FromAgent(AgentInfo.Version, available, nativeDrop: true));
     }
 
     private void OnDrop(DropMessage drop)
     {
-        _logger.Info($"Drop {drop.Id}: {drop.Items.Count} item(s) at ({drop.X}, {drop.Y}).");
-
-        // Shell COM objects and the copy dialogs need a single threaded apartment.
-        var thread = new Thread(() => RunDrop(drop))
+        // A drop that ends a live drag is delivered inside the session; any other drop
+        // is the 0.1 copy to the folder under the cursor.
+        if (_native.TryDrop(drop))
         {
-            IsBackground = true,
-            Name = "RdpDrop drop " + drop.Id,
-        };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
+            return;
+        }
+
+        _logger.Info($"Drop {drop.Id}: {drop.Items.Count} item(s) at ({drop.X}, {drop.Y}), copy to the folder under the cursor.");
+        StaThread.Start("RdpDrop drop " + drop.Id, () => RunDrop(drop));
     }
 
     private void RunDrop(DropMessage drop)

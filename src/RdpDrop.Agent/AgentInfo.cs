@@ -33,6 +33,9 @@ internal static class AgentInfo
     /// <summary>%LOCALAPPDATA%\RdpDrop\agent.json</summary>
     public static string SettingsPath { get; } = Path.Combine(DataDirectory, "agent.json");
 
+    /// <summary>%LOCALAPPDATA%\RdpDrop\staging, local copies offered to drags in the session.</summary>
+    public static string StagingDirectory { get; } = Path.Combine(DataDirectory, "staging");
+
     /// <summary>%LOCALAPPDATA%\RdpDrop\logs</summary>
     public static string LogDirectory { get; } = Path.Combine(DataDirectory, "logs");
 
