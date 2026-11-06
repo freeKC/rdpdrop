@@ -3,9 +3,9 @@ using System.Globalization;
 namespace RdpDrop.Client;
 
 /// <summary>
-/// The File menu: open a .rdp file, recent connections, tabs and Quit. Like
-/// <see cref="ViewMenu"/>, it only shows the state it is given and raises an event per
-/// choice; the form decides what a choice does.
+/// The File menu: open a .rdp file, recent connections, tabs, saved credentials and
+/// Quit. Like <see cref="ViewMenu"/>, it only shows the state it is given and raises an
+/// event per choice; the form decides what a choice does.
 /// </summary>
 /// <remarks>
 /// Ctrl+O and Ctrl+W are only shown here. The form handles them, so that they reach the
@@ -18,6 +18,11 @@ internal sealed class FileMenu
     private readonly ToolStripMenuItem _clearRecentItem = new("&Clear recent");
     private readonly ToolStripMenuItem _reopenItem = new("Reopen in &new tab");
     private readonly ToolStripMenuItem _closeTabItem = new("&Close tab") { ShortcutKeyDisplayString = "Ctrl+W" };
+    private readonly ToolStripMenuItem _forgetItem = new("&Forget saved credentials")
+    {
+        ToolTipText = "RdpDrop never saves credentials. Windows saves them when you tick \"Remember me\" in its credential prompt.",
+    };
+
     private readonly ToolStripMenuItem _quitItem = new("&Quit");
 
     public FileMenu()
@@ -26,6 +31,7 @@ internal sealed class FileMenu
         _clearRecentItem.Click += (_, _) => ClearRecentClicked?.Invoke(this, EventArgs.Empty);
         _reopenItem.Click += (_, _) => ReopenClicked?.Invoke(this, EventArgs.Empty);
         _closeTabItem.Click += (_, _) => CloseTabClicked?.Invoke(this, EventArgs.Empty);
+        _forgetItem.Click += (_, _) => ForgetCredentialsClicked?.Invoke(this, EventArgs.Empty);
         _quitItem.Click += (_, _) => QuitClicked?.Invoke(this, EventArgs.Empty);
 
         ShowRecent([]);
@@ -36,6 +42,8 @@ internal sealed class FileMenu
             new ToolStripSeparator(),
             _reopenItem,
             _closeTabItem,
+            new ToolStripSeparator(),
+            _forgetItem,
             new ToolStripSeparator(),
             _quitItem,
         ]);
@@ -51,6 +59,8 @@ internal sealed class FileMenu
     public event EventHandler? ReopenClicked;
 
     public event EventHandler? CloseTabClicked;
+
+    public event EventHandler? ForgetCredentialsClicked;
 
     public event EventHandler? QuitClicked;
 
@@ -87,6 +97,18 @@ internal sealed class FileMenu
         items.Add(new ToolStripSeparator());
         items.Add(_clearRecentItem);
         _clearRecentItem.Enabled = paths.Count > 0;
+    }
+
+    /// <summary>
+    /// Names the host of the active tab in the "Forget saved credentials" entry, enabled
+    /// when Windows keeps a credential for it.
+    /// </summary>
+    public void ShowSavedCredentials(string? host, bool saved)
+    {
+        _forgetItem.Text = host is null
+            ? "&Forget saved credentials"
+            : $"&Forget saved credentials for {host.Replace("&", "&&", StringComparison.Ordinal)}";
+        _forgetItem.Enabled = host is not null && saved;
     }
 
     /// <summary>Enables the entries that need an active tab.</summary>

@@ -148,6 +148,7 @@ internal sealed partial class SessionView : UserControl
             _reconnectRequested = false;
             var options = _display.PrepareConnection(_scaleChoice, _keyboardHookMode, _useAllMonitors, WindowTitle);
             var desktop = RdpSettingsApplier.Apply(_rdp, RdpFile, options, createChannel: !_channelCreated);
+            ApplySavedCredentials();
             _display.OnConnecting(desktop);
             _sessionUsesAllMonitors = _useAllMonitors;
             _channelCreated = true;

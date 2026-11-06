@@ -384,6 +384,8 @@ internal sealed partial class MainForm : Form
             this,
             $"{AppInfo.Name} {AppInfo.Version}{Environment.NewLine}{Environment.NewLine}"
             + $"Drag files and folders from this computer and drop them into the Remote Desktop session.{Environment.NewLine}{Environment.NewLine}"
+            + $"Saved credentials: RdpDrop never saves a password. Windows saves it when you tick \"Remember me\" in its credential prompt. "
+            + $"Before connecting, RdpDrop uses the generic credential TERMSRV/<host> of the Windows Credential Manager when there is one.{Environment.NewLine}{Environment.NewLine}"
             + $"{AppInfo.ProjectUrl}",
             $"About {AppInfo.Name}",
             MessageBoxButtons.OK,
