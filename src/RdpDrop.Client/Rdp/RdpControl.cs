@@ -36,14 +36,14 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
     /// <summary>
     /// Answers a drag enter or drag over at <paramref name="screenPoint"/>.
     /// </summary>
-    public DragDropEffects ProcessDragOver(IDataObject? data, Point screenPoint, DragDropEffects allowed) =>
-        Raise(FileDragOver, data, screenPoint, allowed);
+    public DragDropEffects ProcessDragOver(IDataObject? data, Point screenPoint, DragDropEffects allowed, int oleKeyState = 0) =>
+        Raise(FileDragOver, data, screenPoint, allowed, oleKeyState);
 
     /// <summary>
     /// Handles a drop at <paramref name="screenPoint"/> and returns the effect to report.
     /// </summary>
-    public DragDropEffects ProcessDrop(IDataObject? data, Point screenPoint, DragDropEffects allowed) =>
-        Raise(FileDropped, data, screenPoint, allowed);
+    public DragDropEffects ProcessDrop(IDataObject? data, Point screenPoint, DragDropEffects allowed, int oleKeyState = 0) =>
+        Raise(FileDropped, data, screenPoint, allowed, oleKeyState);
 
     /// <summary>
     /// Handles the end of a drag that did not drop here.
@@ -52,17 +52,17 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
 
     protected override void OnDragEnter(DragEventArgs drgevent)
     {
-        drgevent.Effect = ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+        drgevent.Effect = ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect, drgevent.KeyState);
     }
 
     protected override void OnDragOver(DragEventArgs drgevent)
     {
-        drgevent.Effect = ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+        drgevent.Effect = ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect, drgevent.KeyState);
     }
 
     protected override void OnDragDrop(DragEventArgs drgevent)
     {
-        drgevent.Effect = ProcessDrop(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect);
+        drgevent.Effect = ProcessDrop(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect, drgevent.KeyState);
     }
 
     protected override void OnDragLeave(EventArgs e)
@@ -70,7 +70,7 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
         ProcessDragLeave();
     }
 
-    private DragDropEffects Raise(EventHandler<FileDragEventArgs>? handler, IDataObject? data, Point screenPoint, DragDropEffects allowed)
+    private DragDropEffects Raise(EventHandler<FileDragEventArgs>? handler, IDataObject? data, Point screenPoint, DragDropEffects allowed, int oleKeyState)
     {
         if (handler is null || (allowed & DragDropEffects.Copy) == 0 || !IsHandleCreated)
         {
@@ -91,7 +91,7 @@ internal sealed class RdpControl : AxMsRdpClient9NotSafeForScripting
             return DragDropEffects.None;
         }
 
-        var args = new FileDragEventArgs(files, clientPoint);
+        var args = new FileDragEventArgs(files, clientPoint, FileDragEventArgs.FromOleKeyState(oleKeyState));
         handler(this, args);
         return args.Effect == DragDropEffects.Copy ? DragDropEffects.Copy : DragDropEffects.None;
     }

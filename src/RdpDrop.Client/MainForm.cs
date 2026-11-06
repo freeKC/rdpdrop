@@ -119,17 +119,17 @@ internal sealed partial class MainForm : Form
     // points outside the session area.
     protected override void OnDragEnter(DragEventArgs drgevent)
     {
-        drgevent.Effect = ActiveSession?.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect) ?? DragDropEffects.None;
+        drgevent.Effect = ActiveSession?.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect, drgevent.KeyState) ?? DragDropEffects.None;
     }
 
     protected override void OnDragOver(DragEventArgs drgevent)
     {
-        drgevent.Effect = ActiveSession?.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect) ?? DragDropEffects.None;
+        drgevent.Effect = ActiveSession?.ProcessDragOver(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect, drgevent.KeyState) ?? DragDropEffects.None;
     }
 
     protected override void OnDragDrop(DragEventArgs drgevent)
     {
-        drgevent.Effect = ActiveSession?.ProcessDrop(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect) ?? DragDropEffects.None;
+        drgevent.Effect = ActiveSession?.ProcessDrop(drgevent.Data, new Point(drgevent.X, drgevent.Y), drgevent.AllowedEffect, drgevent.KeyState) ?? DragDropEffects.None;
     }
 
     protected override void OnDragLeave(EventArgs e)

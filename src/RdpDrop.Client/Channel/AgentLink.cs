@@ -53,6 +53,9 @@ internal sealed class AgentLink : IDisposable
     /// <summary>Raised when <see cref="State"/> changes, and when the agent answers again.</summary>
     public event EventHandler? StateChanged;
 
+    /// <summary>Raised for every dragAck message.</summary>
+    public event EventHandler<DragAckMessage>? DragAckReceived;
+
     /// <summary>Raised for every dropResult message.</summary>
     public event EventHandler<DropResultMessage>? DropResultReceived;
 
@@ -63,6 +66,12 @@ internal sealed class AgentLink : IDisposable
 
     /// <summary>Whether the agent sees at least one redirected drive, or null before it answers.</summary>
     public bool? DriveRedirectionAvailable { get; private set; }
+
+    /// <summary>
+    /// True when the agent replays drags inside the session (live drag messages); false for
+    /// a 0.1 agent, which only understands the single drop message.
+    /// </summary>
+    public bool NativeDrop { get; private set; }
 
     /// <summary>Byte model of the strings received, locked when the agent answered, Unknown before.</summary>
     public ChannelByteModel Model => _receiver.LockedModel;
@@ -125,6 +134,21 @@ internal sealed class AgentLink : IDisposable
         return Send(drop, $"drop {drop.Id}");
     }
 
+    /// <summary>
+    /// Sends a live drag message (dragEnter, dragMove or dragLeave) to an agent that said
+    /// <see cref="NativeDrop"/>. Moves are not logged one by one: about thirty go out every
+    /// second. Returns false when the agent is not ready or the control refused the data.
+    /// </summary>
+    public bool SendDrag(Message message, string id)
+    {
+        if (State != AgentState.Ready || Model == ChannelByteModel.Unknown || !NativeDrop)
+        {
+            return false;
+        }
+
+        return Send(message, $"{message.Type} {id}", log: message is not DragMoveMessage);
+    }
+
     public void Dispose()
     {
         _timer.Dispose();
@@ -137,6 +161,7 @@ internal sealed class AgentLink : IDisposable
         _hellosSent = 0;
         AgentVersion = null;
         DriveRedirectionAvailable = null;
+        NativeDrop = false;
     }
 
     private void OnTimer()
@@ -164,7 +189,7 @@ internal sealed class AgentLink : IDisposable
         Send(HelloMessage.FromClient(AppInfo.Version), Invariant($"hello #{_hellosSent}"));
     }
 
-    private bool Send(Message message, string what)
+    private bool Send(Message message, string what, bool log = true)
     {
         string line;
         try
@@ -180,7 +205,11 @@ internal sealed class AgentLink : IDisposable
         try
         {
             _control.SendOnVirtualChannel(ProtocolConstants.ChannelName, line);
-            ClientLog.Info(Invariant($"Sent {what}, {line.Length} characters."));
+            if (log)
+            {
+                ClientLog.Info(Invariant($"Sent {what}, {line.Length} characters."));
+            }
+
             return true;
         }
         catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
@@ -219,8 +248,13 @@ internal sealed class AgentLink : IDisposable
                 break;
 
             case DropResultMessage result:
-                ClientLog.Info($"Drop result {result.Id}: {result.Status}, folder \"{result.TargetFolder}\", message \"{result.Message}\"");
+                ClientLog.Info($"Drop result {result.Id}: {result.Status}, effect {result.Effect?.ToString() ?? "(not said)"}, folder \"{result.TargetFolder}\", window {result.TargetWindow?.ClassName ?? "(none)"} \"{result.TargetWindow?.Title}\" {result.TargetWindow?.ProcessName}, message \"{result.Message}\"");
                 DropResultReceived?.Invoke(this, result);
+                break;
+
+            case DragAckMessage ack:
+                ClientLog.Info($"Drag ack {ack.Id}: accepted {ack.Accepted}, message \"{ack.Message}\"");
+                DragAckReceived?.Invoke(this, ack);
                 break;
 
             case null:
@@ -249,8 +283,9 @@ internal sealed class AgentLink : IDisposable
 
         AgentVersion = hello.AgentVersion;
         DriveRedirectionAvailable = hello.DriveRedirectionAvailable;
+        NativeDrop = hello.NativeDrop == true;
         _timer.Stop();
-        ClientLog.Info($"Agent ready, version {hello.AgentVersion ?? "(unknown)"}, drive redirection available: {hello.DriveRedirectionAvailable?.ToString() ?? "(not said)"}.");
+        ClientLog.Info($"Agent ready, version {hello.AgentVersion ?? "(unknown)"}, drive redirection available: {hello.DriveRedirectionAvailable?.ToString() ?? "(not said)"}, native drop: {NativeDrop}.");
         State = AgentState.Ready;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

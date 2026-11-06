@@ -24,13 +24,13 @@ public sealed class ChildWindowDropTarget : IOleDropTarget
     public int OleDragEnter(ComDataObject? dataObject, int keyState, OlePoint pt, ref int effect)
     {
         _current = dataObject is null ? null : new DataObject(dataObject);
-        effect = (int)_control.ProcessDragOver(_current, new Point(pt.X, pt.Y), (DragDropEffects)effect);
+        effect = (int)_control.ProcessDragOver(_current, new Point(pt.X, pt.Y), (DragDropEffects)effect, keyState);
         return S_OK;
     }
 
     public int OleDragOver(int keyState, OlePoint pt, ref int effect)
     {
-        effect = (int)_control.ProcessDragOver(_current, new Point(pt.X, pt.Y), (DragDropEffects)effect);
+        effect = (int)_control.ProcessDragOver(_current, new Point(pt.X, pt.Y), (DragDropEffects)effect, keyState);
         return S_OK;
     }
 
@@ -45,7 +45,7 @@ public sealed class ChildWindowDropTarget : IOleDropTarget
     {
         var data = dataObject is null ? _current : new DataObject(dataObject);
         _current = null;
-        effect = (int)_control.ProcessDrop(data, new Point(pt.X, pt.Y), (DragDropEffects)effect);
+        effect = (int)_control.ProcessDrop(data, new Point(pt.X, pt.Y), (DragDropEffects)effect, keyState);
         return S_OK;
     }
 }

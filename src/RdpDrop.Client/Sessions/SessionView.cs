@@ -70,6 +70,7 @@ internal sealed partial class SessionView : UserControl
         _rdp.FileDragLeft += (_, _) => OnFileDragLeft();
         _agent.StateChanged += (_, _) => OnAgentStateChanged();
         _agent.DropResultReceived += (_, result) => OnDropResult(result);
+        InitializeDrops();
 
         ClientLog.Info($"Session view created for {Host} from {rdpPath}");
         if (!file.RequestsDriveRedirection)
@@ -223,6 +224,7 @@ internal sealed partial class SessionView : UserControl
             ClientLog.Info($"Session view for {Host} disposed.");
             _closeTimer?.Dispose();
             _childTargets.RevokeAll();
+            DisposeDrops();
             _agent.Dispose();
             _display.Dispose();
         }
@@ -280,7 +282,7 @@ internal sealed partial class SessionView : UserControl
         ClientLog.Info(Invariant($"Event OnDisconnected ({Host}) reason={reason} extended={extended} text=\"{text}\""));
         _agent.Stop();
         _display.OnDisconnected();
-        _pendingDropId = null;
+        ResetDrops();
         ShowFullScreenState(false);
         SetConnection(SessionState.Disconnected, DescribeDisconnect(reason, text));
 
@@ -314,6 +316,7 @@ internal sealed partial class SessionView : UserControl
         ClientLog.Error(Invariant($"Event OnFatalError ({Host}) code={errorCode}"));
         _agent.Stop();
         _display.OnDisconnected();
+        ResetDrops();
         _reconnectRequested = false;
         ShowFullScreenState(false);
         SetConnection(SessionState.Disconnected, Invariant($"Fatal error {errorCode} in the Remote Desktop control"));
@@ -356,7 +359,7 @@ internal sealed partial class SessionView : UserControl
         AgentText = _agent.State switch
         {
             AgentState.Waiting => "Agent: waiting",
-            AgentState.Ready => $"Agent ready (v{_agent.AgentVersion ?? "?"})",
+            AgentState.Ready => $"Agent ready (v{_agent.AgentVersion ?? "?"}{(_agent.NativeDrop ? ", native drop" : string.Empty)})",
             AgentState.NotFound => "No agent on the remote computer",
             _ => "Agent: not connected",
         };
