@@ -505,11 +505,19 @@ internal sealed class DragSession
         }
 
         // Leave the handler that called this before the window goes away.
-        _proxy?.BeginInvoke(() =>
+        try
         {
-            _proxy?.Close();
+            _proxy?.BeginInvoke(() =>
+            {
+                _proxy?.Close();
+                _context?.ExitThread();
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            // The window is already gone, after a failure of the drag thread.
             _context?.ExitThread();
-        });
+        }
     }
 
     private void SetPhase(Phase phase)
