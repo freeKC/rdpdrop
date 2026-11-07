@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/freeKC/rdpdrop/actions/workflows/ci.yml/badge.svg)](https://github.com/freeKC/rdpdrop/actions/workflows/ci.yml)
 
-RdpDrop lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. RdpDrop is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection for the transfer itself.
+RdpDrop lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. RdpDrop is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection for the transfer itself.
 
 ## Why
 
 The Microsoft Remote Desktop client rejects drops on its window, because RDP has no drag and drop channel. Copy and paste works, and so does drive redirection, but neither is a drop. RdpDrop adds the gesture on top of what RDP already offers.
 
-While you drag over the client window, the agent replays the same drag inside the session as a real OLE drag and drop. Any remote application that accepts dropped files therefore accepts them from RdpDrop, and shows its own drop feedback while you move. When nothing under the cursor accepts the drop, the agent copies the files to a fallback folder instead, as version 0.1 did.
+While you drag over the client window, the agent replays the same drag inside the session as a real OLE drag and drop. Any remote application that accepts dropped files therefore accepts them from RdpDrop, and shows its own drop feedback while you move. When nothing under the cursor accepts the drop, the drop is ignored: nothing is copied anywhere.
 
 The file bytes travel through drive redirection, never through the RdpDrop channel.
 
@@ -52,7 +52,7 @@ Other options:
 - `--uninstall` stops the agent from starting with your session and stops the running copy. Run it from an elevated prompt to remove the all users entry as well.
 - `--help` lists the options.
 
-To update from 0.1, exit the running agent from its tray menu, replace the executable, then start it again or sign in again.
+To update, exit the running agent from its tray menu, replace the executable, then start it again or sign in again. The client and the agent must have the same version.
 
 ### On your computer
 
@@ -84,14 +84,14 @@ The Session menu holds Connect, Disconnect and Look for the agent again.
 ### Dragging into the session
 
 1. Start the client. It connects with the settings of the .rdp file. Log on as usual.
-2. Watch the status bar at the bottom of the window. The agent label goes from "Agent: waiting" to "Agent ready (v0.2.0, native drop)". With a 0.1 agent, it shows "Agent ready (v0.1.0)" and drops work as in 0.1.
+2. Watch the status bar at the bottom of the window. The agent label goes from "Agent: waiting" to "Agent ready (v0.2.1)".
 3. Drag files or folders from Explorer onto the session. A blue banner at the top of the session says "Drop here to send the files into the session".
 4. Move over the remote application you want. It shows its own drop feedback, for example a highlighted folder or an attachment area.
 5. Release the button on the target. The remote application receives the files as a normal drop.
 
-If nothing under the cursor accepts the drop, the agent copies the files to the fallback folder. The fallback folder is the Desktop by default. You can change it from the agent tray menu, under Fallback folder: Desktop, Downloads, or Choose to pick any folder.
+If nothing under the cursor accepts the drop, the drop is ignored and the status bar says "Nothing under the cursor accepted the files." The agent never copies files on its own.
 
-When the target is Explorer, the usual Windows copy dialog appears in the session. It shows the progress and asks what to do when a file already exists.
+When the target is Explorer, Explorer shows its usual Windows copy dialog in the session. It shows the progress and asks what to do when a file already exists.
 
 RdpDrop only offers copy and link to the remote application. It never offers a move. Ctrl, Shift and Alt are not passed to the session during a drag in 0.2.
 
@@ -103,13 +103,13 @@ Messages of a drag:
 - **"Starting the drag in the session..."**: the agent needs a moment to start the drag.
 - **"Copying 2 item(s) into the session before the drag starts..."**: the agent copies the files into the session first, because "Stage files in the session before the drop" is on.
 - **"Dropped on Inbox (copy)"**: the remote window accepted the drop. It names the window and says copy or link.
-- **"Copied to C:\Users\me\Desktop (nothing under the cursor accepted the drop)"**: the agent used the fallback folder.
+- **"Nothing under the cursor accepted the files."**: the window under the cursor did not take the drop. Nothing was copied.
 - **"The agent did not acknowledge the drag"**: no answer from the agent within a second. See Troubleshooting.
 - **"Drop refused"** followed by the reason from the agent. For example "Drop refused: The previous drop is still being delivered in the session. Try again once it is done."
-- **"Drop failed: Nothing under the cursor accepted the drop, and the copy to the fallback folder is turned off."**
-- **"Cancelled"** followed by the reason, for example "Cancelled: The copy was cancelled." when you cancel the Windows copy dialog.
+- **"Drop refused: the drag did not start in the session. Drag the files again."**: the client got the drop without a drag in progress for the same files.
+- **"Cancelled"** followed by the reason, for example "Cancelled: The drag was cancelled: Escape was pressed in the session."
 
-Messages of the connection, as in 0.1:
+Messages of the connection:
 
 - **"No agent on the remote computer"**: the client sent hello messages for sixty seconds and got no answer. Start the agent in the session, then use Session, Look for the agent again.
 - **"This .rdp file does not redirect drives: drops will not work."**: the .rdp file does not share any local drive. Turn on drives in the .rdp file and reconnect.
@@ -123,7 +123,7 @@ Messages of the connection, as in 0.1:
 ### View menu
 
 - **Resize session to window**: the default. The session resolution follows the window size.
-- **Scale to window**: the session keeps its resolution and the picture is scaled to the window, as in 0.1.
+- **Scale to window**: the session keeps its resolution and the picture is scaled to the window.
 - **Scale factor**: Auto, or 100 % to 200 %. Auto follows the monitor that holds the window. A change applies to a new connection, and the client offers to reconnect.
 - **Full screen** (F11, or Ctrl+Alt+Pause): toggles full screen. The connection bar is shown and can be pinned.
 - **Use all monitors**: the session covers every monitor in full screen. It applies to a new connection.
@@ -149,9 +149,7 @@ File, Forget saved credentials deletes both kinds of credential for the host of 
 
 The tray menu of the agent holds:
 
-- **Fallback folder**: Desktop, Downloads or Choose.
 - **Stage files in the session before the drop**: off by default. When on, the agent copies the files into the session before the drag starts, and the remote application receives local paths instead of `\\tsclient` paths. Turn it on for applications that refuse network paths. Large files take time to copy before the drag starts.
-- **Copy to the fallback folder when nothing accepts the drop**: on by default. When off, a drop that nothing accepts ends with an error and no copy.
 - **Open log folder**, **About** and **Exit**.
 
 Staged copies go to `%LOCALAPPDATA%\RdpDrop\staging\<id>` in the session. Each folder is deleted one hour after its drop, because the target may still be reading the files. When the agent starts, it deletes the folders that are older than one hour.
@@ -160,15 +158,12 @@ The agent keeps its settings in `%LOCALAPPDATA%\RdpDrop\agent.json` on the serve
 
 ```json
 {
-  "fallback": "custom",
-  "customFolder": "D:\\Inbox",
   "logLevel": "debug",
-  "stageFiles": false,
-  "fallbackCopy": true
+  "stageFiles": false
 }
 ```
 
-`fallback` is `desktop`, `downloads` or `custom`. `customFolder` is used when `fallback` is `custom`. `logLevel` is `debug`, `info`, `warn` or `error`, and `info` when absent. `stageFiles` is `false` when absent. `fallbackCopy` is `true` when absent. Restart the agent after editing the file by hand.
+`logLevel` is `debug`, `info`, `warn` or `error`, and `info` when absent. `stageFiles` is `false` when absent. Restart the agent after editing the file by hand.
 
 ## How it works
 
@@ -179,21 +174,18 @@ The client hosts the Microsoft Remote Desktop ActiveX control and registers itse
 3. The agent answers `dragAck`. Without that answer within a second, the client stops the drag.
 4. While you move, the client sends `dragMove`. The agent moves the remote cursor, so the application under it sees the drag and shows its feedback.
 5. When you release the button, the client sends `drop`. The agent moves the cursor to the final point and releases the simulated button there. If you leave the session instead, the client sends `dragLeave` and the agent cancels the drag.
-6. The agent reports `dropResult` with the effect: `copy` or `link` when the target accepted, `fallbackCopy` when it copied to the fallback folder, or `none`. The client shows it in the status bar.
+6. The agent reports `dropResult` with the effect: `copy` or `link` when the target accepted, or `none` when nothing under the cursor accepted the files. With `none`, the drop is ignored. The client shows the result in the status bar.
 
 The drag offers copy and link only, never move. Modifier keys are recorded in the logs but not injected in 0.2.
-
-A 0.2 client talks to a 0.1 agent with the 0.1 `drop` message, which copies to the folder under the cursor. A 0.2 agent handles the 0.1 `drop` message the same way, so a 0.1 client keeps working with it.
 
 Messages are JSON objects sent as ASCII lines, and each side detects at run time how the control maps channel bytes to characters. See [docs/design.md](docs/design.md) for the details.
 
 ## Troubleshooting
 
 - **The agent never becomes ready.** Check that the agent runs in the session: its icon should be in the tray. A server policy may also block virtual channels. The agent log says so when it cannot open the channel.
-- **"The agent did not acknowledge the drag".** The agent did not answer the start of the drag within a second. A slow connection or a busy agent can cause it. A 0.1 agent does not cause this message: with it, the agent label has no "native drop" and the client sends the 0.1 drop. When the status bar says "The session does not accept simulated input", the session may be locked, or a policy may block simulated input. Please report it with both logs.
-- **The target shows no drop feedback.** The application under the cursor may not accept files. Some applications also refuse network paths such as `\\tsclient\C\...`. For those, turn on "Stage files in the session before the drop" in the agent tray menu.
+- **"The agent did not acknowledge the drag".** The agent did not answer the start of the drag within a second. A slow connection or a busy agent can cause it. When the status bar says "The session does not accept simulated input", the session may be locked, or a policy may block simulated input. Please report it with both logs.
+- **The target shows no drop feedback, or the status bar says "Nothing under the cursor accepted the files."** The application under the cursor may not accept files at that place. Some applications also refuse network paths such as `\\tsclient\C\...`. For those, turn on "Stage files in the session before the drop" in the agent tray menu.
 - **The first drop on Explorer takes several seconds.** Explorer reads the redirected drive the first time, which can be slow. Later drops are usually faster.
-- **Files landed in the fallback folder.** Nothing under the cursor accepted the drop. The status bar says so. To stop these copies, turn off "Copy to the fallback folder when nothing accepts the drop".
 - **Ctrl+W or Ctrl+O does nothing.** When the session has the keyboard, these keys go to the remote computer, like every other key. Use the File menu instead.
 - **Drops are refused because of the drives.** Turn on drive redirection in the .rdp file, under Local Resources, More, Drives. On the server, check the policy "Do not allow drive redirection".
 - **The drop lands on the wrong window.** Coordinate scaling after a window resize, or full screen over several monitors, can be the cause. Please report it with both logs.
@@ -219,7 +211,7 @@ Releases are built by GitHub Actions when a `v*` tag is pushed. The workflow bui
 
 ## Security notes
 
-- The agent only reads from `\\tsclient\`, that is from the drives you chose to share. It only writes inside the session of the same user, in the folder you drop on, the fallback folder or its staging folder. It does not run as a service and has no privilege beyond your own.
+- The agent only reads from `\\tsclient\`, that is from the drives you chose to share. The agent itself only writes to its staging folder in your session, when staging is on. The application you drop on decides where the files go. The agent does not run as a service and has no privilege beyond your own.
 - The agent simulates input only inside your own session, and only between the start and the end of a drag. It only uses the left mouse button. It injects the press only once its own proxy window is under the cursor, so the press never reaches another application. To cancel, it posts Escape to its proxy window instead of simulating a key.
 - The agent never offers a move. A move accepted in the session could delete the file on your local disk through the redirected drive.
 - Messages carry file paths, coordinates, modifier key flags and window names only. No file content goes through the channel.
@@ -227,14 +219,14 @@ Releases are built by GitHub Actions when a `v*` tag is pushed. The workflow bui
 
 ## Status
 
-Version 0.2.0 is a test release.
+Version 0.2.1 is a test release.
 
-Verified in a real Remote Desktop session, with 0.1:
+Verified in a real Remote Desktop session:
 
-- The copy drop: a drop landed on the remote desktop as expected.
-- The channel byte model: one byte per character in both directions.
+- The virtual channel between the client and the agent, with one byte per character in both directions.
+- The transfer through drive redirection to the remote desktop.
 
-The live drag of 0.2 was verified on a local desktop with Explorer as the target. It is not yet verified inside a Remote Desktop session.
+The live drag was verified on a local desktop with Explorer as the target. It is not yet verified inside a Remote Desktop session.
 
 Feedback that helps:
 

@@ -1,15 +1,17 @@
 # RdpDrop design
 
-Date: 2026-11-05
+Date: 2026-11-05, updated on 2026-11-07 for version 0.2.1.
 
 ## Goal
 
 Let a user drag files or folders from the local Windows desktop and drop them
-into a Remote Desktop session, at the place where the cursor is released.
+into a Remote Desktop session, on the application under the cursor when the
+button is released. The application receives them as a normal drop. When
+nothing under the cursor accepts them, the drop is ignored.
 The transfer uses the standard RDP drive redirection; RdpDrop only adds the
 "drop" gesture on top of it.
 
-Scope of version 1:
+Scope:
 
 * Direction: local computer to remote session only. The other direction keeps
   using copy and paste.
@@ -17,19 +19,20 @@ Scope of version 1:
   install, nothing written to the registry.
 * Server: Windows Server (2016 or later) or Windows 10/11 acting as a Remote
   Desktop host. A small agent runs in the user session.
-* Single remote monitor.
+* Full desktop sessions, in a window or in full screen on one monitor or on
+  all monitors.
 * Works through a Remote Desktop Gateway, because it only relies on a static
   virtual channel and on drive redirection, both of which the gateway forwards.
 
-Out of scope for version 1: drag from the session to the local desktop,
-multi monitor sessions, RemoteApp, connections without drive redirection.
+Out of scope: drag from the session to the local desktop, RemoteApp,
+connections without drive redirection.
 
 ## Why not something simpler
 
 The RDP protocol has no drag and drop channel. The Microsoft client (mstsc)
 rejects drops on its window before the server is ever involved. So a piece of
-code must run on the client side to catch the drop, and a piece of code must
-run inside the session to perform it. The transfer itself does not need any
+code must run on the client side to catch the drag, and a piece of code must
+run inside the session to replay it. The transfer itself does not need any
 new code: once drive redirection is on, every local drive is reachable from
 the session as `\\tsclient\<letter>`.
 
@@ -53,16 +56,23 @@ README.md, LICENSE (MIT), .gitignore, .editorconfig
 ### Data flow
 
 ```
-local desktop      RdpDrop.Client                 RDP           RdpDrop.Agent (in session)
-    |                    |                         |                    |
-    | drag file(s)       |                         |                    |
-    |------------------->| drop at (x,y)           |                    |
-    |                    | map to remote coords    |                    |
-    |                    | "drop" message -------->| static VC -------->| resolve folder under (x,y)
-    |                    |                         |                    | copy \\tsclient\C\... -> folder
-    |                    |<------- "dropResult" ---|<-------------------| (Explorer progress dialog)
-    |                    | show result in status bar                    |
+local desktop      RdpDrop.Client                  RDP              RdpDrop.Agent (in session)
+    |                    |                           |                      |
+    | drag file(s)       |                           |                      |
+    |------------------->| first drag over at (x,y)  |                      |
+    |                    | map to remote coords      |                      |
+    |                    | "dragEnter" (paths) ----->| static VC ---------->| proxy window, simulated press,
+    |                    |                           |                      | DoDragDrop with \\tsclient\C\... paths
+    |                    |<------------ "dragAck" ---|<---------------------|
+    |                    | "dragMove" while moving ->|--------------------->| move the remote cursor, the window
+    |                    |                           |                      | under it shows its drop feedback
+    | release button     | "drop" at (x,y) --------->|--------------------->| release the button on the target
+    |                    |<--------- "dropResult" ---|<---------------------| copy, link, or none (ignored)
+    |                    | show result in status bar                        |
 ```
+
+Leaving the session during the drag sends `dragLeave` instead of `drop`, and
+the agent cancels the drag inside the session.
 
 ### RdpDrop.Core
 
@@ -77,35 +87,67 @@ Pure logic shared by the two apps and covered by tests.
 * `RdpFile`: parser for `.rdp` files (`key:type:value` lines, `s`, `i`, `b`
   types, UTF-16 with BOM or UTF-8, blank lines and comments ignored). Exposes
   typed getters with defaults.
-* `TargetFolderPolicy`: given what the agent found under the cursor (an
-  Explorer window showing a file system folder, the desktop, or something
-  else) and the configured fallback, returns the folder to use. No COM here;
-  the agent feeds it plain values.
+* `SessionDisplay`: size and scale rules for the remote desktop, as accepted
+  by the control and by the display control channel of the server.
+* `AccountName`: splits the user name of a saved Windows credential into the
+  user name and domain that the control takes.
+* `RecentList`: rules of the list of recent connection files.
 
 ### Protocol
 
 Static virtual channel named `RDPDROP` (seven characters, the maximum for a
 static channel). Every message is one line (see "Wire encoding" below).
-Messages are JSON objects with a `type` field.
+Messages are JSON objects with a `type` field. Fields that have no value are
+not written.
 
 Client to agent:
 
-* `hello` : `{ "type": "hello", "version": 1, "clientVersion": "0.1.0" }`
-* `drop` : `{ "type": "drop", "id": "<guid>", "x": 412, "y": 300,
-  "items": [ { "clientPath": "C:\\Users\\me\\a.txt", "isDirectory": false } ] }`
-  `x` and `y` are pixels in the remote desktop coordinate space.
+* `hello` : `{ "type": "hello", "version": 1, "clientVersion": "0.2.1" }`
+* `dragEnter` : `{ "type": "dragEnter", "id": "<guid>", "x": 412, "y": 300,
+  "items": [ { "clientPath": "C:\\Users\\me\\a.txt", "isDirectory": false } ],
+  "keyState": 0 }`
+* `dragMove` : `{ "type": "dragMove", "id": "<guid>", "x": 420, "y": 310,
+  "keyState": 0 }`
+* `drop` : `{ "type": "drop", "id": "<guid>", "x": 420, "y": 310,
+  "keyState": 0 }`
+* `dragLeave` : `{ "type": "dragLeave", "id": "<guid>" }`
 
 Agent to client:
 
-* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.1.0",
+* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.2.1",
   "driveRedirectionAvailable": true }`
+* `dragAck` : `{ "type": "dragAck", "id": "<guid>", "accepted": true,
+  "message": "optional text" }`
 * `dropResult` : `{ "type": "dropResult", "id": "<guid>",
-  "status": "ok" | "error" | "cancelled", "targetFolder": "C:\\Users\\me\\Desktop",
-  "message": "human readable text" }`
+  "status": "ok" | "error" | "cancelled", "effect": "copy" | "link" | "none",
+  "message": "human readable text", "targetWindow": { "className": "CabinetWClass",
+  "title": "Documents", "childClassName": "DirectUIHWND", "processName": "explorer" } }`
 
-Version handling: both sides send `version: 1`. A receiver that sees a higher
-major version replies with an error `dropResult` or ignores the message and
-logs it. Unknown fields are ignored.
+Field notes:
+
+* `id` is chosen by the client in `dragEnter` and repeated by every message of
+  the same drag, including `drop`, `dragAck` and `dropResult`.
+* `x` and `y` are pixels in the remote desktop coordinate space, counted from
+  the top left corner of the session desktop.
+* `keyState` holds the modifier keys held on the client: 1 for Ctrl, 2 for
+  Shift, 4 for Alt. Zero when absent.
+* `dragAck` with `accepted: false` refuses the drag; `message` gives the
+  reason. An accepted `dragAck` may carry a note, such as a long staging.
+* `dropResult` with status `ok` and effect `copy` or `link` means the target
+  accepted the drop. Status `ok` with effect `none` means nothing under the
+  cursor accepted the files: the drop is ignored, nothing is copied, and the
+  message is "Nothing under the cursor accepted the files." Status `error`
+  means the drop could not be delivered; the message says why, for example
+  "No drag in progress for this drop." for a `drop` whose id matches no live
+  drag. Status `cancelled` means the drag was cancelled after the drop was
+  sent, for example by Escape in the session.
+* `targetWindow` describes the window under the drop point, when known.
+
+Version handling: both sides send `version: 1` in their hello. The agent
+answers a message that carries a higher version with an error `dropResult`
+when the message has an id, and logs it; the client ignores and logs an agent
+hello with a higher version. Unknown fields are ignored. The client and the
+agent must run the same version of RdpDrop.
 
 #### Wire encoding
 
@@ -147,46 +189,54 @@ tested.
 
 A WinForms application (`net10.0-windows`, x64) that embeds the Microsoft RDP
 ActiveX control (`mstscax.dll`) through the `Devolutions.MsRdpEx` NuGet
-package. If that package turns out not to provide a working WinForms host on
-.NET 10, the fallback is generating the interop assemblies with `aximp` and
-`tlbimp` from the Windows SDK during the build.
+package.
 
 Behaviour:
 
 1. Start with `RdpDrop.Client.exe <file.rdp>`; without an argument, show an
-   open file dialog filtered on `.rdp`.
+   open file dialog filtered on `.rdp`. Each session opens in its own tab
+   (see "Step 3: connections" below).
 2. Read the `.rdp` file with `RdpFile` and apply the settings that matter:
    full address, server port, username, domain, gateway host name and usage
    method, gateway credentials source, authentication level, prompt for
    credentials, redirect clipboard, redirect drives and drives to redirect,
-   desktop width and height, screen mode id (full screen is ignored in
-   version 1 and a windowed session is used instead, because a full screen
-   window cannot receive a drop from the local desktop).
-   Settings that have no equivalent on the control are ignored.
+   desktop width and height, and the keys listed under "Step 1: packaging and
+   display" below. The session always starts in a window, even when the file
+   asks for full screen, because a full screen window cannot receive a drop
+   from the local desktop; full screen is available afterwards from the View
+   menu. Settings that have no equivalent on the control are ignored.
 3. Before connecting, call `CreateVirtualChannels("RDPDROP")` on the control
    and enable drive redirection if the `.rdp` file asks for it. If the file
    does not redirect drives, connect anyway and show a warning in the status
    bar: drops will not work.
 4. Desktop size: the control is docked to fill the window. At connect time the
-   desktop size is the control client size. Smart sizing is enabled so that a
-   later resize scales the picture; drop coordinates are converted with the
-   ratio between the desktop size and the control size.
+   desktop size is the control client size. By default the session is
+   resized to follow the window; the View menu can instead scale the picture
+   (smart sizing). Drop coordinates are converted with the ratio between the
+   desktop size and the control size.
 5. Drop target: the main form has `AllowDrop`. In addition, after the control
    is created, the client walks the child windows of the control and
    registers its own `IDropTarget` on each one with `RegisterDragDrop`
-   (revoking any existing registration first). This guarantees that the drop
+   (revoking any existing registration first). This guarantees that the drag
    reaches us even if the ActiveX window has its own registration. Only
    `CF_HDROP` data is accepted.
-6. On drop: build the item list, convert the point, send a `drop` message
-   with a new id, write "Sending N item(s)…" in the status bar. On
-   `dropResult`, show the result text. If the agent is not ready, refuse the
-   drop with the "not allowed" cursor and explain in the status bar.
+6. During a drag: on the first drag over the session, map the items with
+   `ClientPathMapper` (a UNC path refuses the drag), convert the point and
+   send `dragEnter` with a new id; then send `dragMove` while the cursor moves,
+   and `drop` or `dragLeave` at the end. The details are in "Step 2: native
+   drop into any remote application" below. On `dropResult`, show the result
+   text in the status bar. If the session is not connected or the agent is not
+   ready, refuse the drag with the "not allowed" cursor and explain in the
+   status bar.
 7. Agent discovery: after `OnConnected`, send `hello` every two seconds until
-   the agent answers or sixty seconds pass. Status bar shows "Agent: waiting",
-   then "Agent ready (vX)" or "No agent on the remote computer".
+   the agent answers or sixty seconds pass. Any hello from the agent makes it
+   ready. Status bar shows "Agent: waiting", then "Agent ready (vX)" or
+   "No agent on the remote computer". When the agent reports that no
+   redirected drive is reachable, the status bar says that drops will not
+   work.
 8. Status bar at the bottom: connection state, agent state, last drop
-   result. Menu: Session (Connect, Disconnect, Quit), Help (About, link to
-   the README).
+   result. Menus: File, Session (Connect, Disconnect, Look for the agent
+   again), View and Help (About, Project page, Open log folder).
 9. Disconnection shows the reason text from the control and keeps the window
    open so the user can reconnect.
 
@@ -209,41 +259,51 @@ Behaviour:
    `WM_WTSSESSION_CHANGE` to retry at once after a reconnect.
 2. On `hello`: reply with the agent version and whether at least one
    `\\tsclient\<letter>` is reachable.
-3. On `drop`:
-   * Map every item with `ClientPathMapper` and check that the mapped path
-     exists. Missing items produce an error result that names them.
-   * Find the folder under the cursor: `WindowFromPoint`, then the root
-     window. Enumerate `Shell.Application.Windows()`; a window whose `HWND`
-     equals the root and whose document is a folder view gives
-     `Document.Folder.Self.Path`. If the root is the desktop window
-     (class `Progman` or `WorkerW`), use the desktop folder. Otherwise use the
-     configured fallback folder (desktop by default, downloads or a custom
-     path as alternatives). Only file system paths are accepted; a virtual
-     folder such as "This PC" falls back too. The decision itself lives in
-     `TargetFolderPolicy` in Core.
-   * Copy with `Microsoft.VisualBasic.FileIO.FileSystem.CopyFile` and
-     `CopyDirectory` using `UIOption.AllDialogs`, on an STA thread. This gives
-     the regular Windows progress dialog and conflict prompts.
-   * Reply `dropResult` with `ok`, `cancelled` (user cancelled the dialog)
-     or `error`.
-4. Tray menu: Fallback folder (Desktop, Downloads, Choose…), Open log folder,
-   About, Exit. Settings in `%LOCALAPPDATA%\RdpDrop\agent.json`. Logs in
+3. On `dragEnter`: map every item with `ClientPathMapper` and check that the
+   mapped path exists; a missing item or missing drive redirection refuses
+   the drag with a `dragAck` that names the cause. When staging is on, copy
+   the items into the staging folder first. Then replay the drag inside the
+   session with `DoDragDrop`, as described in "Step 2: native drop into any
+   remote application" below, and answer `dragAck`.
+4. On `dragMove`, `drop` and `dragLeave`: move the remote cursor, release
+   the simulated button on the target, or cancel the drag. When `DoDragDrop`
+   ends, reply `dropResult`: `ok` with effect `copy` or `link` when the
+   target accepted, `ok` with effect `none` when nothing under the cursor
+   accepted the files, `cancelled` or `error` otherwise. A drop that nothing
+   accepts is ignored: the agent never copies files on its own. A `drop`
+   whose id matches no live drag gets an error result, "No drag in progress
+   for this drop.", and is logged.
+5. Tray menu: Stage files in the session before the drop, Open log folder,
+   About, Exit. Settings in `%LOCALAPPDATA%\RdpDrop\agent.json` (`stageFiles`,
+   and `logLevel` which is only editable in the file). Logs in
    `%LOCALAPPDATA%\RdpDrop\logs\agent-<date>.log`, rotated by day, kept
    fourteen days.
-5. Command line:
+6. Command line:
    * `--install`: add a `Run` value under `HKCU` so the agent starts with the
      user session, then start the agent.
    * `--uninstall`: remove that value and stop any running instance.
    * `--install-all-users`: same under `HKLM` (needs an elevated prompt).
+   * `--help`: list the options.
    * no argument: run.
 
 ## Error handling
 
 * Drop without agent: refused on the client, explained in the status bar.
-* Drop without drive redirection: agent answers with an error that says the
-  drives are not redirected and points to the Local Resources setting.
+* Drop without drive redirection: the agent refuses the drag with a text that
+  says the drives are not redirected and points to the Local Resources
+  setting.
 * Item not reachable from the session (path on a drive that is not
-  redirected, removable drive unplugged): error result naming the item.
+  redirected, removable drive unplugged): the agent refuses the drag and names
+  the item.
+* No `dragAck` within a second: the client shows "The agent did not
+  acknowledge the drag", sends `dragLeave` and refuses the drop.
+* No message from the client for five seconds during a drag: the agent
+  cancels the drag in the session. The watchdog stops once the client
+  dropped.
+* Nothing under the cursor accepts the files: `dropResult` with status `ok`
+  and effect `none`; the drop is ignored.
+* A `drop` whose id matches no live drag: `dropResult` with status `error`
+  and the message "No drag in progress for this drop."
 * Agent cannot open the channel (console session, policy forbidding the
   channel): logged once at warning level, then silent retries.
 * Protocol error (a line too long or bad JSON): logged, line reader reset,
@@ -252,20 +312,28 @@ Behaviour:
 ## Security notes
 
 * The agent only reads from `\\tsclient\`, that is from the drives the client
-  user chose to share, and only writes inside the session of the same user.
-  It does not run as a service and has no privilege beyond the user's own.
-* Messages carry file names and coordinates only. No file content transits
-  through the channel.
-* The client does not store credentials. Credential prompts come from the
+  user chose to share. It writes only to its own staging folder in the
+  session, when staging is on. Where the dropped files go is decided by the
+  application that accepts the drop. The agent does not run as a service and
+  has no privilege beyond the user's own.
+* Simulated input happens only inside the user's own session, only during a
+  drag, and only with the left button. See "Step 2" for the details.
+* Messages carry file names, coordinates, modifier key flags and window names
+  only. No file content transits through the channel.
+* The client never writes credentials. It reads the generic credential
+  `TERMSRV/<host>` when one exists; other credential prompts come from the
   Microsoft control.
 
 ## Testing
 
 * `RdpDrop.Core.Tests` covers: framing round trip, split and merged chunks,
-  oversize lines, JSON round trip of every message, path mapping (drive
-  letter case, UNC rejection, relative rejection), `.rdp` parsing (UTF-16 and
-  UTF-8, types, defaults), target folder policy (Explorer folder, desktop,
-  virtual folder, nothing under cursor, each fallback).
+  oversize lines, byte model detection and conversion in both directions,
+  JSON round trip of every message (hello, dragEnter, dragMove, drop,
+  dragLeave, dragAck, dropResult) and rejection of malformed ones, key state
+  flags, path mapping (drive letter case, UNC rejection, relative rejection),
+  `.rdp` parsing (UTF-16 and UTF-8, types, defaults), session display sizes
+  and scale factors, account names of saved credentials, and the recent
+  connections list.
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -295,7 +363,7 @@ each one built, tested and committed before the next starts.
   delete anything that is not the `.exe` before zipping. The executable runs
   without elevation (manifest `asInvoker`, extraction of native libraries
   to the user temp folder).
-* View menu with "Scale to window" (smart sizing, the 0.1 behaviour) and
+* View menu with "Scale to window" (smart sizing) and
   "Resize session to window" (default): on a window resize, debounced by
   about 300 ms, call `UpdateSessionDisplaySettings` on the control
   (`IMsRdpClient9` or later) so that the session resolution follows the
@@ -370,13 +438,12 @@ the user released the button.
   client dropped, because the target may keep its `Drop` call open while
   it shows a dialog.
 * Result: `dropResult` carries an `effect` (`copy` or `link` when the
-  target accepted, `none`, or `fallbackCopy` when the agent copied to the
-  fallback folder; move cannot happen since it is never offered) and, when
-  known, `targetWindow` with the class and title of the target.
-  When the target returned none and the setting "copy to the fallback
-  folder when nothing accepts the drop" is on (default on, so that 0.1
-  behaviour is kept), the agent performs the 0.1 copy into the fallback
-  folder and says so in the result.
+  target accepted, `none` otherwise; move cannot happen since it is never
+  offered) and, when known, `targetWindow` with the class and title of the
+  target. When `DoDragDrop` ends with effect none, the drop is ignored: the
+  agent copies nothing and replies status `ok`, effect `none` and the
+  message "Nothing under the cursor accepted the files.", which the client
+  shows as is.
 * Acknowledgement and timeouts: the agent answers `dragEnter` with
   `dragAck` once the drag loop runs, or with a refusal and its reason.
   When that takes more than 700 ms (staging of large files), it first
@@ -392,11 +459,6 @@ the user released the button.
   `DragEnter`, so that the point is known), `dragMove` while hovering,
   `drop` or `dragLeave` at the end. The local drag effect shown to the user
   is copy while the agent is in the drag, none when it refused.
-* Compatibility: a 0.1 agent ignores the new message types; the client
-  detects a 0.1 agent from the absence of `nativeDrop: true` in its hello
-  and falls back to the 0.1 `drop` message, which keeps the copy to the
-  folder under the cursor. A 0.2 agent treats a `drop` whose id matches no
-  live drag the same way, so a 0.1 client keeps working with it.
 * Security: the simulated input happens only inside the user's own
   session, only between a `dragEnter` and the matching `drop` or
   `dragLeave`, and only with the left button. Cancelling posts an Escape
@@ -426,3 +488,14 @@ the user released the button.
 * Code review of the three steps, README update (new menus, modifiers,
   tabs, credentials), release notes `docs/releases/v0.2.0.md`, tag
   `v0.2.0`.
+
+## Version 0.2.1
+
+Simplification decided on 2026-11-07:
+
+* A drop that nothing under the cursor accepts is ignored. The agent never
+  copies files on its own: the fallback copy is gone, with its folder
+  setting and its tray menu entries.
+* The live drag is the only drop path. The `drop` message only ends a live
+  drag and carries no items; the agent hello has no capability flag. The
+  client and the agent must both run 0.2.1.
