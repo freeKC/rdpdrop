@@ -12,7 +12,7 @@ internal sealed record MappedItem(string Path, bool IsDirectory, string Name);
 
 /// <summary>
 /// Maps the client paths of a drop to the redirected drives and checks that every item
-/// can be read from the session. Shared by the 0.1 copy and the drag inside the session.
+/// can be read from the session, before the drag inside the session starts.
 /// </summary>
 internal static class ItemMapper
 {

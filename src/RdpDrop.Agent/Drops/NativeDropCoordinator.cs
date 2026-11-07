@@ -10,8 +10,8 @@ namespace RdpDrop.Agent.Drops;
 /// Runs the live drag protocol of the agent: prepares a drag on <c>dragEnter</c> (checks
 /// and optionally stages the items, then starts a <see cref="DragSession"/>), answers
 /// with <c>dragAck</c>, forwards <c>dragMove</c>, <c>drop</c> and <c>dragLeave</c>, and
-/// sends the <c>dropResult</c>, with the 0.1 copy as a fallback when nothing accepted
-/// the drop. One drag at a time: a new <c>dragEnter</c> cancels the current one.
+/// sends the <c>dropResult</c>. A drop that nothing under the cursor accepts is ignored.
+/// One drag at a time: a new <c>dragEnter</c> cancels the current one.
 /// </summary>
 internal sealed class NativeDropCoordinator : IDisposable
 {
@@ -26,24 +26,25 @@ internal sealed class NativeDropCoordinator : IDisposable
 
     private const int RememberedDrags = 16;
 
+    /// <summary>Message of the result when the drop ended and no window accepted it.</summary>
+    private const string NothingAcceptedText = "Nothing under the cursor accepted the files.";
+
     private readonly FileLogger _logger;
     private readonly Func<Message, bool> _send;
     private readonly AgentSettings _settings;
     private readonly DriveRedirectionProbe _probe;
-    private readonly DropExecutor _executor;
     private readonly StagingFolder _staging;
     private readonly Lock _gate = new();
     private readonly Queue<string> _endedOrder = new();
     private readonly Dictionary<string, string> _ended = [];
     private NativeDrag? _current;
 
-    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, DropExecutor executor, StagingFolder staging)
+    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging)
     {
         _logger = logger;
         _send = send;
         _settings = settings;
         _probe = probe;
-        _executor = executor;
         _staging = staging;
     }
 
@@ -138,11 +139,10 @@ internal sealed class NativeDropCoordinator : IDisposable
     }
 
     /// <summary>
-    /// Ends the drag with id <paramref name="drop"/>.Id natively and returns true, or
-    /// returns false when no drag with this id is known, so that the caller does the 0.1
-    /// copy. Called on the channel thread.
+    /// Ends the drag with the id of <paramref name="drop"/> by a drop inside the session.
+    /// A drop that matches no drag gets an error result. Called on the channel thread.
     /// </summary>
-    public bool TryDrop(DropMessage drop)
+    public void OnDrop(DropMessage drop)
     {
         var drag = Find(drop.Id);
         if (drag is null)
@@ -155,12 +155,16 @@ internal sealed class NativeDropCoordinator : IDisposable
 
             if (reason is null)
             {
-                return false;
+                reason = "No drag in progress for this drop.";
+                _logger.Warn($"Drag {drop.Id}: drop at ({drop.X}, {drop.Y}) ignored, no drag in progress with this id.");
+            }
+            else
+            {
+                _logger.Info($"Drag {drop.Id}: drop after the drag already ended ({reason}).");
             }
 
-            _logger.Info($"Drag {drop.Id}: drop after the drag already ended ({reason}).");
             _send(new DropResultMessage(drop.Id, DropStatus.Error, Message: reason, Effect: DropEffect.None));
-            return true;
+            return;
         }
 
         _logger.Info($"Drag {drop.Id}: drop at ({drop.X}, {drop.Y}), keys {KeyStates.Describe(drop.KeyState)}.");
@@ -172,7 +176,6 @@ internal sealed class NativeDropCoordinator : IDisposable
         }
 
         session?.Drop(drop.X, drop.Y);
-        return true;
     }
 
     public void Dispose()
@@ -356,20 +359,10 @@ internal sealed class NativeDropCoordinator : IDisposable
                 _send(new DropResultMessage(drag.Id, DropStatus.Ok, Message: $"Dropped on {where}", Effect: effect, TargetWindow: target));
                 break;
 
-            case DragOutcome.Dropped when drop is not null && _settings.FallbackCopy:
-                Forget(drag, "The drag already ended with a drop.");
-                _logger.Info($"Drag {drag.Id}: nothing accepted the drop; copying to the fallback folder.");
-                StaThread.Start("RdpDrop fallback " + drag.Id, () => RunFallback(drop, target));
-                break;
-
             case DragOutcome.Dropped:
                 Forget(drag, "The drag already ended with a drop.");
-                _send(new DropResultMessage(
-                    drag.Id,
-                    DropStatus.Error,
-                    Message: "Nothing under the cursor accepted the drop, and the copy to the fallback folder is turned off.",
-                    Effect: DropEffect.None,
-                    TargetWindow: target));
+                _logger.Info($"Drag {drag.Id}: nothing under the cursor accepted the files; the drop is ignored.");
+                _send(new DropResultMessage(drag.Id, DropStatus.Ok, Message: NothingAcceptedText, Effect: DropEffect.None, TargetWindow: target));
                 break;
 
             case DragOutcome.Cancelled when drop is not null:
@@ -399,28 +392,6 @@ internal sealed class NativeDropCoordinator : IDisposable
 
                 break;
         }
-    }
-
-    private void RunFallback(DropMessage drop, TargetWindowInfo? target)
-    {
-        DropResultMessage result;
-        try
-        {
-            result = _executor.Execute(drop);
-        }
-        catch (Exception ex)
-        {
-            _logger.Error($"Drag {drop.Id}: the fallback copy failed unexpectedly.", ex);
-            result = new DropResultMessage(drop.Id, DropStatus.Error, Message: "The agent hit an unexpected error: " + ex.Message);
-        }
-
-        result = result with
-        {
-            Effect = result.Status == DropStatus.Ok ? DropEffect.FallbackCopy : DropEffect.None,
-            TargetWindow = target,
-        };
-        _logger.Info($"Drag {drop.Id}: fallback copy finished: {result.Status}. {result.Message}");
-        _send(result);
     }
 
     private void Refuse(NativeDrag drag, string reason)

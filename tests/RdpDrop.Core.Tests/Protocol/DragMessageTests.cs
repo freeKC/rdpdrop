@@ -157,7 +157,6 @@ public class DragMessageTests
     [InlineData(DropEffect.Copy, "copy")]
     [InlineData(DropEffect.Link, "link")]
     [InlineData(DropEffect.None, "none")]
-    [InlineData(DropEffect.FallbackCopy, "fallbackCopy")]
     public void Drop_result_effect_round_trips(DropEffect effect, string expected)
     {
         var result = new DropResultMessage("id", DropStatus.Ok, Message: "done", Effect: effect);
@@ -243,6 +242,7 @@ public class DragMessageTests
     [InlineData("""{ "type": "dragAck", "accepted": true }""")]
     [InlineData("""{ "type": "drop", "id": "a", "x": 1, "y": 2, "items": [], "keyState": true }""")]
     [InlineData("""{ "type": "dropResult", "id": "a", "status": "ok", "effect": "move" }""")]
+    [InlineData("""{ "type": "dropResult", "id": "a", "status": "ok", "effect": "fallbackCopy" }""")]
     [InlineData("""{ "type": "dropResult", "id": "a", "status": "ok", "effect": 1 }""")]
     [InlineData("""{ "type": "dropResult", "id": "a", "status": "ok", "targetWindow": "explorer" }""")]
     [InlineData("""{ "type": "hello", "version": 1, "nativeDrop": "true" }""")]

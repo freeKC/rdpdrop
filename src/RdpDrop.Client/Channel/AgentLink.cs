@@ -248,7 +248,7 @@ internal sealed class AgentLink : IDisposable
                 break;
 
             case DropResultMessage result:
-                ClientLog.Info($"Drop result {result.Id}: {result.Status}, effect {result.Effect?.ToString() ?? "(not said)"}, folder \"{result.TargetFolder}\", window {result.TargetWindow?.ClassName ?? "(none)"} \"{result.TargetWindow?.Title}\" {result.TargetWindow?.ProcessName}, message \"{result.Message}\"");
+                ClientLog.Info($"Drop result {result.Id}: {result.Status}, effect {result.Effect?.ToString() ?? "(not said)"}, window {result.TargetWindow?.ClassName ?? "(none)"} \"{result.TargetWindow?.Title}\" {result.TargetWindow?.ProcessName}, message \"{result.Message}\"");
                 DropResultReceived?.Invoke(this, result);
                 break;
 

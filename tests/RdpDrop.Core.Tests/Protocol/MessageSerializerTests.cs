@@ -155,14 +155,13 @@ public class MessageSerializerTests
     [InlineData(DropStatus.Cancelled, "cancelled")]
     public void Drop_result_round_trips_with_lowercase_status(DropStatus status, string expected)
     {
-        var result = new DropResultMessage("id-2", status, @"C:\Users\me\Desktop", "2 items copied");
+        var result = new DropResultMessage("id-2", status, "Dropped on Documents");
 
         var json = ToJson(result);
 
         Assert.Equal("dropResult", json.GetProperty("type").GetString());
         Assert.Equal(expected, json.GetProperty("status").GetString());
-        Assert.Equal(@"C:\Users\me\Desktop", json.GetProperty("targetFolder").GetString());
-        Assert.Equal("2 items copied", json.GetProperty("message").GetString());
+        Assert.Equal("Dropped on Documents", json.GetProperty("message").GetString());
         Assert.Equal(result, RoundTrip(result));
     }
 
@@ -173,7 +172,8 @@ public class MessageSerializerTests
 
         var json = ToJson(result);
 
-        Assert.False(json.TryGetProperty("targetFolder", out _));
+        Assert.False(json.TryGetProperty("effect", out _));
+        Assert.False(json.TryGetProperty("targetWindow", out _));
         Assert.Equal(result, RoundTrip(result));
     }
 

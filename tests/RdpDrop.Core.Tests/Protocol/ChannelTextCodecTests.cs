@@ -242,7 +242,7 @@ public class ChannelTextCodecTests
         var agentText = ChannelTextCodec.BytesToText(agentBytes, agentModel);
         Assert.Equal(LineFraming.EncodeLine(drop), agentText);
 
-        var reply = new DropResultMessage("id", DropStatus.Ok, @"C:\Users\me\Desktop", "Copied a.txt");
+        var reply = new DropResultMessage("id", DropStatus.Ok, "Dropped on Zoë", DropEffect.Copy);
         var clientString = deliver(LineFraming.EncodeBytes(reply, agentModel));
         var clientModel = ChannelTextCodec.DetectFromControlString(clientString);
         Assert.Equal(ChannelByteModel.OneBytePerChar, clientModel);

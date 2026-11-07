@@ -6,23 +6,22 @@ using Message = RdpDrop.Core.Protocol.Message;
 namespace RdpDrop.Agent.Channel;
 
 /// <summary>
-/// Reacts to the messages sent by the client. Runs on the channel thread, so anything
-/// slow (a drop) goes to its own thread and replies when it is done.
+/// Reacts to the messages sent by the client. Runs on the channel thread; the drag
+/// messages go to the <see cref="NativeDropCoordinator"/>, which does the slow work on its
+/// own threads.
 /// </summary>
 internal sealed class AgentProtocolHandler
 {
     private readonly FileLogger _logger;
     private readonly Func<Message, bool> _send;
     private readonly DriveRedirectionProbe _probe;
-    private readonly DropExecutor _executor;
     private readonly NativeDropCoordinator _native;
 
-    public AgentProtocolHandler(FileLogger logger, Func<Message, bool> send, DriveRedirectionProbe probe, DropExecutor executor, NativeDropCoordinator native)
+    public AgentProtocolHandler(FileLogger logger, Func<Message, bool> send, DriveRedirectionProbe probe, NativeDropCoordinator native)
     {
         _logger = logger;
         _send = send;
         _probe = probe;
-        _executor = executor;
         _native = native;
     }
 
@@ -50,7 +49,7 @@ internal sealed class AgentProtocolHandler
                 break;
 
             case DropMessage drop:
-                OnDrop(drop);
+                _native.OnDrop(drop);
                 break;
 
             case DragEnterMessage enter:
@@ -80,36 +79,6 @@ internal sealed class AgentProtocolHandler
         var available = _probe.IsAvailable();
         _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}; drive redirection available: {available}.");
         _send(HelloMessage.FromAgent(AgentInfo.Version, available, nativeDrop: true));
-    }
-
-    private void OnDrop(DropMessage drop)
-    {
-        // A drop that ends a live drag is delivered inside the session; any other drop
-        // is the 0.1 copy to the folder under the cursor.
-        if (_native.TryDrop(drop))
-        {
-            return;
-        }
-
-        _logger.Info($"Drop {drop.Id}: {drop.Items.Count} item(s) at ({drop.X}, {drop.Y}), copy to the folder under the cursor.");
-        StaThread.Start("RdpDrop drop " + drop.Id, () => RunDrop(drop));
-    }
-
-    private void RunDrop(DropMessage drop)
-    {
-        DropResultMessage result;
-        try
-        {
-            result = _executor.Execute(drop);
-        }
-        catch (Exception ex)
-        {
-            _logger.Error($"Drop {drop.Id} failed unexpectedly.", ex);
-            result = new DropResultMessage(drop.Id, DropStatus.Error, Message: "The agent hit an unexpected error: " + ex.Message);
-        }
-
-        _logger.Info($"Drop {drop.Id} finished: {result.Status}. {result.Message}");
-        _send(result);
     }
 
     private void RejectNewerVersion(MessageEnvelope envelope)

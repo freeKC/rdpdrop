@@ -33,7 +33,7 @@ public class LineFramingTests
     [Fact]
     public void EncodeLine_matches_serializer_output()
     {
-        var message = new DropResultMessage("x", DropStatus.Cancelled, @"C:\Temp", "Stopped");
+        var message = new DropResultMessage("x", DropStatus.Cancelled, "Stopped", DropEffect.None);
 
         var line = LineFraming.EncodeLine(message);
 

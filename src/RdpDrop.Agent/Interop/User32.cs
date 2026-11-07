@@ -51,18 +51,6 @@ internal static partial class User32
     [LibraryImport("user32.dll", EntryPoint = "GetClassNameW", SetLastError = true)]
     public static unsafe partial int GetClassName(IntPtr hWnd, char* lpClassName, int nMaxCount);
 
-    /// <summary>
-    /// Finds a child window by class name, starting after <paramref name="hwndChildAfter"/>.
-    /// Children are searched in z order, so the first match is the topmost one.
-    /// </summary>
-    [LibraryImport("user32.dll", EntryPoint = "FindWindowExW", StringMarshalling = StringMarshalling.Utf16)]
-    public static partial IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string? lpszClass, string? lpszWindow);
-
-    /// <summary>True when <paramref name="hWnd"/> is a child or a deeper descendant of <paramref name="hWndParent"/>.</summary>
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool IsChild(IntPtr hWndParent, IntPtr hWnd);
-
     /// <summary>Returns a system metric such as SM_REMOTESESSION.</summary>
     [LibraryImport("user32.dll")]
     public static partial int GetSystemMetrics(int nIndex);

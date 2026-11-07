@@ -251,14 +251,12 @@ public sealed record DragAckMessage(string Id, bool Accepted, string? Message = 
 /// </summary>
 /// <param name="Id">Identifier of the drop.</param>
 /// <param name="Status">Outcome of the drop.</param>
-/// <param name="TargetFolder">Folder that received the copy, when the agent copied.</param>
 /// <param name="Message">Human readable text for the status bar.</param>
-/// <param name="Effect">What the drop did inside the session. Absent from a 0.1 agent.</param>
+/// <param name="Effect">What the drop did inside the session.</param>
 /// <param name="TargetWindow">Window that received the drop, when known.</param>
 public sealed record DropResultMessage(
     string Id,
     DropStatus Status,
-    string? TargetFolder = null,
     string? Message = null,
     DropEffect? Effect = null,
     TargetWindowInfo? TargetWindow = null) : Message(MessageTypes.DropResult)
@@ -279,8 +277,8 @@ public sealed record DropResultMessage(
 public sealed record TargetWindowInfo(string? ClassName, string? Title, string? ChildClassName = null, string? ProcessName = null);
 
 /// <summary>
-/// What a drop did inside the session. Written as <c>"copy"</c>, <c>"link"</c>,
-/// <c>"none"</c> or <c>"fallbackCopy"</c>.
+/// What a drop did inside the session. Written as <c>"copy"</c>, <c>"link"</c> or
+/// <c>"none"</c>.
 /// </summary>
 public enum DropEffect
 {
@@ -295,10 +293,6 @@ public enum DropEffect
     /// <summary>Nothing accepted the drop and nothing was copied.</summary>
     [JsonStringEnumMemberName("none")]
     None,
-
-    /// <summary>Nothing accepted the drop; the agent copied the items to the fallback folder.</summary>
-    [JsonStringEnumMemberName("fallbackCopy")]
-    FallbackCopy,
 }
 
 /// <summary>
@@ -306,7 +300,10 @@ public enum DropEffect
 /// </summary>
 public enum DropStatus
 {
-    /// <summary>Every item was copied.</summary>
+    /// <summary>
+    /// The drop ended normally: a window accepted it, or nothing under the cursor did
+    /// (<see cref="DropEffect.None"/>).
+    /// </summary>
     [JsonStringEnumMemberName("ok")]
     Ok,
 
@@ -314,7 +311,7 @@ public enum DropStatus
     [JsonStringEnumMemberName("error")]
     Error,
 
-    /// <summary>The user cancelled the copy.</summary>
+    /// <summary>The drag was cancelled before the drop was delivered.</summary>
     [JsonStringEnumMemberName("cancelled")]
     Cancelled,
 }

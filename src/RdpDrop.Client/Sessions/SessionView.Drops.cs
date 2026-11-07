@@ -476,14 +476,12 @@ internal sealed partial class SessionView
     {
         (DropStatus.Ok, DropEffect.Copy or DropEffect.Link) =>
             $"Dropped on {WindowName(result.TargetWindow)} ({(result.Effect == DropEffect.Copy ? "copy" : "link")})",
-        (DropStatus.Ok, DropEffect.FallbackCopy) =>
-            $"Copied to {result.TargetFolder} (nothing under the cursor accepted the drop)",
         (DropStatus.Ok, _) => !string.IsNullOrWhiteSpace(result.Message)
             ? result.Message
-            : $"Copied to {result.TargetFolder}",
+            : "Nothing under the cursor accepted the files.",
         (DropStatus.Cancelled, _) => !string.IsNullOrWhiteSpace(result.Message)
             ? $"Cancelled: {result.Message}"
-            : "Copy cancelled.",
+            : "Drop cancelled.",
         _ => $"Drop failed: {(string.IsNullOrWhiteSpace(result.Message) ? "no detail from the agent." : result.Message)}",
     };
 
