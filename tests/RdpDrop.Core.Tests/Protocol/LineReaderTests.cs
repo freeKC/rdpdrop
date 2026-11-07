@@ -179,14 +179,14 @@ public class LineReaderTests
     public void Reads_lines_produced_by_line_framing()
     {
         var reader = new LineReader();
-        var hello = HelloMessage.FromClient("0.1.0");
-        var drop = new DropMessage("d", 1, 2, [new DropItem(@"C:\é.txt", false)]);
-        reader.Append(LineFraming.EncodeLine(hello) + LineFraming.EncodeLine(drop));
+        var hello = HelloMessage.FromClient("0.2.1");
+        var enter = new DragEnterMessage("d", 1, 2, [new DropItem(@"C:\é.txt", false)]);
+        reader.Append(LineFraming.EncodeLine(hello) + LineFraming.EncodeLine(enter));
 
         var lines = ReadAll(reader);
 
         Assert.Equal(2, lines.Count);
         Assert.Equal(hello, MessageSerializer.Deserialize(System.Text.Encoding.ASCII.GetBytes(lines[0])));
-        Assert.Equal(drop, MessageSerializer.Deserialize(System.Text.Encoding.ASCII.GetBytes(lines[1])));
+        Assert.Equal(enter, MessageSerializer.Deserialize(System.Text.Encoding.ASCII.GetBytes(lines[1])));
     }
 }

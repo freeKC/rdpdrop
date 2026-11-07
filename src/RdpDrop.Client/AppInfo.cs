@@ -8,7 +8,7 @@ internal static class AppInfo
 
     public const string ProjectUrl = "https://github.com/freeKC/rdpdrop";
 
-    /// <summary>Version without the build metadata, for example 0.1.0.</summary>
+    /// <summary>Version without the build metadata, for example 0.2.1.</summary>
     public static string Version { get; } = ReadVersion();
 
     private static string ReadVersion()

@@ -65,24 +65,18 @@ public static class MessageTypes
 
 /// <summary>
 /// Sent by both sides. The client fills <see cref="ClientVersion"/>; the agent fills
-/// <see cref="AgentVersion"/>, <see cref="DriveRedirectionAvailable"/> and
-/// <see cref="NativeDrop"/>. Fields left null are not written.
+/// <see cref="AgentVersion"/> and <see cref="DriveRedirectionAvailable"/>. Fields left
+/// null are not written.
 /// </summary>
 /// <param name="Version">Protocol version, see <see cref="ProtocolConstants.ProtocolVersion"/>.</param>
 /// <param name="ClientVersion">Version of the client, in the hello of the client.</param>
 /// <param name="AgentVersion">Version of the agent, in the hello of the agent.</param>
 /// <param name="DriveRedirectionAvailable">Whether the agent sees a redirected drive.</param>
-/// <param name="NativeDrop">
-/// True when the agent understands the live drag messages (<c>dragEnter</c>,
-/// <c>dragMove</c>, <c>dragLeave</c>) and replays the drop inside the session. Absent
-/// in the hello of a 0.1 agent.
-/// </param>
 public sealed record HelloMessage(
     int Version,
     string? ClientVersion = null,
     string? AgentVersion = null,
-    bool? DriveRedirectionAvailable = null,
-    bool? NativeDrop = null) : Message(MessageTypes.Hello)
+    bool? DriveRedirectionAvailable = null) : Message(MessageTypes.Hello)
 {
     /// <summary>
     /// Builds the hello sent by the client.
@@ -93,8 +87,8 @@ public sealed record HelloMessage(
     /// <summary>
     /// Builds the hello sent by the agent.
     /// </summary>
-    public static HelloMessage FromAgent(string agentVersion, bool driveRedirectionAvailable, bool? nativeDrop = null) =>
-        new(ProtocolConstants.ProtocolVersion, AgentVersion: agentVersion, DriveRedirectionAvailable: driveRedirectionAvailable, NativeDrop: nativeDrop);
+    public static HelloMessage FromAgent(string agentVersion, bool driveRedirectionAvailable) =>
+        new(ProtocolConstants.ProtocolVersion, AgentVersion: agentVersion, DriveRedirectionAvailable: driveRedirectionAvailable);
 }
 
 /// <summary>
@@ -141,38 +135,22 @@ public static class KeyStates
 }
 
 /// <summary>
-/// Sent by the client when the user drops items. <see cref="X"/> and <see cref="Y"/>
-/// are pixels in the remote desktop coordinate space. After a <see cref="DragEnterMessage"/>
-/// with the same id, it ends the live drag; on its own it asks for the 0.1 copy to the
-/// folder under the cursor.
+/// Sent by the client when the user releases the button over the session. It ends the
+/// live drag started by the <see cref="DragEnterMessage"/> with the same id, which
+/// carried the items. <see cref="X"/> and <see cref="Y"/> are pixels in the remote
+/// desktop coordinate space.
 /// </summary>
-/// <param name="Id">Identifier of the drop, shared with the live drag messages.</param>
+/// <param name="Id">Identifier given by the <see cref="DragEnterMessage"/>.</param>
 /// <param name="X">Horizontal position in the remote desktop.</param>
 /// <param name="Y">Vertical position in the remote desktop.</param>
-/// <param name="Items">Dropped files and folders.</param>
 /// <param name="KeyState">Modifier keys, see <see cref="KeyStates"/>. Zero when absent.</param>
-public sealed record DropMessage(string Id, int X, int Y, IReadOnlyList<DropItem> Items, int KeyState = KeyStates.None) : Message(MessageTypes.Drop)
+public sealed record DropMessage(string Id, int X, int Y, int KeyState = KeyStates.None) : Message(MessageTypes.Drop)
 {
-    /// <summary>
-    /// Two drop messages are equal when their fields are equal and their items are
-    /// equal in the same order.
-    /// </summary>
-    public bool Equals(DropMessage? other) =>
-        other is not null
-        && Id == other.Id
-        && X == other.X
-        && Y == other.Y
-        && KeyState == other.KeyState
-        && Items.SequenceEqual(other.Items);
-
-    /// <inheritdoc />
-    public override int GetHashCode() => ItemHash.Combine(Id, X, Y, KeyState, Items);
-
-    internal override bool IsValid() => !string.IsNullOrEmpty(Id) && DropItem.AreValid(Items);
+    internal override bool IsValid() => !string.IsNullOrEmpty(Id);
 }
 
 /// <summary>
-/// One file or folder of a drop, with its path on the client computer.
+/// One file or folder of a drag, with its path on the client computer.
 /// </summary>
 /// <param name="ClientPath">Full path on the client computer.</param>
 /// <param name="IsDirectory">True for a folder.</param>
@@ -183,9 +161,8 @@ public sealed record DropItem(string ClientPath, bool IsDirectory)
 }
 
 /// <summary>
-/// Sent by the client on the first drag over over the session, when the agent said
-/// <see cref="HelloMessage.NativeDrop"/>. The agent starts a drag inside the session at
-/// the point and answers with a <see cref="DragAckMessage"/>.
+/// Sent by the client on the first drag over over the session. The agent starts a drag
+/// inside the session at the point and answers with a <see cref="DragAckMessage"/>.
 /// </summary>
 /// <param name="Id">Identifier of the drag, reused by the messages that follow.</param>
 /// <param name="X">Horizontal position in the remote desktop.</param>

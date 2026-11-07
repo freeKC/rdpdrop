@@ -134,19 +134,19 @@ public class DragMessageTests
     }
 
     [Fact]
-    public void Drop_of_version_0_1_reads_with_no_key()
+    public void Drop_without_key_state_reads_as_no_key()
     {
-        const string json = """{ "type": "drop", "id": "abc", "x": 4, "y": 3, "items": [] }""";
+        const string json = """{ "type": "drop", "id": "abc", "x": 4, "y": 3 }""";
 
         var drop = Assert.IsType<DropMessage>(Parse(json));
 
-        Assert.Equal(KeyStates.None, drop.KeyState);
+        Assert.Equal(new DropMessage("abc", 4, 3, KeyStates.None), drop);
     }
 
     [Fact]
     public void Drop_with_key_state_round_trips()
     {
-        var drop = new DropMessage("abc", 4, 3, SampleItems, KeyStates.Control);
+        var drop = new DropMessage("abc", 4, 3, KeyStates.Control);
 
         Assert.Equal(1, ToJson(drop).GetProperty("keyState").GetInt32());
         Assert.Equal(drop, RoundTrip(drop));
@@ -185,14 +185,16 @@ public class DragMessageTests
     }
 
     [Fact]
-    public void Drop_result_of_version_0_1_has_no_effect()
+    public void Drop_result_when_nothing_accepted_has_status_ok_and_effect_none()
     {
-        const string json = """{ "type": "dropResult", "id": "x", "status": "ok", "targetFolder": "C:\\Users\\me\\Desktop" }""";
+        var result = new DropResultMessage("id", DropStatus.Ok, "Nothing under the cursor accepted the files.", DropEffect.None);
 
-        var result = Assert.IsType<DropResultMessage>(Parse(json));
+        var json = ToJson(result);
 
-        Assert.Null(result.Effect);
-        Assert.Null(result.TargetWindow);
+        Assert.Equal("ok", json.GetProperty("status").GetString());
+        Assert.Equal("none", json.GetProperty("effect").GetString());
+        Assert.Equal("Nothing under the cursor accepted the files.", json.GetProperty("message").GetString());
+        Assert.Equal(result, RoundTrip(result));
     }
 
     [Fact]
@@ -202,27 +204,6 @@ public class DragMessageTests
 
         Assert.False(json.TryGetProperty("effect", out _));
         Assert.False(json.TryGetProperty("targetWindow", out _));
-    }
-
-    [Fact]
-    public void Agent_hello_with_native_drop_has_the_flag()
-    {
-        var json = ToJson(HelloMessage.FromAgent("0.2.0", driveRedirectionAvailable: true, nativeDrop: true));
-
-        Assert.True(json.GetProperty("nativeDrop").GetBoolean());
-        var hello = Assert.IsType<HelloMessage>(RoundTrip(HelloMessage.FromAgent("0.2.0", true, true)));
-        Assert.True(hello.NativeDrop);
-    }
-
-    [Fact]
-    public void Hello_of_version_0_1_has_no_native_drop()
-    {
-        const string json = """{ "type": "hello", "version": 1, "agentVersion": "0.1.0", "driveRedirectionAvailable": true }""";
-
-        var hello = Assert.IsType<HelloMessage>(Parse(json));
-
-        Assert.Null(hello.NativeDrop);
-        Assert.False(ToJson(HelloMessage.FromClient("0.2.0")).TryGetProperty("nativeDrop", out _));
     }
 
     [Theory]
@@ -240,12 +221,11 @@ public class DragMessageTests
     [InlineData("""{ "type": "dragAck", "id": "a" }""")]
     [InlineData("""{ "type": "dragAck", "id": "a", "accepted": "yes" }""")]
     [InlineData("""{ "type": "dragAck", "accepted": true }""")]
-    [InlineData("""{ "type": "drop", "id": "a", "x": 1, "y": 2, "items": [], "keyState": true }""")]
+    [InlineData("""{ "type": "drop", "id": "a", "x": 1, "y": 2, "keyState": true }""")]
     [InlineData("""{ "type": "dropResult", "id": "a", "status": "ok", "effect": "move" }""")]
     [InlineData("""{ "type": "dropResult", "id": "a", "status": "ok", "effect": "fallbackCopy" }""")]
     [InlineData("""{ "type": "dropResult", "id": "a", "status": "ok", "effect": 1 }""")]
     [InlineData("""{ "type": "dropResult", "id": "a", "status": "ok", "targetWindow": "explorer" }""")]
-    [InlineData("""{ "type": "hello", "version": 1, "nativeDrop": "true" }""")]
     public void Malformed_drag_input_returns_null(string json)
     {
         Assert.Null(Parse(json));

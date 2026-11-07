@@ -5,7 +5,7 @@ namespace RdpDrop.Core.Tests.Protocol;
 
 public class LineFramingTests
 {
-    private static readonly DropMessage AccentedDrop = new(
+    private static readonly DragEnterMessage AccentedEnter = new(
         "id-1",
         10,
         20,
@@ -22,7 +22,7 @@ public class LineFramingTests
     [Fact]
     public void EncodeLine_is_json_followed_by_one_newline()
     {
-        var line = LineFraming.EncodeLine(HelloMessage.FromClient("0.1.0"));
+        var line = LineFraming.EncodeLine(HelloMessage.FromClient("0.2.1"));
 
         Assert.EndsWith("\n", line);
         Assert.Equal(1, line.Count(c => c == '\n'));
@@ -43,7 +43,7 @@ public class LineFramingTests
     [Fact]
     public void EncodeLine_escapes_accents_and_emoji_as_ascii()
     {
-        var line = LineFraming.EncodeLine(AccentedDrop);
+        var line = LineFraming.EncodeLine(AccentedEnter);
 
         Assert.True(IsAscii(line));
         Assert.Contains(@"\u00E9", line, StringComparison.OrdinalIgnoreCase);
@@ -53,11 +53,11 @@ public class LineFramingTests
     [Fact]
     public void EncodeLine_round_trips_accents_and_emoji()
     {
-        var line = LineFraming.EncodeLine(AccentedDrop);
+        var line = LineFraming.EncodeLine(AccentedEnter);
 
         var parsed = MessageSerializer.Deserialize(Encoding.ASCII.GetBytes(line.TrimEnd('\n')));
 
-        Assert.Equal(AccentedDrop, parsed);
+        Assert.Equal(AccentedEnter, parsed);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class LineFramingTests
     [Fact]
     public void EncodeBytes_utf16_is_little_endian_two_bytes_per_char()
     {
-        var message = HelloMessage.FromAgent("0.1.0", true);
+        var message = HelloMessage.FromAgent("0.2.1", true);
         var line = LineFraming.EncodeLine(message);
 
         var bytes = LineFraming.EncodeBytes(message, ChannelByteModel.Utf16);
@@ -127,7 +127,7 @@ public class LineFramingTests
     [Fact]
     public void EncodeBytes_one_byte_keeps_accents_escaped()
     {
-        var bytes = LineFraming.EncodeBytes(AccentedDrop, ChannelByteModel.OneBytePerChar);
+        var bytes = LineFraming.EncodeBytes(AccentedEnter, ChannelByteModel.OneBytePerChar);
 
         Assert.All(bytes, b => Assert.True(b <= 0x7F));
     }

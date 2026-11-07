@@ -18,11 +18,9 @@ namespace RdpDrop.Client.Sessions;
 /// handlers, so every path gives the same answer.
 /// </para>
 /// <para>
-/// With an agent that says <see cref="AgentLink.NativeDrop"/>, the drag is live: the
-/// first drag over sends dragEnter, the agent starts a drag inside the session and
-/// answers dragAck, moves follow as dragMove and the drag ends with drop or dragLeave.
-/// With a 0.1 agent, only the drop is sent and the agent copies to the folder under the
-/// cursor.
+/// The drag is live: the first drag over sends dragEnter, the agent starts a drag inside
+/// the session and answers dragAck, moves follow as dragMove and the drag ends with drop
+/// or dragLeave.
 /// </para>
 /// </remarks>
 internal sealed partial class SessionView
@@ -34,6 +32,8 @@ internal sealed partial class SessionView
     // Moving between the control, its child windows and the host window gives a leave
     // and an enter in a row; a leave only counts when no drag over follows it quickly.
     private const int LeaveDelayMilliseconds = 150;
+
+    private const string NoLiveDragText = "Drop refused: the drag did not start in the session. Drag the files again.";
 
     private readonly System.Windows.Forms.Timer _ackTimer = new() { Interval = AckTimeoutMilliseconds };
     private readonly System.Windows.Forms.Timer _moveTimer = new() { Interval = MoveIntervalMilliseconds };
@@ -133,14 +133,6 @@ internal sealed partial class SessionView
         }
 
         ShowBanner();
-        if (!_agent.NativeDrop)
-        {
-            // A 0.1 agent: the drop alone does the work.
-            e.Effect = DragDropEffects.Copy;
-            ShowDropStatus(_dropTextBeforeDrag);
-            return;
-        }
-
         if (_live is null || !_live.Files.SequenceEqual(e.Files))
         {
             EndLiveDrag(sendLeave: true);
@@ -196,32 +188,16 @@ internal sealed partial class SessionView
             return;
         }
 
-        if (_agent.NativeDrop && _live is { } live && live.Files.SequenceEqual(e.Files))
+        if (_live is { } live && live.Files.SequenceEqual(e.Files))
         {
             e.Effect = DropLiveDrag(live, e);
             return;
         }
 
+        // Every drop ends a live drag; without one for these files there is nothing to drop.
+        ClientLog.Info(Invariant($"Drop of {e.Files.Count} item(s) refused: no live drag for these files."));
         EndLiveDrag(sendLeave: true);
-        var items = MapItems(e.Files, out var pathProblem);
-        if (items is null)
-        {
-            ShowDropStatus(pathProblem!);
-            return;
-        }
-
-        var remote = ToRemote(e.ClientPoint);
-        var drop = new DropMessage(Guid.NewGuid().ToString("N"), remote.X, remote.Y, items, e.KeyState);
-        LogDrag("Drop", drop.Id, e, remote);
-        if (!_agent.SendDrop(drop))
-        {
-            ShowDropStatus("Drop failed: the message could not be sent to the agent.");
-            return;
-        }
-
-        _pendingDropId = drop.Id;
-        e.Effect = DragDropEffects.Copy;
-        ShowDropStatus(Invariant($"Sending {items.Count} item(s)..."));
+        ShowDropStatus(NoLiveDragText);
     }
 
     private void StartLiveDrag(FileDragEventArgs e)
@@ -319,8 +295,8 @@ internal sealed partial class SessionView
 
         var remote = ToRemote(e.ClientPoint);
         LogDrag(Invariant($"Drop after {live.Moves} move(s)"), live.Id, e, remote);
-        var drop = new DropMessage(live.Id, remote.X, remote.Y, live.Items, e.KeyState);
-        if (!_agent.SendDrop(drop))
+        var drop = new DropMessage(live.Id, remote.X, remote.Y, e.KeyState);
+        if (!_agent.SendDrag(drop, live.Id))
         {
             EndLiveDrag(sendLeave: true);
             ShowDropStatus("Drop failed: the message could not be sent to the agent.");
@@ -437,7 +413,7 @@ internal sealed partial class SessionView
         var viewSize = _rdp.ViewSize;
         var desktopSize = _display.RemoteDesktopSize;
         ClientLog.Info(Invariant(
-            $"{what} {id} on {Host}: {e.Files.Count} item(s) at view ({e.ClientPoint.X}, {e.ClientPoint.Y}) of {viewSize.Width}x{viewSize.Height}{(IsFullScreen ? " full screen" : string.Empty)}, remote ({remote.X}, {remote.Y}) of {desktopSize.Width}x{desktopSize.Height}, keys {KeyStates.Describe(e.KeyState)}, model {_agent.Model}, native {_agent.NativeDrop}: {string.Join("; ", e.Files)}"));
+            $"{what} {id} on {Host}: {e.Files.Count} item(s) at view ({e.ClientPoint.X}, {e.ClientPoint.Y}) of {viewSize.Width}x{viewSize.Height}{(IsFullScreen ? " full screen" : string.Empty)}, remote ({remote.X}, {remote.Y}) of {desktopSize.Width}x{desktopSize.Height}, keys {KeyStates.Describe(e.KeyState)}, model {_agent.Model}: {string.Join("; ", e.Files)}"));
     }
 
     private void ShowBanner()

@@ -126,7 +126,7 @@ public class ChannelTextCodecTests
     public void ControlStringToText_utf16_unpacks_two_bytes_per_char()
     {
         // The agent wrote padded ASCII bytes; the control paired them into characters.
-        var bytes = LineFraming.EncodeBytes(HelloMessage.FromAgent("0.1.0", true), ChannelByteModel.OneBytePerChar);
+        var bytes = LineFraming.EncodeBytes(HelloMessage.FromAgent("0.2.1", true), ChannelByteModel.OneBytePerChar);
         var controlString = Encoding.Unicode.GetString(bytes);
         Assert.Equal(ChannelByteModel.Utf16, ChannelTextCodec.DetectFromControlString(controlString));
 
@@ -175,7 +175,7 @@ public class ChannelTextCodecTests
     [Fact]
     public void TextToControlString_utf16_bytes_are_the_ascii_line()
     {
-        var line = LineFraming.EncodeLine(new DropMessage("abc", 1, 2, [new DropItem(@"C:\é.txt", false)]));
+        var line = LineFraming.EncodeLine(new DragEnterMessage("abc", 1, 2, [new DropItem(@"C:\é.txt", false)]));
 
         var packed = ChannelTextCodec.TextToControlString(line, ChannelByteModel.Utf16);
         var bytes = Encoding.Unicode.GetBytes(packed);
@@ -203,7 +203,7 @@ public class ChannelTextCodecTests
     [Fact]
     public void Full_round_trip_through_both_models()
     {
-        var message = new DropMessage("id", 5, 6, [new DropItem(@"C:\Users\Zoë\😀.txt", true)]);
+        var message = new DragEnterMessage("id", 5, 6, [new DropItem(@"C:\Users\Zoë\😀.txt", true)]);
 
         // Agent receives one byte per char, client sees UTF-16 strings.
         var agentBytes = LineFraming.EncodeBytes(message, ChannelByteModel.OneBytePerChar);
@@ -234,13 +234,13 @@ public class ChannelTextCodecTests
         var controlEncoding = rawControl ? Encoding.Unicode : Encoding.Latin1;
         Func<string, byte[]> send = controlEncoding.GetBytes;
         Func<byte[], string> deliver = controlEncoding.GetString;
-        var drop = new DropMessage("id", 5, 6, [new DropItem(@"C:\Users\Zoë\a.txt", false)]);
+        var enter = new DragEnterMessage("id", 5, 6, [new DropItem(@"C:\Users\Zoë\a.txt", false)]);
 
-        var agentBytes = send(LineFraming.EncodeLine(drop));
+        var agentBytes = send(LineFraming.EncodeLine(enter));
         var agentModel = ChannelTextCodec.DetectFromBytes(agentBytes);
         Assert.Equal(rawControl ? ChannelByteModel.Utf16 : ChannelByteModel.OneBytePerChar, agentModel);
         var agentText = ChannelTextCodec.BytesToText(agentBytes, agentModel);
-        Assert.Equal(LineFraming.EncodeLine(drop), agentText);
+        Assert.Equal(LineFraming.EncodeLine(enter), agentText);
 
         var reply = new DropResultMessage("id", DropStatus.Ok, "Dropped on Zoë", DropEffect.Copy);
         var clientString = deliver(LineFraming.EncodeBytes(reply, agentModel));

@@ -78,7 +78,7 @@ internal sealed class AgentProtocolHandler
     {
         var available = _probe.IsAvailable();
         _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}; drive redirection available: {available}.");
-        _send(HelloMessage.FromAgent(AgentInfo.Version, available, nativeDrop: true));
+        _send(HelloMessage.FromAgent(AgentInfo.Version, available));
     }
 
     private void RejectNewerVersion(MessageEnvelope envelope)
@@ -89,7 +89,7 @@ internal sealed class AgentProtocolHandler
             _send(new DropResultMessage(
                 envelope.Id,
                 DropStatus.Error,
-                Message: $"The RdpDrop agent in the session is older than the client (protocol {ProtocolConstants.ProtocolVersion}, client protocol {envelope.Version}). Update the agent."));
+                Message: $"The RdpDrop agent in the session speaks protocol {ProtocolConstants.ProtocolVersion} and the client speaks protocol {envelope.Version}. Install the same version of RdpDrop on both sides."));
         }
     }
 }

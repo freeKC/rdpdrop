@@ -359,7 +359,7 @@ internal sealed partial class SessionView : UserControl
         AgentText = _agent.State switch
         {
             AgentState.Waiting => "Agent: waiting",
-            AgentState.Ready => $"Agent ready (v{_agent.AgentVersion ?? "?"}{(_agent.NativeDrop ? ", native drop" : string.Empty)})",
+            AgentState.Ready => $"Agent ready (v{_agent.AgentVersion ?? "?"})",
             AgentState.NotFound => "No agent on the remote computer",
             _ => "Agent: not connected",
         };

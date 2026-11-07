@@ -14,7 +14,7 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         ClientLog.Info($"RdpDrop client {AppInfo.Version} starting, arguments: {string.Join(' ', args)}");
 
-        // Without an argument the open dialog comes first, as in 0.1. When it is
+        // Without an argument the open dialog comes first. When it is
         // cancelled the window opens empty, so that File, Recent is still at hand.
         var path = args.Length > 0 ? args[0] : MainForm.AskForRdpFile(null);
         if (path is null)

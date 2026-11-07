@@ -22,7 +22,7 @@ internal static class AgentInfo
 
     public const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
-    /// <summary>Version without the source revision suffix, for example "0.1.0".</summary>
+    /// <summary>Version without the source revision suffix, for example "0.2.1".</summary>
     public static string Version { get; } = ReadVersion();
 
     /// <summary>%LOCALAPPDATA%\RdpDrop</summary>

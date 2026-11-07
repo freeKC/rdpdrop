@@ -11,7 +11,7 @@ namespace RdpDrop.Client.Channel;
 
 /// <summary>
 /// Runs the RdpDrop protocol over the virtual channel of the control: agent discovery
-/// with hello messages, byte model detection, drop messages and their results.
+/// with hello messages, byte model detection, the live drag messages and their answers.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -67,12 +67,6 @@ internal sealed class AgentLink : IDisposable
     /// <summary>Whether the agent sees at least one redirected drive, or null before it answers.</summary>
     public bool? DriveRedirectionAvailable { get; private set; }
 
-    /// <summary>
-    /// True when the agent replays drags inside the session (live drag messages); false for
-    /// a 0.1 agent, which only understands the single drop message.
-    /// </summary>
-    public bool NativeDrop { get; private set; }
-
     /// <summary>Byte model of the strings received, locked when the agent answered, Unknown before.</summary>
     public ChannelByteModel Model => _receiver.LockedModel;
 
@@ -121,27 +115,13 @@ internal sealed class AgentLink : IDisposable
     }
 
     /// <summary>
-    /// Sends a drop message. Returns false when the agent is not ready or the control
-    /// refused the data.
-    /// </summary>
-    public bool SendDrop(DropMessage drop)
-    {
-        if (State != AgentState.Ready || Model == ChannelByteModel.Unknown)
-        {
-            return false;
-        }
-
-        return Send(drop, $"drop {drop.Id}");
-    }
-
-    /// <summary>
-    /// Sends a live drag message (dragEnter, dragMove or dragLeave) to an agent that said
-    /// <see cref="NativeDrop"/>. Moves are not logged one by one: about thirty go out every
-    /// second. Returns false when the agent is not ready or the control refused the data.
+    /// Sends a live drag message (dragEnter, dragMove, drop or dragLeave). Moves are not
+    /// logged one by one: about thirty go out every second. Returns false when the agent
+    /// is not ready or the control refused the data.
     /// </summary>
     public bool SendDrag(Message message, string id)
     {
-        if (State != AgentState.Ready || Model == ChannelByteModel.Unknown || !NativeDrop)
+        if (State != AgentState.Ready || Model == ChannelByteModel.Unknown)
         {
             return false;
         }
@@ -161,7 +141,6 @@ internal sealed class AgentLink : IDisposable
         _hellosSent = 0;
         AgentVersion = null;
         DriveRedirectionAvailable = null;
-        NativeDrop = false;
     }
 
     private void OnTimer()
@@ -283,9 +262,8 @@ internal sealed class AgentLink : IDisposable
 
         AgentVersion = hello.AgentVersion;
         DriveRedirectionAvailable = hello.DriveRedirectionAvailable;
-        NativeDrop = hello.NativeDrop == true;
         _timer.Stop();
-        ClientLog.Info($"Agent ready, version {hello.AgentVersion ?? "(unknown)"}, drive redirection available: {hello.DriveRedirectionAvailable?.ToString() ?? "(not said)"}, native drop: {NativeDrop}.");
+        ClientLog.Info($"Agent ready, version {hello.AgentVersion ?? "(unknown)"}, drive redirection available: {hello.DriveRedirectionAvailable?.ToString() ?? "(not said)"}.");
         State = AgentState.Ready;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
