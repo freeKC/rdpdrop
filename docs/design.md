@@ -1,4 +1,4 @@
-# RdpDrop design
+# UltimateRDP design
 
 Date: 2026-11-05, updated on 2026-11-09 for version 0.3.0.
 
@@ -8,7 +8,7 @@ Let a user drag files or folders from the local Windows desktop and drop them
 into a Remote Desktop session, on the application under the cursor when the
 button is released. The application receives them as a normal drop. When
 nothing under the cursor accepts them, the drop is ignored.
-The transfer uses the standard RDP drive redirection; RdpDrop only adds the
+The transfer uses the standard RDP drive redirection; UltimateRDP only adds the
 "drop" gesture on top of it.
 
 Scope:
@@ -41,22 +41,36 @@ the session as `\\tsclient\<letter>`.
 Three projects in one .NET 10 solution, C# everywhere.
 
 ```
-RdpDrop.sln
-src/RdpDrop.Core/          class library, no UI, fully unit tested
-src/RdpDrop.Client/        WinForms app, hosts the Microsoft RDP ActiveX control
-src/RdpDrop.Agent/         WinForms tray app, runs inside the remote session
-tests/RdpDrop.Core.Tests/  xUnit
-.github/workflows/ci.yml       build and test on every push and pull request
-.github/workflows/release.yml  build, publish and attach zips on tags v*
-docs/design.md             this document
-docs/releases/<tag>.md     release notes, used as the release body
+UltimateRDP.sln
+src/UltimateRDP.Core/              class library, no UI, fully unit tested
+src/UltimateRDP.Client/            WinForms app, hosts the Microsoft RDP ActiveX control
+src/UltimateRDP.Agent/             WinForms tray app, runs inside the remote session
+tests/UltimateRDP.Core.Tests/      xUnit
+.github/workflows/ci.yml           build and test on every push and pull request
+.github/workflows/release.yml      build, sign, publish and attach zips on tags v*
+docs/design.md                     this document
+docs/releases/<tag>.md             release notes, used as the release body
 README.md, LICENSE (MIT), .gitignore, .editorconfig
 ```
+
+### Names
+
+UltimateRDP is published by APROGSYS (https://www.aprogsys.com/). The source
+is at https://github.com/freeKC/ultimaterdp.
+
+* Executables: `UltimateRDP.exe` (the client) and `UltimateRDP.Agent.exe`.
+* Static virtual channel: `ULTRDP`.
+* Settings and logs: `%LOCALAPPDATA%\UltimateRDP` on each side, with
+  `client.json`, `agent.json`, `logs\client-<date>.log`,
+  `logs\agent-<date>.log` and the agent `staging` folder.
+* Agent single instance mutex `Local\UltimateRDP.Agent`, exit event
+  `Local\UltimateRDP.Agent.Exit`, and the `Run` value `UltimateRDP` under
+  `HKCU` or `HKLM`.
 
 ### Data flow
 
 ```
-local desktop      RdpDrop.Client                  RDP              RdpDrop.Agent (in session)
+local desktop      UltimateRDP.Client              RDP              UltimateRDP.Agent (in session)
     |                    |                           |                      |
     | drag file(s)       |                           |                      |
     |------------------->| first drag over at (x,y)  |                      |
@@ -74,7 +88,7 @@ local desktop      RdpDrop.Client                  RDP              RdpDrop.Agen
 Leaving the session during the drag sends `dragLeave` instead of `drop`, and
 the agent cancels the drag inside the session.
 
-### RdpDrop.Core
+### UltimateRDP.Core
 
 Pure logic shared by the two apps and covered by tests.
 
@@ -99,10 +113,10 @@ Pure logic shared by the two apps and covered by tests.
 
 ### Protocol
 
-Static virtual channel named `RDPDROP` (seven characters, the maximum for a
-static channel). Every message is one line (see "Wire encoding" below).
-Messages are JSON objects with a `type` field. Fields that have no value are
-not written.
+Static virtual channel named `ULTRDP` (six characters, within the maximum of
+seven for a static channel). Every message is one line (see "Wire encoding"
+below). Messages are JSON objects with a `type` field. Fields that have no
+value are not written.
 
 Client to agent:
 
@@ -163,14 +177,14 @@ Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
 when the message has an id, and logs it; the client ignores and logs an agent
 hello with a higher version. Unknown fields are ignored. The client and the
-agent must run the same version of RdpDrop.
+agent must run the same version of UltimateRDP.
 
 #### Wire encoding
 
 The ActiveX control exposes channel data as a COM string (BSTR), and the way
 `mstscax.dll` turns bytes into string units is not documented. Two models are
 possible: one byte per character, or raw UTF-16LE (two bytes per character,
-with an odd trailing byte lost). RdpDrop therefore only ever puts ASCII on
+with an odd trailing byte lost). UltimateRDP therefore only ever puts ASCII on
 the wire, frames messages by lines, and detects the model at run time.
 
 * A message on the wire is its JSON object serialized with ASCII only
@@ -201,7 +215,7 @@ This lives in Core as `LineFraming` (encode a message as an ASCII line),
 (model detection and byte/string conversion in both directions), all unit
 tested.
 
-### RdpDrop.Client
+### UltimateRDP.Client
 
 A WinForms application (`net10.0-windows`, x64) that embeds the Microsoft RDP
 ActiveX control (`mstscax.dll`) through the `Devolutions.MsRdpEx` NuGet
@@ -209,7 +223,7 @@ package.
 
 Behaviour:
 
-1. Start with `RdpDrop.Client.exe <file.rdp>`; without an argument, show an
+1. Start with `UltimateRDP.exe <file.rdp>`; without an argument, show an
    open file dialog filtered on `.rdp`. Each session opens in its own tab
    (see "Step 3: connections" below).
 2. Read the `.rdp` file with `RdpFile` and apply the settings that matter:
@@ -221,7 +235,7 @@ Behaviour:
    asks for full screen, because a full screen window cannot receive a drop
    from the local desktop; full screen is available afterwards from the View
    menu. Settings that have no equivalent on the control are ignored.
-3. Before connecting, call `CreateVirtualChannels("RDPDROP")` on the control
+3. Before connecting, call `CreateVirtualChannels("ULTRDP")` on the control
    and enable drive redirection if the `.rdp` file asks for it. If the file
    does not redirect drives, connect anyway and show a warning in the status
    bar: drops will not work.
@@ -253,11 +267,13 @@ Behaviour:
 8. Status bar at the bottom: connection state, agent state, last drop
    result. Menus: File (with Log off the remote session, see "Version 0.3"
    below), Session (Connect, Disconnect, Look for the agent again), View
-   (with Language) and Help (About, Project page, Open log folder).
+   (with Language) and Help (About, Project page, Open log folder). About
+   is a task dialog with the version, the publisher APROGSYS and its web
+   site, and the project page; both addresses are links.
 9. Disconnection shows the reason text from the control and keeps the window
    open so the user can reconnect.
 
-### RdpDrop.Agent
+### UltimateRDP.Agent
 
 A WinForms tray application (`net10.0-windows`, x64), single instance, no
 main window.
@@ -265,7 +281,7 @@ main window.
 Behaviour:
 
 1. Channel loop on a background thread:
-   `WTSVirtualChannelOpen(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, "RDPDROP")`,
+   `WTSVirtualChannelOpen(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, "ULTRDP")`,
    then `WTSVirtualChannelRead` with a short timeout, so that the loop can
    stop or restart without closing a handle under a pending read. Detect the
    byte model from the first two bytes, convert chunks to text with
@@ -297,9 +313,11 @@ Behaviour:
    fails, a second `logoffResult` with `accepted: false` carries the Windows
    error text.
 6. Tray menu: Stage files in the session before the drop, Open log folder,
-   About, Exit. Settings in `%LOCALAPPDATA%\RdpDrop\agent.json` (`stageFiles`,
-   and `logLevel` which is only editable in the file). Logs in
-   `%LOCALAPPDATA%\RdpDrop\logs\agent-<date>.log`, rotated by day, kept
+   About, Exit. About is a task dialog with the version, the publisher
+   APROGSYS and its web site, and the project page, as links. Settings in
+   `%LOCALAPPDATA%\UltimateRDP\agent.json` (`stageFiles`, and `logLevel`
+   which is only editable in the file). Logs in
+   `%LOCALAPPDATA%\UltimateRDP\logs\agent-<date>.log`, rotated by day, kept
    fourteen days.
 7. Command line:
    * `--install`: add a `Run` value under `HKCU` so the agent starts with the
@@ -385,7 +403,7 @@ the fallback for anything missing.
 
 ## Testing
 
-* `RdpDrop.Core.Tests` covers: framing round trip, split and merged chunks,
+* `UltimateRDP.Core.Tests` covers: framing round trip, split and merged chunks,
   oversize lines, byte model detection and conversion in both directions,
   JSON round trip of every message (hello with its language, dragEnter,
   dragMove, drop, dragLeave, dragAck, dropResult, logoff, logoffResult) and
@@ -402,8 +420,8 @@ the fallback for anything missing.
 
 * Tag `vX.Y.Z` on `main` triggers the release workflow: build, test, publish
   both applications as self contained single file executables for `win-x64`,
-  zip them as `RdpDrop.Client-vX.Y.Z-win-x64.zip` and
-  `RdpDrop.Agent-vX.Y.Z-win-x64.zip`, create the GitHub release with
+  zip them as `UltimateRDP-vX.Y.Z-win-x64.zip` and
+  `UltimateRDP.Agent-vX.Y.Z-win-x64.zip`, create the GitHub release with
   `docs/releases/vX.Y.Z.md` as body and attach both zips.
 * Between the build and the release, a signing job signs both executables
   with the APROGSYS code signing certificate through Azure Artifact Signing.
@@ -458,7 +476,7 @@ each one built, tested and committed before the next starts.
 Goal: a file dropped from the local desktop onto the session is received by
 the remote application under the cursor as a normal OLE drag and drop, not
 only by Explorer. Mail clients, editors, browsers, business applications:
-anything that accepts a file drop in the session accepts it from RdpDrop.
+anything that accepts a file drop in the session accepts it from UltimateRDP.
 
 Principle: the agent becomes the drag source inside the session. It replays
 the local drag in real time and ends it with a real drop at the point where
@@ -483,7 +501,7 @@ the user released the button.
   `DoDragDrop` with a data object that offers
   `CF_HDROP` with the `\\tsclient\<drive>\...` paths or, for applications
   that do not accept UNC paths, with the same files staged in
-  `%LOCALAPPDATA%\RdpDrop\staging\<id>\` instead, when the setting "stage
+  `%LOCALAPPDATA%\UltimateRDP\staging\<id>\` instead, when the setting "stage
   files in the session before the drop" is on (off by default, staging
   happens before `DoDragDrop` and can take time for large files). The
   points are offsets from the top left corner of the session desktop; the
@@ -540,12 +558,12 @@ the user released the button.
   status bar that follows the active tab. Keyboard shortcuts and menus act
   on the active tab.
 * File menu: Open .rdp, Recent connections (ten entries, stored in
-  `%LOCALAPPDATA%\RdpDrop\client.json`), New tab from the same file,
+  `%LOCALAPPDATA%\UltimateRDP\client.json`), New tab from the same file,
   Close tab.
 * Credentials: before connecting, read the generic credential
   `TERMSRV/<host>` from the Windows Credential Manager, like mstsc does; if
   present, apply user name, domain and password to the control and skip the
-  prompt. Nothing is written by RdpDrop; saving happens through the Windows
+  prompt. Nothing is written by UltimateRDP; saving happens through the Windows
   prompt of the control, which offers "Remember me". A File menu entry
   forgets the saved credential for the current host.
 
@@ -583,4 +601,13 @@ Two features, decided on 2026-11-09:
 
 The client and the agent must both run 0.3.0: an older agent ignores the log
 off request and writes its texts in English.
+
+The project was first called RdpDrop. Before the release of 0.3.0 it was
+renamed UltimateRDP, and APROGSYS became its publisher. The names listed
+under "Names" above replace the old ones: `RdpDrop.Client.exe` and
+`RdpDrop.Agent.exe`, the channel `RDPDROP`, the folder
+`%LOCALAPPDATA%\RdpDrop`, the mutex `Local\RdpDrop.Agent` and the `Run`
+value `RdpDrop`. Since the channel name changed, a 0.2.1 agent never hears a
+0.3.0 client: it must be exited and replaced, and its `Run` value removed.
+The settings and logs of the old folder are not carried over.
 
