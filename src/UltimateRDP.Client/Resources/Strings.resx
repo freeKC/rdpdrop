@@ -423,6 +423,9 @@ Reconnect now?</value>
   <data name="TransferAgentSilent" xml:space="preserve">
     <value>The agent stopped answering during the transfer.</value>
   </data>
+  <data name="TransferFirstAckMissing" xml:space="preserve">
+    <value>The agent did not acknowledge the first data of the transfer.</value>
+  </data>
   <data name="TransferBusy" xml:space="preserve">
     <value>A transfer is in progress. Wait for its end, or cancel it from the Session menu.</value>
   </data>

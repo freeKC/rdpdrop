@@ -22,6 +22,9 @@ internal sealed partial class SessionView
 {
     private const double BytesPerMegabyte = 1_000_000;
 
+    /// <summary>Raw bytes per chunk, from the <c>transferChunkBytes</c> setting.</summary>
+    private readonly int _transferChunkBytes;
+
     private TransferUpload? _upload;
 
     /// <summary>True while files are being transferred to the agent.</summary>
@@ -53,6 +56,8 @@ internal sealed partial class SessionView
             dragId,
             transferId,
             items,
+            _transferChunkBytes,
+            _agent.Model,
             message => _agent.SendTransfer(message, transferId),
             line => _agent.SendTransferLine(line, transferId));
         upload.Planned += OnTransferPlanned;
@@ -168,6 +173,11 @@ internal sealed partial class SessionView
         ClientLog.Warn($"Transfer {upload.TransferId}: stopped on the client, {reason.ToEnglish()}");
         EndTransfer(upload, reason.ToEnglish());
         ShowDropStatus(reason);
+        if (upload.AckMissing)
+        {
+            // A hello tells whether short messages still get through, and finds a restarted agent.
+            _agent.Recheck("no transfer acknowledgement");
+        }
     }
 
     /// <summary>The session was disconnected: the transfer is lost, and the agent deletes what it received.</summary>

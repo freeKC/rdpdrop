@@ -379,6 +379,9 @@ Reconectar agora?</value>
   <data name="TransferAgentSilent" xml:space="preserve">
     <value>O agente parou de responder durante a transferência.</value>
   </data>
+  <data name="TransferFirstAckMissing" xml:space="preserve">
+    <value>O agente não confirmou o recebimento dos primeiros dados da transferência.</value>
+  </data>
   <data name="TransferBusy" xml:space="preserve">
     <value>Há uma transferência em andamento. Aguarde o fim ou cancele-a no menu Sessão.</value>
   </data>

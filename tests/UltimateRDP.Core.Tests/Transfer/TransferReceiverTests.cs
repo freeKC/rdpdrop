@@ -49,15 +49,16 @@ public class TransferReceiverTests
     }
 
     [Fact]
-    public void An_ack_goes_out_every_two_mebibytes()
+    public void An_ack_goes_out_after_the_first_chunk_and_then_every_two_mebibytes()
     {
         using var receiver = Create();
-        var chunk = new byte[TransferSender.ChunkSize];
-        receiver.Handle(new TransferBeginMessage("t1", 1, 16L * TransferSender.ChunkSize));
-        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", 16L * TransferSender.ChunkSize));
+        var chunk = new byte[TransferSender.DefaultChunkSize];
+        const int Chunks = 160;
+        receiver.Handle(new TransferBeginMessage("t1", 1, (long)Chunks * chunk.Length));
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", (long)Chunks * chunk.Length));
 
         var acks = new List<FileAckMessage>();
-        for (var i = 0; i < 16; i++)
+        for (var i = 0; i < Chunks; i++)
         {
             if (receiver.Handle(Chunk(0, (long)i * chunk.Length, chunk)) is { } ack)
             {
@@ -66,8 +67,49 @@ public class TransferReceiverTests
         }
 
         Assert.Equal(
-            [new FileAckMessage("t1", 0, 2L * 1024 * 1024), new FileAckMessage("t1", 0, 4L * 1024 * 1024)],
+            [
+                new FileAckMessage("t1", 0, chunk.Length),
+                new FileAckMessage("t1", 0, (2L * 1024 * 1024) + chunk.Length),
+                new FileAckMessage("t1", 0, (4L * 1024 * 1024) + chunk.Length),
+            ],
             acks);
+    }
+
+    [Fact]
+    public void The_first_chunk_of_every_file_is_acknowledged()
+    {
+        using var receiver = new TransferReceiver("t1", [new TransferItem("a.txt", false), new TransferItem("b.txt", false)], _storage, () => _now);
+        receiver.Handle(new TransferBeginMessage("t1", 2, 20));
+        var acks = new List<FileAckMessage?>();
+        foreach (var (index, name) in new[] { (0, "a.txt"), (1, "b.txt") })
+        {
+            var data = new byte[10];
+            receiver.Handle(new FileBeginMessage("t1", index, name, 10));
+            acks.Add(receiver.Handle(Chunk(index, 0, data.AsSpan(0, 4).ToArray())));
+            acks.Add(receiver.Handle(Chunk(index, 4, data.AsSpan(4).ToArray())));
+            acks.Add(receiver.Handle(new FileEndMessage("t1", index, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(data)))));
+        }
+
+        Assert.Equal(
+            [
+                new FileAckMessage("t1", 0, 4), null, new FileAckMessage("t1", 0, 10),
+                new FileAckMessage("t1", 1, 4), null, new FileAckMessage("t1", 1, 10),
+            ],
+            acks);
+        Assert.Equal(TransferState.Succeeded, receiver.State);
+    }
+
+    [Fact]
+    public void A_chunk_of_the_largest_size_is_accepted()
+    {
+        using var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 1, TransferSender.MaxChunkSize));
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", TransferSender.MaxChunkSize));
+
+        var ack = receiver.Handle(Chunk(0, 0, new byte[TransferSender.MaxChunkSize]));
+
+        Assert.Equal(new FileAckMessage("t1", 0, TransferSender.MaxChunkSize), ack);
+        Assert.Equal(TransferState.Receiving, receiver.State);
     }
 
     [Fact]
@@ -167,10 +209,10 @@ public class TransferReceiverTests
     public void A_chunk_above_the_chunk_size_is_refused()
     {
         using var receiver = Create();
-        receiver.Handle(new TransferBeginMessage("t1", 1, TransferSender.ChunkSize + 3));
-        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", TransferSender.ChunkSize + 3));
+        receiver.Handle(new TransferBeginMessage("t1", 1, TransferSender.MaxChunkSize + 3));
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", TransferSender.MaxChunkSize + 3));
 
-        receiver.Handle(Chunk(0, 0, new byte[TransferSender.ChunkSize + 3]));
+        receiver.Handle(Chunk(0, 0, new byte[TransferSender.MaxChunkSize + 3]));
 
         Assert.Equal(TransferFailure.BadData, receiver.Failure);
     }

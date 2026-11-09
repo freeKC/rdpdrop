@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Core.Localization;
 using UltimateRDP.Core.Recent;
+using UltimateRDP.Core.Transfer;
 
 namespace UltimateRDP.Client.Settings;
 
@@ -42,6 +43,12 @@ internal sealed class ClientSettings
 
     /// <summary>Full paths of the .rdp files opened lately, most recent first.</summary>
     public List<string> RecentFiles { get; set; } = [];
+
+    /// <summary>
+    /// Raw bytes per chunk of the fast transfer, from 4 KiB to 256 KiB, 32 KiB by default.
+    /// Only editable in the file, so that it can be tuned without a new release.
+    /// </summary>
+    public int TransferChunkBytes { get; set; } = TransferSender.DefaultChunkSize;
 
     public static ClientSettings Load(string path)
     {
@@ -84,7 +91,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes";
 
     private ClientSettings Normalized()
     {
@@ -104,6 +111,7 @@ internal sealed class ClientSettings
         }
 
         Language = UiLanguages.NormalizeChoice(Language);
+        TransferChunkBytes = TransferSender.ClampChunkSize(TransferChunkBytes);
         RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;
     }

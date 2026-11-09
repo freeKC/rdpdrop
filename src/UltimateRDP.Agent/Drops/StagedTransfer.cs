@@ -19,8 +19,8 @@ namespace UltimateRDP.Agent.Drops;
 /// at once; the files of a transfer that succeeded stay for the drop.
 /// </summary>
 /// <remarks>
-/// Messages arrive on the channel thread and are handled there: writing a chunk of
-/// 256 KiB takes a fraction of a millisecond. <see cref="Cancel"/> and the idle check may
+/// Messages arrive on the channel thread and are handled there: writing a chunk, at most
+/// 256 KiB, takes a fraction of a millisecond. <see cref="Cancel"/> and the idle check may
 /// come from other threads; a lock keeps them apart.
 /// </remarks>
 internal sealed class StagedTransfer
@@ -95,6 +95,12 @@ internal sealed class StagedTransfer
 
                 if (_receiver.Handle(message) is { } ack)
                 {
+                    if (message is FileChunkMessage { Offset: 0 } first)
+                    {
+                        // One line per file: the first thing to look for when data does not get through.
+                        _logger.Info($"Transfer {TransferId}: first chunk of file {first.FileIndex} received, {ack.Received} bytes in {first.Data.Length} characters of base64.");
+                    }
+
                     _send(ack);
                 }
 

@@ -34,8 +34,9 @@ public sealed record FileBeginMessage(string TransferId, int FileIndex, string R
 }
 
 /// <summary>
-/// Sent by the client: one piece of a file, at most <see cref="TransferSender.ChunkSize"/>
-/// bytes, encoded in base64.
+/// Sent by the client: one piece of a file, at most <see cref="TransferSender.MaxChunkSize"/>
+/// bytes, encoded in base64. The client sends <see cref="TransferSender.DefaultChunkSize"/>
+/// bytes unless its settings say otherwise.
 /// </summary>
 /// <param name="TransferId">Identifier of the transfer.</param>
 /// <param name="FileIndex">Position of the file in the transfer.</param>
@@ -72,8 +73,8 @@ public sealed record TransferCancelMessage(string TransferId, string? Reason = n
 }
 
 /// <summary>
-/// Sent by the agent while it receives a file: at least every
-/// <see cref="TransferReceiver.AckInterval"/> bytes and at the end of each file. The
+/// Sent by the agent while it receives a file: after the first chunk of each file, at
+/// least every <see cref="TransferReceiver.AckInterval"/> bytes and at the end of each file. The
 /// client keeps at most <see cref="TransferSender.WindowBytes"/> bytes sent and not yet
 /// acknowledged.
 /// </summary>

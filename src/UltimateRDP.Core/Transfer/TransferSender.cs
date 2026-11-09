@@ -25,8 +25,20 @@ public sealed record TransferFile(string RelativePath, long Size, DateTime? Modi
 /// </remarks>
 public sealed class TransferSender : IDisposable
 {
-    /// <summary>Raw bytes per <c>fileChunk</c>: about 350 000 characters of base64, within the line limit.</summary>
-    public const int ChunkSize = 256 * 1024;
+    /// <summary>
+    /// Raw bytes per <c>fileChunk</c> by default: about 44 000 characters of base64, so that
+    /// one line stays small on the wire in both byte models (about 88 KB in UTF-16).
+    /// </summary>
+    public const int DefaultChunkSize = 32 * 1024;
+
+    /// <summary>Smallest chunk size the client accepts in its settings.</summary>
+    public const int MinChunkSize = 4 * 1024;
+
+    /// <summary>
+    /// Largest chunk size: about 350 000 characters of base64, within the line limit. The
+    /// agent accepts any chunk up to this size.
+    /// </summary>
+    public const int MaxChunkSize = 256 * 1024;
 
     /// <summary>Most bytes sent and not yet acknowledged.</summary>
     public const long WindowBytes = 4L * 1024 * 1024;
@@ -40,13 +52,18 @@ public sealed class TransferSender : IDisposable
 
     /// <param name="transferId">Identifier given by the agent.</param>
     /// <param name="files">The files, in the order they are sent.</param>
+    /// <param name="chunkSize">Raw bytes per chunk, from <see cref="MinChunkSize"/> to <see cref="MaxChunkSize"/>.</param>
     /// <exception cref="ArgumentException">A size is negative, or the total does not fit.</exception>
-    public TransferSender(string transferId, IReadOnlyList<TransferFile> files)
+    /// <exception cref="ArgumentOutOfRangeException">The chunk size is out of its bounds.</exception>
+    public TransferSender(string transferId, IReadOnlyList<TransferFile> files, int chunkSize = DefaultChunkSize)
     {
         ArgumentException.ThrowIfNullOrEmpty(transferId);
         ArgumentNullException.ThrowIfNull(files);
+        ArgumentOutOfRangeException.ThrowIfLessThan(chunkSize, MinChunkSize);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(chunkSize, MaxChunkSize);
         TransferId = transferId;
         Files = files;
+        ChunkSize = chunkSize;
         _fileStarts = new long[files.Count + 1];
         for (var i = 0; i < files.Count; i++)
         {
@@ -64,6 +81,15 @@ public sealed class TransferSender : IDisposable
 
     /// <summary>The files, in the order they are sent.</summary>
     public IReadOnlyList<TransferFile> Files { get; }
+
+    /// <summary>Most raw bytes in one <c>fileChunk</c>.</summary>
+    public int ChunkSize { get; }
+
+    /// <summary>Number of <c>fileChunk</c> lines built so far.</summary>
+    public int ChunkLines { get; private set; }
+
+    /// <summary>Length in characters of the longest <c>fileChunk</c> line built so far, its <c>\n</c> included.</summary>
+    public int LongestChunkLine { get; private set; }
 
     /// <summary>Total size of the files.</summary>
     public long TotalBytes => _fileStarts[^1];
@@ -150,8 +176,16 @@ public sealed class TransferSender : IDisposable
         _hash!.AppendData(data);
         _offset += data.Length;
         SentBytes += data.Length;
+        ChunkLines++;
+        LongestChunkLine = Math.Max(LongestChunkLine, line.Length);
         return line;
     }
+
+    /// <summary>
+    /// A chunk size from the settings, brought within <see cref="MinChunkSize"/> and
+    /// <see cref="MaxChunkSize"/>.
+    /// </summary>
+    public static int ClampChunkSize(int bytes) => Math.Clamp(bytes, MinChunkSize, MaxChunkSize);
 
     /// <summary>Ends the open file, with its checksum.</summary>
     /// <exception cref="InvalidOperationException">No file is open, or fewer bytes than announced were sent.</exception>

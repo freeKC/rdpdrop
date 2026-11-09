@@ -379,6 +379,9 @@ Jetzt neu verbinden?</value>
   <data name="TransferAgentSilent" xml:space="preserve">
     <value>Der Agent hat während der Übertragung nicht mehr geantwortet.</value>
   </data>
+  <data name="TransferFirstAckMissing" xml:space="preserve">
+    <value>Der Agent hat die ersten Daten der Übertragung nicht bestätigt.</value>
+  </data>
   <data name="TransferBusy" xml:space="preserve">
     <value>Eine Übertragung läuft. Warten Sie auf ihr Ende oder brechen Sie sie im Menü Sitzung ab.</value>
   </data>

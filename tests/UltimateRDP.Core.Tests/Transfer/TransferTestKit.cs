@@ -213,11 +213,11 @@ internal sealed class SimulatedChannel
 /// <summary>Drives a whole transfer through a <see cref="SimulatedChannel"/>.</summary>
 internal sealed class SimulatedTransfer
 {
-    public SimulatedTransfer(ChannelByteModel model, IReadOnlyList<TransferItem> items, IReadOnlyList<(TransferFile File, byte[] Data)> files, ITransferStorage storage)
+    public SimulatedTransfer(ChannelByteModel model, IReadOnlyList<TransferItem> items, IReadOnlyList<(TransferFile File, byte[] Data)> files, ITransferStorage storage, int chunkSize = TransferSender.DefaultChunkSize)
     {
         Files = files;
         Channel = new SimulatedChannel(model);
-        Sender = new TransferSender("t1", [.. files.Select(file => file.File)]);
+        Sender = new TransferSender("t1", [.. files.Select(file => file.File)], chunkSize);
         Receiver = new TransferReceiver("t1", items, storage, () => Environment.TickCount64);
         Channel.Agent = message =>
         {
@@ -284,14 +284,14 @@ internal sealed class SimulatedTransfer
         foreach (var (_, data) in Files)
         {
             Channel.SendFromClient(Sender.BeginFile());
-            for (var offset = 0; offset < data.Length; offset += TransferSender.ChunkSize)
+            for (var offset = 0; offset < data.Length; offset += Sender.ChunkSize)
             {
                 if (Result is not null)
                 {
                     return;
                 }
 
-                var count = Math.Min(TransferSender.ChunkSize, data.Length - offset);
+                var count = Math.Min(Sender.ChunkSize, data.Length - offset);
                 while (!Sender.CanSend(count))
                 {
                     WindowWaits++;

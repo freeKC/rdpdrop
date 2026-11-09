@@ -22,7 +22,7 @@ public class SimulatedTransferTests(ITestOutputHelper output)
         SimulatedTransfer.MakeFile("big.bin", (3 * 1024 * 1024) + 12345, 1),
         SimulatedTransfer.MakeFile(@"Photos\a.jpg", 700_001, 2),
         SimulatedTransfer.MakeFile(@"Photos\empty.txt", 0, 3),
-        SimulatedTransfer.MakeFile(@"Photos\2026\b.raw", TransferSender.ChunkSize * 2, 4),
+        SimulatedTransfer.MakeFile(@"Photos\2026\b.raw", TransferSender.DefaultChunkSize * 2, 4),
     ];
 
     [Theory]
@@ -64,8 +64,8 @@ public class SimulatedTransferTests(ITestOutputHelper output)
         Assert.True(transfer.MostInFlight <= TransferSender.WindowBytes);
         Assert.Equal(TransferSender.WindowBytes, transfer.MostInFlight);
 
-        // One acknowledgement per 2 MiB, and one at the end of the file.
-        Assert.Equal(6 + 1, transfer.Acks);
+        // One acknowledgement after the first chunk, then one per 2 MiB, and one at the end of the file.
+        Assert.Equal(1 + 5 + 1, transfer.Acks);
     }
 
     [Theory]
@@ -82,7 +82,7 @@ public class SimulatedTransferTests(ITestOutputHelper output)
         Assert.Equal(DropStatus.Error, transfer.Result?.Status);
         Assert.Equal(TransferFailure.DataLost, transfer.Receiver.Failure);
         Assert.Equal("big.bin", transfer.Receiver.FailurePath);
-        Assert.Contains($"starts at byte {3L * TransferSender.ChunkSize}", transfer.Receiver.FailureDetail, StringComparison.Ordinal);
+        Assert.Contains($"starts at byte {3L * TransferSender.DefaultChunkSize}", transfer.Receiver.FailureDetail, StringComparison.Ordinal);
         Assert.Equal(1, storage.DeleteAllCalls);
         Assert.Empty(storage.Files);
     }
@@ -125,17 +125,25 @@ public class SimulatedTransferTests(ITestOutputHelper output)
 
         Assert.Equal(DropStatus.Cancelled, transfer.Result?.Status);
         Assert.Equal(TransferState.Cancelled, transfer.Receiver.State);
-        Assert.Equal(5L * TransferSender.ChunkSize, transfer.Result?.Bytes);
+        Assert.Equal(5L * TransferSender.DefaultChunkSize, transfer.Result?.Bytes);
         Assert.Equal(1, storage.DeleteAllCalls);
         Assert.Empty(storage.Files);
     }
 
-    [Theory]
-    [MemberData(nameof(Models))]
-    public void The_lines_stay_within_the_limit_and_in_ascii(ChannelByteModel model)
+    public static TheoryData<ChannelByteModel, int> ModelsAndChunkSizes => new()
     {
-        var files = new List<(TransferFile File, byte[] Data)> { SimulatedTransfer.MakeFile("big.bin", TransferSender.ChunkSize, 6) };
-        var transfer = new SimulatedTransfer(model, [new TransferItem("big.bin", false)], files, new MemoryTransferStorage());
+        { ChannelByteModel.OneBytePerChar, TransferSender.DefaultChunkSize },
+        { ChannelByteModel.Utf16, TransferSender.DefaultChunkSize },
+        { ChannelByteModel.OneBytePerChar, TransferSender.MinChunkSize },
+        { ChannelByteModel.Utf16, TransferSender.MaxChunkSize },
+    };
+
+    [Theory]
+    [MemberData(nameof(ModelsAndChunkSizes))]
+    public void The_lines_stay_within_the_limit_and_in_ascii(ChannelByteModel model, int chunkSize)
+    {
+        var files = new List<(TransferFile File, byte[] Data)> { SimulatedTransfer.MakeFile("big.bin", (3 * chunkSize) + 7, 6) };
+        var transfer = new SimulatedTransfer(model, [new TransferItem("big.bin", false)], files, new MemoryTransferStorage(), chunkSize);
         var longest = 0;
         transfer.Channel.Tamper = (_, line) =>
         {
@@ -149,7 +157,22 @@ public class SimulatedTransferTests(ITestOutputHelper output)
         transfer.Run();
 
         Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
-        Assert.InRange(longest, (TransferSender.ChunkSize * 4 / 3) + 50, LineFraming.MaxLineLength);
+        Assert.InRange(longest, (chunkSize * 4 / 3) + 50, LineFraming.MaxLineLength);
+        Assert.Equal(longest, transfer.Sender.LongestChunkLine);
+        Assert.Equal(4, transfer.Sender.ChunkLines);
+    }
+
+    [Fact]
+    public void A_default_chunk_line_stays_small_on_the_wire_in_both_models()
+    {
+        var files = new List<(TransferFile File, byte[] Data)> { SimulatedTransfer.MakeFile("big.bin", TransferSender.DefaultChunkSize, 9) };
+        var transfer = new SimulatedTransfer(ChannelByteModel.Utf16, [new TransferItem("big.bin", false)], files, new MemoryTransferStorage());
+
+        transfer.Run();
+
+        // About 44 000 characters of base64, so about 88 KB per call in the UTF-16 model.
+        Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
+        Assert.InRange(transfer.Sender.LongestChunkLine, 43_000, 45_000);
     }
 
     /// <summary>

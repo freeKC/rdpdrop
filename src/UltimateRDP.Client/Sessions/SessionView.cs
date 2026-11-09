@@ -50,6 +50,7 @@ internal sealed partial class SessionView : UserControl
         _childTargets = new ChildDropTargets(_rdp);
         _agent = new AgentLink(_rdp);
         _display = new DisplayController(_rdp, this, settings.DisplayMode);
+        _transferChunkBytes = settings.TransferChunkBytes;
         InitializeViewChoices(settings);
 
         Dock = DockStyle.Fill;

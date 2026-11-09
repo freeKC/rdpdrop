@@ -6,7 +6,10 @@ namespace UltimateRDP.Core.Tests.Transfer;
 
 public class TransferSenderTests
 {
-    private static TransferSender TwoFiles() => new("t1", [new TransferFile("a.bin", 3 * TransferSender.ChunkSize), new TransferFile("b.bin", 10)]);
+    /// <summary>The largest chunks, which the values of some cases below assume.</summary>
+    private const int Chunk = TransferSender.MaxChunkSize;
+
+    private static TransferSender TwoFiles() => new("t1", [new TransferFile("a.bin", 3 * Chunk), new TransferFile("b.bin", 10)], Chunk);
 
     private static FileChunkMessage Read(string line) =>
         Assert.IsType<FileChunkMessage>(MessageSerializer.Deserialize(Encoding.ASCII.GetBytes(line.TrimEnd('\n'))));
@@ -16,21 +19,21 @@ public class TransferSenderTests
     {
         using var sender = TwoFiles();
 
-        Assert.Equal(new TransferBeginMessage("t1", 2, (3 * TransferSender.ChunkSize) + 10), sender.Begin());
-        Assert.Equal(new FileBeginMessage("t1", 0, "a.bin", 3 * TransferSender.ChunkSize), sender.BeginFile());
-        var first = Read(sender.EncodeChunk(new byte[TransferSender.ChunkSize]));
-        var second = Read(sender.EncodeChunk(new byte[TransferSender.ChunkSize]));
+        Assert.Equal(new TransferBeginMessage("t1", 2, (3 * Chunk) + 10), sender.Begin());
+        Assert.Equal(new FileBeginMessage("t1", 0, "a.bin", 3 * Chunk), sender.BeginFile());
+        var first = Read(sender.EncodeChunk(new byte[Chunk]));
+        var second = Read(sender.EncodeChunk(new byte[Chunk]));
         Assert.Equal((0, 0L), (first.FileIndex, first.Offset));
-        Assert.Equal((0, (long)TransferSender.ChunkSize), (second.FileIndex, second.Offset));
+        Assert.Equal((0, (long)Chunk), (second.FileIndex, second.Offset));
     }
 
     [Fact]
     public void The_window_closes_at_four_mebibytes_and_reopens_with_acks()
     {
-        using var sender = new TransferSender("t1", [new TransferFile("a.bin", 32L * 1024 * 1024)]);
+        using var sender = new TransferSender("t1", [new TransferFile("a.bin", 32L * 1024 * 1024)], Chunk);
         sender.Begin();
         sender.BeginFile();
-        var chunk = new byte[TransferSender.ChunkSize];
+        var chunk = new byte[Chunk];
         var sent = 0;
         while (sender.CanSend(chunk.Length))
         {
@@ -45,6 +48,46 @@ public class TransferSenderTests
 
         Assert.Equal(2L * 1024 * 1024, sender.InFlightBytes);
         Assert.True(sender.CanSend(chunk.Length));
+    }
+
+    [Fact]
+    public void The_default_window_holds_one_hundred_and_twenty_eight_default_chunks()
+    {
+        using var sender = new TransferSender("t1", [new TransferFile("a.bin", 32L * 1024 * 1024)]);
+        sender.Begin();
+        sender.BeginFile();
+        var chunk = new byte[TransferSender.DefaultChunkSize];
+        var sent = 0;
+        while (sender.CanSend(chunk.Length))
+        {
+            sender.EncodeChunk(chunk);
+            sent++;
+        }
+
+        Assert.Equal(TransferSender.DefaultChunkSize, sender.ChunkSize);
+        Assert.Equal(128, sent);
+        Assert.Equal(128, sender.ChunkLines);
+        Assert.Equal(TransferSender.WindowBytes, sender.InFlightBytes);
+    }
+
+    [Theory]
+    [InlineData(0, TransferSender.MinChunkSize)]
+    [InlineData(-5, TransferSender.MinChunkSize)]
+    [InlineData(4095, TransferSender.MinChunkSize)]
+    [InlineData(65536, 65536)]
+    [InlineData(262145, TransferSender.MaxChunkSize)]
+    [InlineData(int.MaxValue, TransferSender.MaxChunkSize)]
+    public void A_chunk_size_from_the_settings_is_brought_within_bounds(int configured, int expected)
+    {
+        Assert.Equal(expected, TransferSender.ClampChunkSize(configured));
+    }
+
+    [Theory]
+    [InlineData(TransferSender.MinChunkSize - 1)]
+    [InlineData(TransferSender.MaxChunkSize + 1)]
+    public void A_chunk_size_out_of_bounds_is_refused(int chunkSize)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new TransferSender("t1", [], chunkSize));
     }
 
     [Fact]
@@ -63,7 +106,7 @@ public class TransferSenderTests
         sender.BeginFile();
         for (var i = 0; i < 3; i++)
         {
-            sender.EncodeChunk(new byte[TransferSender.ChunkSize]);
+            sender.EncodeChunk(new byte[Chunk]);
         }
 
         sender.EndFile();
@@ -82,12 +125,12 @@ public class TransferSenderTests
         using var sender = TwoFiles();
         sender.Begin();
         sender.BeginFile();
-        sender.EncodeChunk(new byte[TransferSender.ChunkSize]);
-        sender.EncodeChunk(new byte[TransferSender.ChunkSize]);
-        sender.OnAck(new FileAckMessage("t1", 0, 2 * TransferSender.ChunkSize));
+        sender.EncodeChunk(new byte[Chunk]);
+        sender.EncodeChunk(new byte[Chunk]);
+        sender.OnAck(new FileAckMessage("t1", 0, 2 * Chunk));
 
-        Assert.True(sender.OnAck(new FileAckMessage("t1", 0, TransferSender.ChunkSize)));
-        Assert.Equal(2 * TransferSender.ChunkSize, sender.AcknowledgedBytes);
+        Assert.True(sender.OnAck(new FileAckMessage("t1", 0, Chunk)));
+        Assert.Equal(2 * Chunk, sender.AcknowledgedBytes);
     }
 
     [Theory]
@@ -101,8 +144,8 @@ public class TransferSenderTests
         using var sender = TwoFiles();
         sender.Begin();
         sender.BeginFile();
-        sender.EncodeChunk(new byte[TransferSender.ChunkSize]);
-        sender.EncodeChunk(new byte[TransferSender.ChunkSize]);
+        sender.EncodeChunk(new byte[Chunk]);
+        sender.EncodeChunk(new byte[Chunk]);
 
         Assert.False(sender.OnAck(new FileAckMessage(transferId, fileIndex, received)));
         Assert.Equal(0, sender.AcknowledgedBytes);
@@ -125,13 +168,13 @@ public class TransferSenderTests
     [Fact]
     public void Chunks_must_fit_the_file_and_the_chunk_size()
     {
-        using var sender = new TransferSender("t1", [new TransferFile("a.bin", TransferSender.ChunkSize + 1)]);
+        using var sender = new TransferSender("t1", [new TransferFile("a.bin", Chunk + 1)], Chunk);
         sender.Begin();
         sender.BeginFile();
 
         Assert.Throws<ArgumentException>(() => sender.EncodeChunk([]));
-        Assert.Throws<ArgumentException>(() => sender.EncodeChunk(new byte[TransferSender.ChunkSize + 1]));
-        sender.EncodeChunk(new byte[TransferSender.ChunkSize]);
+        Assert.Throws<ArgumentException>(() => sender.EncodeChunk(new byte[Chunk + 1]));
+        sender.EncodeChunk(new byte[Chunk]);
         Assert.Throws<ArgumentException>(() => sender.EncodeChunk(new byte[2]));
     }
 

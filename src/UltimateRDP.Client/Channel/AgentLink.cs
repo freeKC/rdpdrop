@@ -116,6 +116,24 @@ internal sealed class AgentLink : IDisposable
     }
 
     /// <summary>
+    /// The agent did not answer a message that always gets an answer. The control does not
+    /// report that the agent exited or restarted in the session, so the link would stay
+    /// ready with nobody listening: a new discovery period starts, with a hello that also
+    /// gives a restarted agent the language again. Does nothing unless the agent is ready.
+    /// </summary>
+    public void Recheck(string reason)
+    {
+        if (!_connected || State != AgentState.Ready)
+        {
+            return;
+        }
+
+        ClientLog.Info($"The agent did not answer ({reason}); it may have exited or restarted, looking for it again.");
+        SetState(AgentState.Waiting);
+        RestartDiscovery(reason);
+    }
+
+    /// <summary>
     /// Stops everything. Called on OnDisconnected.
     /// </summary>
     public void Stop()

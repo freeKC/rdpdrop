@@ -159,9 +159,9 @@ public class TransferMessageTests
     }
 
     [Fact]
-    public void A_full_chunk_fits_in_a_line()
+    public void A_chunk_of_the_largest_size_fits_in_a_line()
     {
-        var line = TransferLines.EncodeChunk("0123456789abcdef0123456789abcdef", int.MaxValue, long.MaxValue, new byte[TransferSender.ChunkSize]);
+        var line = TransferLines.EncodeChunk("0123456789abcdef0123456789abcdef", int.MaxValue, long.MaxValue, new byte[TransferSender.MaxChunkSize]);
 
         Assert.True(line.Length - 1 <= LineFraming.MaxLineLength);
     }

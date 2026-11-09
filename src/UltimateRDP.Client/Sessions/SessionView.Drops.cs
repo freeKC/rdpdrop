@@ -395,6 +395,9 @@ internal sealed partial class SessionView
             live.LeaveSent = true;
             _agent.SendDrag(new DragLeaveMessage(live.Id), live.Id);
         }
+
+        // An agent that exited or restarted in the session goes unnoticed otherwise.
+        _agent.Recheck("no dragAck");
     }
 
     /// <summary>Ends the live drag, telling the agent when <paramref name="sendLeave"/> is set.</summary>

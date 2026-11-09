@@ -379,6 +379,9 @@ Nu opnieuw verbinden?</value>
   <data name="TransferAgentSilent" xml:space="preserve">
     <value>De agent reageerde niet meer tijdens de overdracht.</value>
   </data>
+  <data name="TransferFirstAckMissing" xml:space="preserve">
+    <value>De agent heeft de eerste gegevens van de overdracht niet bevestigd.</value>
+  </data>
   <data name="TransferBusy" xml:space="preserve">
     <value>Er is een overdracht bezig. Wacht tot die klaar is, of annuleer die via het menu Sessie.</value>
   </data>

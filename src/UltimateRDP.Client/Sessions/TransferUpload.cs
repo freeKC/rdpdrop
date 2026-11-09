@@ -18,14 +18,18 @@ namespace UltimateRDP.Client.Sessions;
 /// passes to <see cref="OnAck"/>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The events are raised on the UI thread. The upload ends once the agent acknowledged the
 /// last bytes; the transferResult of the agent, which the owner receives, closes the transfer.
+/// </para>
+/// <para>
+/// The agent acknowledges the first chunk of every file at once: without an
+/// acknowledgement <see cref="TransferAckWatch.FirstAckTimeout"/> after the first chunk
+/// went out, the upload fails, and the log says how the data was sent.
+/// </para>
 /// </remarks>
 internal sealed class TransferUpload
 {
-    /// <summary>Without any acknowledgement for this long while the window is full, the agent is taken as gone.</summary>
-    public static readonly TimeSpan AckTimeout = TimeSpan.FromSeconds(60);
-
     private const int ReadBufferSize = 1024 * 1024;
     private const int WaitSliceMilliseconds = 500;
 
@@ -42,23 +46,31 @@ internal sealed class TransferUpload
     private readonly Func<Message, bool> _sendMessage;
     private readonly Func<string, bool> _sendLine;
     private readonly IReadOnlyList<DropItem> _items;
+    private readonly int _chunkSize;
+    private readonly ChannelByteModel _model;
     private readonly object _gate = new();
     private TransferSender? _sender;
-    private long _lastAckTicks;
+    private TransferAckWatch? _watch;
+    private int _linesSent;
     private volatile bool _stopped;
+    private volatile bool _ackMissing;
 
     /// <param name="owner">A control of the UI thread, to hand the sends to.</param>
     /// <param name="dragId">The drag whose drop was deferred.</param>
     /// <param name="transferId">The id the agent gave in its dragAck.</param>
     /// <param name="items">The dropped items, in the order of the dragEnter.</param>
+    /// <param name="chunkSize">Raw bytes per chunk, within the bounds of <see cref="TransferSender"/>.</param>
+    /// <param name="model">Byte model detected on the data received from the agent, for the log.</param>
     /// <param name="sendMessage">Sends a message on the UI thread; false when it failed.</param>
     /// <param name="sendLine">Sends a ready line on the UI thread; false when it failed.</param>
-    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, Func<Message, bool> sendMessage, Func<string, bool> sendLine)
+    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, ChannelByteModel model, Func<Message, bool> sendMessage, Func<string, bool> sendLine)
     {
         _owner = owner;
         DragId = dragId;
         TransferId = transferId;
         _items = items;
+        _chunkSize = TransferSender.ClampChunkSize(chunkSize);
+        _model = model;
         _sendMessage = sendMessage;
         _sendLine = sendLine;
     }
@@ -81,6 +93,9 @@ internal sealed class TransferUpload
 
     /// <summary>Progress shown in the status bar. UI thread only; null before <see cref="Planned"/>.</summary>
     public TransferProgress? Progress { get; private set; }
+
+    /// <summary>True when the upload failed because the agent did not acknowledge the data in time.</summary>
+    public bool AckMissing => _ackMissing;
 
     /// <summary>When the upload started, in <see cref="Environment.TickCount64"/> milliseconds.</summary>
     public long StartTicks { get; } = Environment.TickCount64;
@@ -149,7 +164,7 @@ internal sealed class TransferUpload
             }
 
             acknowledged = _sender.AcknowledgedBytes;
-            Interlocked.Exchange(ref _lastAckTicks, Environment.TickCount64);
+            _watch?.OnAck(Environment.TickCount64);
             Monitor.PulseAll(_gate);
         }
 
@@ -179,9 +194,9 @@ internal sealed class TransferUpload
             TransferBeginMessage begin;
             lock (_gate)
             {
-                _sender = new TransferSender(TransferId, [.. files.Select(file => file.File)]);
+                _sender = new TransferSender(TransferId, [.. files.Select(file => file.File)], _chunkSize);
                 begin = _sender.Begin();
-                Interlocked.Exchange(ref _lastAckTicks, Environment.TickCount64);
+                _watch = new TransferAckWatch(Environment.TickCount64);
             }
 
             Post(() =>
@@ -195,7 +210,7 @@ internal sealed class TransferUpload
                 }
             });
 
-            var buffer = new byte[TransferSender.ChunkSize];
+            var buffer = new byte[_chunkSize];
             foreach (var (path, file) in files)
             {
                 if (!SendFile(path, file, buffer))
@@ -278,7 +293,7 @@ internal sealed class TransferUpload
             var remaining = file.Size;
             while (remaining > 0)
             {
-                var wanted = (int)Math.Min(TransferSender.ChunkSize, remaining);
+                var wanted = (int)Math.Min(_chunkSize, remaining);
                 var count = stream.ReadAtLeast(buffer.AsSpan(0, wanted), wanted, throwOnEndOfStream: false);
                 if (count < wanted)
                 {
@@ -332,12 +347,15 @@ internal sealed class TransferUpload
     {
         lock (_gate)
         {
+            if (TimedOut(waitingForAck: false, "while sending"))
+            {
+                return false;
+            }
+
             while (!_stopped && !_sender!.CanSend(count))
             {
-                if (Environment.TickCount64 - Interlocked.Read(ref _lastAckTicks) > AckTimeout.TotalMilliseconds)
+                if (TimedOut(waitingForAck: true, "with the window full"))
                 {
-                    ClientLog.Warn(Invariant($"Transfer {TransferId}: no acknowledgement for {AckTimeout.TotalSeconds:0} s with {_sender.InFlightBytes} bytes in flight."));
-                    Fail(LocalText.Of(nameof(Strings.TransferAgentSilent)));
                     return false;
                 }
 
@@ -358,16 +376,37 @@ internal sealed class TransferUpload
         {
             while (!_stopped && !_sender!.IsAcknowledged)
             {
-                if (Environment.TickCount64 - Interlocked.Read(ref _lastAckTicks) > AckTimeout.TotalMilliseconds)
+                if (TimedOut(waitingForAck: true, "after the last file"))
                 {
-                    ClientLog.Warn(Invariant($"Transfer {TransferId}: every file was sent, and no acknowledgement came for {AckTimeout.TotalSeconds:0} s with {_sender.InFlightBytes} bytes in flight."));
-                    Fail(LocalText.Of(nameof(Strings.TransferAgentSilent)));
                     return;
                 }
 
                 Monitor.Wait(_gate, WaitSliceMilliseconds);
             }
         }
+    }
+
+    /// <summary>
+    /// Checks the acknowledgement rules; when one is broken, logs how the data was sent and
+    /// fails the upload. Under the lock.
+    /// </summary>
+    private bool TimedOut(bool waitingForAck, string when)
+    {
+        var timeout = _watch!.Check(Environment.TickCount64, waitingForAck);
+        if (timeout == TransferAckTimeout.None)
+        {
+            return false;
+        }
+
+        var sender = _sender!;
+        var rule = timeout == TransferAckTimeout.FirstData
+            ? Invariant($"no acknowledgement {TransferAckWatch.FirstAckTimeout.TotalSeconds:0} s after the first chunk was sent")
+            : Invariant($"no acknowledgement for {TransferAckWatch.AckTimeout.TotalSeconds:0} s");
+        ClientLog.Warn(Invariant(
+            $"Transfer {TransferId}: {rule}, {when}. Byte model of the received data {_model}, chunk size {sender.ChunkSize} bytes, chunk lines of up to {sender.LongestChunkLine} characters, {Volatile.Read(ref _linesSent)} chunk line(s) sent, {sender.InFlightBytes} bytes in flight, {sender.AcknowledgedBytes} acknowledged."));
+        _ackMissing = true;
+        Fail(LocalText.Of(timeout == TransferAckTimeout.FirstData ? nameof(Strings.TransferFirstAckMissing) : nameof(Strings.TransferAgentSilent)));
+        return true;
     }
 
     /// <summary>Sends on the UI thread; a refusal of the control fails the transfer.</summary>
@@ -387,11 +426,28 @@ internal sealed class TransferUpload
         return false;
     }
 
+    /// <summary>Sends a chunk line on the UI thread; a refusal of the control fails the transfer.</summary>
     private void SendLine(string line)
     {
-        if (!_stopped && !_sendLine(line))
+        if (_stopped)
+        {
+            return;
+        }
+
+        if (!_sendLine(line))
         {
             Fail(LocalText.Of(nameof(Strings.TransferNotSent)));
+            return;
+        }
+
+        if (Interlocked.Increment(ref _linesSent) == 1)
+        {
+            ClientLog.Info(Invariant($"Transfer {TransferId}: first chunk line sent, {line.Length} characters for chunks of {_chunkSize} bytes."));
+        }
+
+        lock (_gate)
+        {
+            _watch?.OnChunkSent(Environment.TickCount64);
         }
     }
 

@@ -83,7 +83,7 @@ public sealed class TransferReceiver : IDisposable
     private readonly ITransferStorage _storage;
     private readonly Func<long> _clock;
     private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
-    private readonly byte[] _buffer = new byte[TransferSender.ChunkSize];
+    private readonly byte[] _buffer = new byte[TransferSender.MaxChunkSize];
     private IncrementalHash? _hash;
     private Stream? _stream;
     private FileBeginMessage? _file;
@@ -267,11 +267,11 @@ public sealed class TransferReceiver : IDisposable
             return Fail(TransferFailure.DataLost, file.RelativePath, $"A chunk starts at byte {chunk.Offset} where byte {_fileReceived} was expected.");
         }
 
-        if (chunk.Data.Length > (TransferSender.ChunkSize + 2) / 3 * 4
+        if (chunk.Data.Length > (TransferSender.MaxChunkSize + 2) / 3 * 4
             || !Convert.TryFromBase64String(chunk.Data, _buffer, out var count)
             || count == 0)
         {
-            return Fail(TransferFailure.BadData, file.RelativePath, $"A chunk at byte {chunk.Offset} is not valid base64 of 1 to {TransferSender.ChunkSize} bytes.");
+            return Fail(TransferFailure.BadData, file.RelativePath, $"A chunk at byte {chunk.Offset} is not valid base64 of 1 to {TransferSender.MaxChunkSize} bytes.");
         }
 
         if (count > file.Size - _fileReceived)
@@ -287,9 +287,13 @@ public sealed class TransferReceiver : IDisposable
         }
 
         _hash!.AppendData(data);
+        var first = _fileReceived == 0;
         _fileReceived += count;
         ReceivedBytes += count;
-        if (ReceivedBytes - _bytesAtLastAck >= AckInterval)
+
+        // The first chunk of each file is acknowledged at once, so that the client learns
+        // quickly that data gets through.
+        if (first || ReceivedBytes - _bytesAtLastAck >= AckInterval)
         {
             return Ack(file);
         }

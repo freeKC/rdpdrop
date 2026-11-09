@@ -379,6 +379,9 @@ Se reconnecter maintenant ?</value>
   <data name="TransferAgentSilent" xml:space="preserve">
     <value>L'agent a cessé de répondre pendant le transfert.</value>
   </data>
+  <data name="TransferFirstAckMissing" xml:space="preserve">
+    <value>L'agent n'a pas accusé réception des premières données du transfert.</value>
+  </data>
   <data name="TransferBusy" xml:space="preserve">
     <value>Un transfert est en cours. Attendez sa fin ou annulez-le depuis le menu Session.</value>
   </data>

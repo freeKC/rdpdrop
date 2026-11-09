@@ -379,6 +379,9 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
   <data name="TransferAgentSilent" xml:space="preserve">
     <value>El agente dejó de responder durante la transferencia.</value>
   </data>
+  <data name="TransferFirstAckMissing" xml:space="preserve">
+    <value>El agente no confirmó la recepción de los primeros datos de la transferencia.</value>
+  </data>
   <data name="TransferBusy" xml:space="preserve">
     <value>Hay una transferencia en curso. Espere a que termine o cancélela desde el menú Sesión.</value>
   </data>
