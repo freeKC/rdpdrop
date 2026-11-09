@@ -393,7 +393,8 @@ them it must be invisible, harmless and light.
   not concurrent, with `GCConserveMemory` 5. Measured on Windows 11 at idle,
   in a session without the channel, over sixty seconds: about 4 MB of
   private working set, 5 threads, and no measurable processor time, against
-  about 7 MB and 12 threads before these changes.
+  about 7 MB and 12 threads before these changes. Version 0.4.4 gives the
+  same figures, see "The agent without a client" under "Version 0.4.4".
 * Retry without spinning. `ChannelRetryPolicy` in Core decides the wait
   before the next open: two seconds after a closed channel on which a client
   spoke, or an unexpected failure (a channel that closes before any client
@@ -1274,11 +1275,13 @@ kept by `ChannelLoop`):
   messages, of which the handling alone (JSON, base64, checksum, file
   write) is counted apart.
 
-A read costs two calls of `Stopwatch.GetTimestamp` and a few additions. A
-transfer of the agent takes a snapshot of these counters when its receiver
-is created at the deferred drop and logs the difference at its end, with
-the traffic counters of the session from `WTSSessionInfoEx` when Windows
-gives them (`ChannelMeter` in the agent).
+The counters exist only while a transfer runs: the transfer creates them
+when its receiver is created at the deferred drop, the channel thread
+fills them while they exist, and the transfer logs them and drops them at
+its end, with the traffic counters of the session from `WTSSessionInfoEx`
+when Windows gives them (`ChannelMeter` in the agent). Without a transfer
+the channel thread takes no timestamp at all; during one, a read costs two
+calls of `Stopwatch.GetTimestamp` and a few additions.
 
 Once per connection, when the client first speaks on the channel, the agent
 logs the client address (`WTSClientAddress`), the name of the connection
@@ -1397,6 +1400,42 @@ The numbers above only show the format. How to read them:
   limit, which the share of the calls then tells apart.
 * In `file` mode, reads counted as longer than 1600 bytes, or several
   channel headers per read, mean that one read returned several chunks.
+
+### The agent without a client
+
+The agent runs in every session of a server where most users connect with
+mstsc, so nothing of this version may change its behaviour in a session
+without an UltimateRDP client:
+
+* the waiting loop of the channel thread (open, wait, retry, the hourly
+  line) has no changed line;
+* the `channelRead` setting is read once at start with the others, and its
+  value joins the start line, which stays one line; `wts` is the default,
+  and the file handle is only opened when the setting is `file` and a
+  channel is open;
+* the read counters, the measure of a transfer and the queries of
+  `WTSSessionInfoEx` only exist from the start of a transfer to its end; the
+  line about the connection is written when a client first speaks on the
+  channel;
+* no thread, timer or registry read was added.
+
+Measured on this development computer on 2026-11-09, at idle in a session
+without the channel, sixty seconds per run, with the Release builds of 0.4.3
+and 0.4.4 started one after the other: the private working set and the
+private bytes at the end, the threads at the end, the processor time after
+the first five seconds (counted in steps of 15.6 ms), and the new lines of
+the log.
+
+| Build | Runs | Private working set | Private bytes | Threads | Processor time after 5 s | Log lines |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0.3.0, above | | about 4 MB | | 5 | not measurable | 1 |
+| 0.4.3 | 3 | 4.0 MB each | 7.2 MB | 5 each | 31 ms once, 0 twice | 1 each |
+| 0.4.4 | 4 | 4.0 MB three times, 1.9 MB once | 7.2 to 7.3 MB | 5 three times, 6 once | 0 each | 1 each |
+
+The thread counts sampled every five seconds in the last two runs of each
+build are the same series for both. The 1.9 MB and the sixth thread came
+once each and did not come back in the next run, as the 31 ms of processor
+time of one run of 0.4.3 did not.
 
 ### Versions
 

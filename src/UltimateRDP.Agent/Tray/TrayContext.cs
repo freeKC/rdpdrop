@@ -123,7 +123,7 @@ internal sealed class TrayContext : ApplicationContext
                 return;
             }
 
-            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop.ReadStats));
+            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop));
         }
 
         services.Handle(payload);

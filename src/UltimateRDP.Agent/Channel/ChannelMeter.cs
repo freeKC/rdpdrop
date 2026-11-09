@@ -4,37 +4,34 @@ using UltimateRDP.Core.Protocol;
 
 namespace UltimateRDP.Agent.Channel;
 
-/// <summary>Where a transfer started, for <see cref="ChannelMeter.Summary"/>.</summary>
-/// <param name="Reads">The read counters then.</param>
-/// <param name="Timestamp">The time then, in ticks of <see cref="Stopwatch"/>.</param>
+/// <summary>What is measured for one transfer, from <see cref="ChannelMeter.Begin"/> to <see cref="ChannelMeter.End"/>.</summary>
+/// <param name="Reads">The read counters of the channel thread for this transfer.</param>
+/// <param name="Timestamp">When the transfer started, in ticks of <see cref="Stopwatch"/>.</param>
 /// <param name="Session">The traffic counters of the session then, or null.</param>
-internal readonly record struct ChannelMark(ChannelReadSnapshot Reads, long Timestamp, SessionCounters? Session);
+internal sealed record ChannelMeasure(ChannelReadStats Reads, long Timestamp, SessionCounters? Session);
 
 /// <summary>
 /// Measures what the channel did during one transfer: the reads of the channel thread
 /// (<see cref="ChannelReadStats"/>) and the traffic counters of the session. A transfer
-/// takes a <see cref="Mark"/> when it starts and logs the <see cref="Summary"/> when it
-/// ends.
+/// calls <see cref="Begin"/> when it starts and <see cref="End"/> when it ends; the
+/// counters exist only in between, so that nothing is measured without a transfer.
 /// </summary>
-internal sealed class ChannelMeter(ChannelReadStats reads)
+internal sealed class ChannelMeter(ChannelLoop loop)
 {
-    /// <summary>The counters of the channel thread.</summary>
-    public ChannelReadStats Reads { get; } = reads;
+    /// <summary>Starts counting for a transfer.</summary>
+    public ChannelMeasure Begin() => new(loop.StartReadMeasure(), Stopwatch.GetTimestamp(), SessionTraffic.Counters());
 
-    /// <summary>The counters now.</summary>
-    public ChannelMark Mark() => new(Reads.Snapshot(), Stopwatch.GetTimestamp(), SessionTraffic.Counters());
-
-    /// <summary>The summary lines of the transfer <paramref name="transferId"/> since <paramref name="start"/>.</summary>
-    public IReadOnlyList<string> Summary(string transferId, ChannelMark start)
+    /// <summary>Stops counting and gives the summary lines of the transfer <paramref name="transferId"/>.</summary>
+    public IReadOnlyList<string> End(string transferId, ChannelMeasure measure)
     {
-        var end = Mark();
-        var elapsed = Stopwatch.GetElapsedTime(start.Timestamp, end.Timestamp).TotalMilliseconds;
+        loop.StopReadMeasure(measure.Reads);
+        var elapsed = Stopwatch.GetElapsedTime(measure.Timestamp).TotalMilliseconds;
         var lines = new List<string>
         {
-            (end.Reads - start.Reads).Describe(transferId, Reads.ChunkLength, Stopwatch.Frequency, elapsed, Reads.ReadMode),
+            measure.Reads.Snapshot().Describe(transferId, measure.Reads.ChunkLength, Stopwatch.Frequency, elapsed, loop.ReadMode),
         };
 
-        if (start.Session is { } before && end.Session is { } after)
+        if (measure.Session is { } before && SessionTraffic.Counters() is { } after)
         {
             // 32 bit counters that may wrap; unchecked differences stay right across one wrap.
             lines.Add(string.Create(

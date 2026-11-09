@@ -40,7 +40,7 @@ internal sealed class StagedTransfer
     private readonly Lock _gate = new();
     private readonly Timer _idleTimer;
     private readonly ChannelMeter? _meter;
-    private readonly ChannelMark _mark;
+    private ChannelMeasure? _measure;
     private long _lastMessageTicks = Environment.TickCount64;
     private int _ignoredAfterEnd;
     private bool _resultSent;
@@ -52,7 +52,6 @@ internal sealed class StagedTransfer
     {
         _logger = logger;
         _meter = meter;
-        _mark = meter?.Mark() ?? default;
         _staging = staging;
         _send = send;
         _language = language;
@@ -62,6 +61,9 @@ internal sealed class StagedTransfer
         StagedPaths = [.. items.Select(item => Path.Combine(folder, item.Name))];
         _receiver = new TransferReceiver(transferId, items, staging.CreateTransferStorage(transferId), () => Environment.TickCount64);
         _idleTimer = new Timer(_ => Guarded(CheckIdle), null, IdleCheckInterval, IdleCheckInterval);
+
+        // Last, so that a constructor that throws leaves nothing counting.
+        _measure = meter?.Begin();
     }
 
     /// <summary>
@@ -210,14 +212,16 @@ internal sealed class StagedTransfer
     /// <summary>What the channel did during the transfer: the reads of the agent and the counters of the session.</summary>
     private void LogChannelSummary()
     {
-        if (_meter is null)
+        var measure = _measure;
+        _measure = null;
+        if (_meter is null || measure is null)
         {
             return;
         }
 
         try
         {
-            foreach (var line in _meter.Summary(TransferId, _mark))
+            foreach (var line in _meter.End(TransferId, measure))
             {
                 _logger.Info(line);
             }

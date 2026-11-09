@@ -3,9 +3,11 @@ using System.Globalization;
 namespace UltimateRDP.Core.Protocol;
 
 /// <summary>
-/// Counters of the reads of the agent on the channel, kept for the whole run of the
-/// channel thread. A transfer takes a <see cref="Snapshot"/> when it starts and another
-/// when it ends; the difference is what the channel did during the transfer.
+/// Counters of the reads of the agent on the channel during one transfer. The agent
+/// creates them when a transfer starts and drops them when it ends, so that a session
+/// without a transfer, and above all a session without an UltimateRDP client, never
+/// creates or updates them. <see cref="Snapshot"/> gives the counters at any moment; the
+/// difference of two snapshots is what happened in between.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -45,9 +47,6 @@ public sealed class ChannelReadStats
 
     /// <summary>The size of a full read.</summary>
     public int ChunkLength { get; }
-
-    /// <summary>How the channel is read, for the summary: set by the channel thread at each connection.</summary>
-    public string ReadMode { get; set; } = "wts";
 
     /// <summary>
     /// A read returned. <paramref name="bytes"/> is the data of the client it gave, after

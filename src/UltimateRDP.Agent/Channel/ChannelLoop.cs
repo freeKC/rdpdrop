@@ -23,13 +23,18 @@ namespace UltimateRDP.Agent.Channel;
 /// The same thread watches the exit event of <c>--uninstall</c>, so that the agent needs
 /// no other thread while it waits.
 /// <para>
-/// Every read is counted in <see cref="ReadStats"/>: its size, the time blocked in the
-/// call and the time spent on its data, so that each transfer can log what the channel
-/// did. The <c>channelRead</c> setting chooses how the channel is read: with
-/// WTSVirtualChannelRead, or through its file handle (<see cref="ChannelFileReader"/>),
-/// whose blocks <see cref="ChannelPduFraming"/> frees from any channel header. At the
-/// first inconsistency of the file handle, the connection goes back to
-/// WTSVirtualChannelRead.
+/// While a transfer runs (<see cref="StartReadMeasure"/> to <see cref="StopReadMeasure"/>),
+/// every read is counted in a <see cref="ChannelReadStats"/>: its size, the time blocked
+/// in the call and the time spent on its data, so that the transfer can log what the
+/// channel did. Without a transfer nothing is counted or timed, and the waiting state of
+/// a session without client is the same as in version 0.4.3.
+/// </para>
+/// <para>
+/// Once a channel is open, the <c>channelRead</c> setting chooses how it is read: with
+/// WTSVirtualChannelRead, the default, or through its file handle
+/// (<see cref="ChannelFileReader"/>), whose blocks <see cref="ChannelPduFraming"/> frees
+/// from any channel header. At the first inconsistency of the file handle, the connection
+/// goes back to WTSVirtualChannelRead.
 /// </para>
 /// </remarks>
 internal sealed class ChannelLoop : IDisposable
@@ -58,6 +63,8 @@ internal sealed class ChannelLoop : IDisposable
     private Thread? _thread;
     private byte[]? _buffer;
     private byte[]? _payload;
+    private ChannelReadStats? _readStats;
+    private volatile string _readModeText = "wts";
     private VirtualChannel? _channel;
     private long _connectedAtTicks = Environment.TickCount64;
     private int _consecutiveFailures;
@@ -95,8 +102,22 @@ internal sealed class ChannelLoop : IDisposable
     /// <summary>Raised once on the channel thread when the exit event is set.</summary>
     public event Action? ExitRequested;
 
-    /// <summary>The counters of the reads, for the summaries of the transfers.</summary>
-    public ChannelReadStats ReadStats { get; } = new();
+    /// <summary>How the channel is read on the current connection, for the summaries of the transfers.</summary>
+    public string ReadMode => _readModeText;
+
+    /// <summary>
+    /// Starts counting the reads for a transfer and returns the new counters. Callable from
+    /// any thread; a transfer that starts while another is counted replaces it.
+    /// </summary>
+    public ChannelReadStats StartReadMeasure()
+    {
+        var stats = new ChannelReadStats();
+        Volatile.Write(ref _readStats, stats);
+        return stats;
+    }
+
+    /// <summary>Stops counting into <paramref name="stats"/>, unless another transfer replaced them. Callable from any thread.</summary>
+    public void StopReadMeasure(ChannelReadStats stats) => Interlocked.CompareExchange(ref _readStats, null, stats);
 
     /// <summary>
     /// Starts the background thread. <paramref name="payloadHandler"/> runs on that thread
@@ -375,7 +396,7 @@ internal sealed class ChannelLoop : IDisposable
     /// <summary>The reader of the file handle when the setting asks for it and it can be opened, otherwise null.</summary>
     private ChannelFileReader? OpenFileReader(VirtualChannel channel)
     {
-        ReadStats.ReadMode = "wts";
+        _readModeText = "wts";
         if (_readMode != ChannelReadMode.File)
         {
             return null;
@@ -384,19 +405,19 @@ internal sealed class ChannelLoop : IDisposable
         var reader = channel.OpenFileReader(out var error);
         if (reader is null)
         {
-            ReadStats.ReadMode = "wts, the file handle could not be used";
+            _readModeText = "wts, the file handle could not be used";
             _logger.Warn($"channelRead is \"file\" but the file handle of the channel cannot be used: {error}. Reading with WTSVirtualChannelRead.");
             return null;
         }
 
-        ReadStats.ReadMode = "file, layout not known yet";
+        _readModeText = "file, layout not known yet";
         _logger.Info($"Reading the channel through its file handle (channelRead \"file\"), up to {ChannelFileReader.BufferSize} bytes per read.");
         return reader;
     }
 
     private void Pump(VirtualChannel channel, byte[] buffer, ref ChannelFileReader? reader, ChannelPduFraming? framing)
     {
-        var payload = _payload ??= new byte[ReadBufferSize];
+        var payload = framing is null ? null : (_payload ??= new byte[ReadBufferSize]);
         var layoutLogged = false;
         var instantEmptyReads = 0;
         while (!_stopping)
@@ -413,8 +434,10 @@ internal sealed class ChannelLoop : IDisposable
                 RaiseExit();
             }
 
+            // Only a transfer in progress is timed; otherwise the loop is the one of 0.4.3.
+            var stats = Volatile.Read(ref _readStats);
             var started = Environment.TickCount64;
-            var readStart = Stopwatch.GetTimestamp();
+            var readStart = stats is null ? 0 : Stopwatch.GetTimestamp();
             int count;
             if (reader is not null)
             {
@@ -433,10 +456,10 @@ internal sealed class ChannelLoop : IDisposable
                 count = channel.Read(buffer, ReadTimeoutMilliseconds);
             }
 
-            var readEnd = Stopwatch.GetTimestamp();
+            var readEnd = stats is null ? 0 : Stopwatch.GetTimestamp();
             if (count == 0)
             {
-                ReadStats.RecordRead(0, readEnd - readStart);
+                stats?.RecordRead(0, readEnd - readStart);
                 instantEmptyReads = Environment.TickCount64 - started < InstantReadMilliseconds ? instantEmptyReads + 1 : 0;
                 if (instantEmptyReads >= MaxInstantEmptyReads)
                 {
@@ -449,11 +472,11 @@ internal sealed class ChannelLoop : IDisposable
             instantEmptyReads = 0;
             ReadOnlySpan<byte> data = buffer.AsSpan(0, count);
             var headers = 0;
-            if (reader is not null && framing is not null)
+            if (reader is not null && framing is not null && payload is not null)
             {
                 if (!framing.TryUnwrap(data, payload, out var written, out headers))
                 {
-                    ReadStats.RecordRead(0, readEnd - readStart);
+                    stats?.RecordRead(0, readEnd - readStart);
                     FallBack(ref reader, $"{framing.Error}; the {count} bytes of this read are dropped");
                     continue;
                 }
@@ -461,7 +484,7 @@ internal sealed class ChannelLoop : IDisposable
                 if (!layoutLogged && framing.Layout != ChannelPduLayout.Unknown)
                 {
                     layoutLogged = true;
-                    ReadStats.ReadMode = framing.Layout == ChannelPduLayout.Headers ? "file with channel headers" : "file without headers";
+                    _readModeText = framing.Layout == ChannelPduLayout.Headers ? "file with channel headers" : "file without headers";
                     _logger.Info(framing.Layout == ChannelPduLayout.Headers
                         ? $"The file handle of the channel gives a CHANNEL_PDU_HEADER of {ChannelPduFraming.HeaderLength} bytes before each chunk; the headers are taken out."
                         : "The file handle of the channel gives the data without headers.");
@@ -470,9 +493,9 @@ internal sealed class ChannelLoop : IDisposable
                 data = payload.AsSpan(0, written);
             }
 
-            ReadStats.RecordRead(data.Length, readEnd - readStart, headers);
+            stats?.RecordRead(data.Length, readEnd - readStart, headers);
             Process(data);
-            ReadStats.RecordProcessing(Stopwatch.GetTimestamp() - readEnd);
+            stats?.RecordProcessing(Stopwatch.GetTimestamp() - readEnd);
         }
     }
 
@@ -482,7 +505,7 @@ internal sealed class ChannelLoop : IDisposable
         _logger.Warn($"Reading the channel through its file handle failed: {reason}. The channel is read with WTSVirtualChannelRead until it closes.");
         reader?.Dispose();
         reader = null;
-        ReadStats.ReadMode = "wts after a failure of the file handle";
+        _readModeText = "wts after a failure of the file handle";
     }
 
     /// <summary>Decodes the data of one read and handles the lines it completes.</summary>
@@ -537,7 +560,8 @@ internal sealed class ChannelLoop : IDisposable
 
     private void Dispatch(byte[] payload)
     {
-        var started = Stopwatch.GetTimestamp();
+        var stats = Volatile.Read(ref _readStats);
+        var started = stats is null ? 0 : Stopwatch.GetTimestamp();
         try
         {
             _payloadHandler?.Invoke(payload);
@@ -549,7 +573,7 @@ internal sealed class ChannelLoop : IDisposable
         }
         finally
         {
-            ReadStats.RecordHandling(Stopwatch.GetTimestamp() - started);
+            stats?.RecordHandling(Stopwatch.GetTimestamp() - started);
         }
     }
 
