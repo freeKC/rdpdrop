@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Core.Agent;
 using UltimateRDP.Core.Protocol;
 using Message = UltimateRDP.Core.Protocol.Message;
 
@@ -11,12 +12,20 @@ namespace UltimateRDP.Agent.Channel;
 /// Keeps the ULTRDP channel open for as long as the agent runs. A dedicated background
 /// thread opens the channel, reads lines (see <see cref="IncomingTextDecoder"/> and
 /// <see cref="LineReader"/>) and hands each one, as ASCII bytes, to the handler. On any
-/// failure it closes the channel, waits <see cref="RetryDelay"/> and tries again,
-/// forever. <see cref="RestartNow"/> skips the wait, for example after a reconnect.
+/// failure it closes the channel, waits as <see cref="ChannelRetryPolicy"/> says and
+/// tries again, forever. A connection or a logon of the session skips the wait.
 /// </summary>
+/// <remarks>
+/// Most sessions of a server never see an UltimateRDP client, so the waiting state is
+/// quiet: no log line per attempt, one line per <see cref="IdleReportInterval"/> at most,
+/// and a warning only for a failure that a session without client does not explain.
+/// The same thread watches the exit event of <c>--uninstall</c>, so that the agent needs
+/// no other thread while it waits.
+/// </remarks>
 internal sealed class ChannelLoop : IDisposable
 {
-    public static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
+    /// <summary>Spacing of the "still waiting for a client channel" line.</summary>
+    public static readonly TimeSpan IdleReportInterval = TimeSpan.FromHours(1);
 
     private const int ReadTimeoutMilliseconds = 500;
     private const int ReadBufferSize = 64 * 1024;
@@ -27,25 +36,45 @@ internal sealed class ChannelLoop : IDisposable
     private const int InstantReadMilliseconds = 20;
 
     private readonly FileLogger _logger;
+    private readonly WaitHandle? _exitSignal;
     private readonly AutoResetEvent _wake = new(false);
     private readonly IncomingTextDecoder _decoder = new();
     private readonly LineReader _lineReader = new();
     private readonly RepeatedFailureFilter _openFailures = new();
+    private readonly RepeatedFailureFilter _loopFailures = new();
+    private readonly IdleReport _idleReport = new(IdleReportInterval);
     private Action<byte[]>? _payloadHandler;
     private Thread? _thread;
+    private byte[]? _buffer;
     private VirtualChannel? _channel;
+    private long _connectedAtTicks = Environment.TickCount64;
+    private int _consecutiveFailures;
+    private bool _exitRaised;
+    private bool _clientPresent;
     private volatile bool _stopping;
     private volatile bool _restartRequested;
     private volatile string? _restartReason;
     private volatile bool _sessionDisconnected;
     private volatile ChannelByteModel _model;
 
-    public ChannelLoop(FileLogger logger)
+    /// <param name="logger">The log.</param>
+    /// <param name="exitSignal">Event that asks the agent to exit, or null.</param>
+    public ChannelLoop(FileLogger logger, WaitHandle? exitSignal)
     {
         _logger = logger;
+        _exitSignal = exitSignal;
         _lineReader.ProtocolError += (_, _) =>
             _logger.Warn($"Protocol error: a line is longer than {LineFraming.MaxLineLength} characters. Buffered data dropped; the channel stays open.");
     }
+
+    /// <summary>
+    /// Raised on the channel thread with true when an UltimateRDP client speaks on a newly
+    /// opened channel, and with false when that channel closes.
+    /// </summary>
+    public event Action<bool>? ClientPresenceChanged;
+
+    /// <summary>Raised once on the channel thread when the exit event is set.</summary>
+    public event Action? ExitRequested;
 
     /// <summary>
     /// Starts the background thread. <paramref name="payloadHandler"/> runs on that thread
@@ -67,19 +96,26 @@ internal sealed class ChannelLoop : IDisposable
         _thread.Start();
     }
 
-    /// <summary>Closes the current channel, if any, and opens it again without waiting.</summary>
-    public void RestartNow(string reason)
+    /// <summary>
+    /// A client connected to the session, or a user logged on: the channel may be there
+    /// now, so the loop tries at once, then often for a short while.
+    /// </summary>
+    public void OnSessionConnected(string reason)
     {
-        _restartReason = reason;
-        _restartRequested = true;
-        _wake.Set();
+        Interlocked.Exchange(ref _connectedAtTicks, Environment.TickCount64);
+        _sessionDisconnected = false;
+        RestartNow(reason);
     }
 
     /// <summary>
-    /// Records whether the session currently has a client. While it has none, open
-    /// failures are expected and only logged at debug level.
+    /// The session lost its client: the channel is closed at once and the loop waits
+    /// for the next connection.
     /// </summary>
-    public void SetSessionDisconnected(bool disconnected) => _sessionDisconnected = disconnected;
+    public void OnSessionDisconnected(string reason)
+    {
+        _sessionDisconnected = true;
+        RestartNow(reason);
+    }
 
     /// <summary>
     /// Sends a message on the current channel, in the byte model detected on it. Returns
@@ -115,87 +151,178 @@ internal sealed class ChannelLoop : IDisposable
         }
     }
 
-    public void Dispose()
+    /// <summary>
+    /// Stops the thread and waits for it at most <paramref name="wait"/>. The thread is a
+    /// background thread: if it does not stop in time, it ends with the process.
+    /// </summary>
+    public void Stop(TimeSpan wait)
     {
         _stopping = true;
         _wake.Set();
-        if (_thread is not null && !_thread.Join(TimeSpan.FromSeconds(2)))
+        if (_thread is not null && _thread != Thread.CurrentThread && !_thread.Join(wait))
         {
             _logger.Warn("The channel thread did not stop in time.");
         }
     }
 
+    public void Dispose() => Stop(TimeSpan.FromSeconds(2));
+
+    private void RestartNow(string reason)
+    {
+        _restartReason = reason;
+        _restartRequested = true;
+        _wake.Set();
+    }
+
     private void Run()
     {
-        var buffer = new byte[ReadBufferSize];
         while (!_stopping)
         {
-            var channel = Open();
-            if (channel is not null)
+            TimeSpan delay;
+            try
             {
-                try
+                delay = RunOnce();
+                _loopFailures.Reset();
+            }
+            catch (Exception ex)
+            {
+                // An unexpected error must not end the loop, or the agent would stop
+                // listening until it is restarted. The same error is logged once.
+                if (_loopFailures.IsNew(ex.GetType().FullName + ": " + ex.Message))
                 {
-                    Pump(channel, buffer);
+                    _logger.Error("Unexpected error in the channel loop; trying again.", ex);
                 }
-                catch (ChannelException ex)
-                {
-                    if (!_stopping)
-                    {
-                        _logger.Info($"The channel closed. {ex.Message}. Reopening it.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // An unexpected error must not end the loop, or the agent would stop
-                    // listening until it is restarted.
-                    _logger.Error("Unexpected error on the channel; reopening it.", ex);
-                }
-                finally
-                {
-                    Volatile.Write(ref _channel, null);
-                    channel.Dispose();
-                }
+
+                _consecutiveFailures++;
+                delay = _consecutiveFailures >= ChannelRetryPolicy.FailuresBeforeLongDelay ? ChannelRetryPolicy.LongDelay : ChannelRetryPolicy.ShortDelay;
             }
 
             if (!_stopping)
             {
-                _wake.WaitOne(RetryDelay);
+                Wait(delay);
             }
         }
 
-        _logger.Info("Channel loop stopped.");
+        _logger.Debug("Channel loop stopped.");
     }
 
-    private VirtualChannel? Open()
+    /// <summary>One attempt: opens the channel and pumps it until it closes. Returns the wait before the next one.</summary>
+    private TimeSpan RunOnce()
     {
-        _restartRequested = false;
-
-        if (User32.GetSystemMetrics(User32.SmRemoteSession) == 0)
-        {
-            Report("console",
-                LogLevel.Info,
-                "This is not a remote session. The agent waits for a Remote Desktop connection.");
-            return null;
-        }
-
-        var channel = VirtualChannel.TryOpen(ProtocolConstants.ChannelName, out var error);
+        var channel = Open(out var attempt);
         if (channel is null)
         {
-            Report("open:" + error,
-                _sessionDisconnected ? LogLevel.Debug : LogLevel.Warn,
-                $"Cannot open the {ProtocolConstants.ChannelName} virtual channel (error {error}: {new Win32Exception(error).Message}). "
-                + "This is expected when the session was not opened with the UltimateRDP client, or when a policy blocks the channel. "
-                + $"Retrying every {RetryDelay.TotalSeconds:0} seconds.");
+            return ChannelRetryPolicy.NextDelay(attempt);
+        }
+
+        try
+        {
+            Pump(channel, _buffer ??= new byte[ReadBufferSize]);
+        }
+        catch (ChannelException ex)
+        {
+            if (!_stopping)
+            {
+                _logger.Info($"The {ProtocolConstants.ChannelName} virtual channel closed. {ex.Message}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Unexpected error on the channel; reopening it.", ex);
+        }
+        finally
+        {
+            Volatile.Write(ref _channel, null);
+            channel.Dispose();
+            SetClientPresent(false);
+        }
+
+        return ChannelRetryPolicy.NextDelay(attempt with { OpenError = 0, ConsecutiveFailures = 0 });
+    }
+
+    /// <summary>Waits for the delay, a wake up, or the exit event.</summary>
+    private void Wait(TimeSpan delay)
+    {
+        if (_exitSignal is null || _exitRaised)
+        {
+            _wake.WaitOne(delay);
+            return;
+        }
+
+        if (WaitHandle.WaitAny([_wake, _exitSignal], delay) == 1)
+        {
+            RaiseExit();
+        }
+    }
+
+    private VirtualChannel? Open(out ChannelAttempt attempt)
+    {
+        _restartRequested = false;
+        var remote = User32.GetSystemMetrics(User32.SmRemoteSession) != 0;
+        var error = 0;
+        var channel = remote ? VirtualChannel.TryOpen(ProtocolConstants.ChannelName, out error) : null;
+        var sinceConnect = TimeSpan.FromMilliseconds(Environment.TickCount64 - Interlocked.Read(ref _connectedAtTicks));
+        if (channel is null)
+        {
+            _consecutiveFailures++;
+            attempt = new ChannelAttempt(remote, _sessionDisconnected, error, _consecutiveFailures, sinceConnect);
+            ReportFailure(attempt);
             return null;
         }
 
+        attempt = new ChannelAttempt(remote, _sessionDisconnected, 0, 0, sinceConnect);
+        _consecutiveFailures = 0;
         _openFailures.Reset();
+        _idleReport.Reset();
         _decoder.Reset();
         _lineReader.Reset();
         _model = ChannelByteModel.Unknown;
         Volatile.Write(ref _channel, channel);
         _logger.Info($"The {ProtocolConstants.ChannelName} virtual channel is open.");
         return channel;
+    }
+
+    /// <summary>
+    /// A session without an UltimateRDP client fails every attempt; that is its normal
+    /// state, reported once per <see cref="IdleReportInterval"/>. Another failure, such as
+    /// a policy that blocks the channel, is a warning, once until the channel opens.
+    /// </summary>
+    private void ReportFailure(ChannelAttempt attempt)
+    {
+        var expected = ChannelRetryPolicy.IsExpected(attempt);
+        if (!expected && _openFailures.IsNew("open:" + attempt.OpenError))
+        {
+            _logger.Warn($"Cannot open the {ProtocolConstants.ChannelName} virtual channel: {Describe(attempt)}. "
+                + "A policy may block the channel. The agent keeps trying.");
+            return;
+        }
+
+        if (_idleReport.IsDue(Environment.TickCount64))
+        {
+            _logger.Info($"Still waiting for a client channel: {Describe(attempt)}.");
+        }
+        else if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.Debug($"No channel: {Describe(attempt)}; next attempt in {ChannelRetryPolicy.NextDelay(attempt).TotalSeconds:0} seconds.");
+        }
+    }
+
+    private static string Describe(ChannelAttempt attempt)
+    {
+        if (!attempt.IsRemoteSession)
+        {
+            return "this is not a Remote Desktop session";
+        }
+
+        var error = $"error {attempt.OpenError}, {new Win32Exception(attempt.OpenError).Message}";
+        if (attempt.IsSessionDisconnected)
+        {
+            return $"the session has no client ({error})";
+        }
+
+        return ChannelRetryPolicy.IsNotFound(attempt.OpenError)
+            ? $"the client of the session did not open the channel ({error})"
+            : error;
     }
 
     private void Pump(VirtualChannel channel, byte[] buffer)
@@ -206,8 +333,13 @@ internal sealed class ChannelLoop : IDisposable
             if (_restartRequested)
             {
                 _restartRequested = false;
-                _logger.Info($"Reopening the channel: {_restartReason}.");
+                _logger.Info($"Closing the channel: {_restartReason}.");
                 return;
+            }
+
+            if (_exitSignal is not null && !_exitRaised && _exitSignal.WaitOne(0))
+            {
+                RaiseExit();
             }
 
             var started = Environment.TickCount64;
@@ -235,6 +367,7 @@ internal sealed class ChannelLoop : IDisposable
             {
                 _model = _decoder.Model;
                 _logger.Info($"Channel byte model: {_model}.");
+                SetClientPresent(true);
             }
 
             _lineReader.Append(text);
@@ -264,8 +397,34 @@ internal sealed class ChannelLoop : IDisposable
         }
     }
 
-    private void Report(string key, LogLevel level, string message)
+    private void SetClientPresent(bool present)
     {
-        _logger.Write(_openFailures.IsNew(key) ? level : LogLevel.Debug, message);
+        if (_clientPresent == present)
+        {
+            return;
+        }
+
+        _clientPresent = present;
+        try
+        {
+            ClientPresenceChanged?.Invoke(present);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Unexpected error while following the client connection.", ex);
+        }
+    }
+
+    private void RaiseExit()
+    {
+        _exitRaised = true;
+        try
+        {
+            ExitRequested?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Unexpected error while handling the exit request.", ex);
+        }
     }
 }

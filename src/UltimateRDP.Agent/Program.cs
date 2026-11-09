@@ -1,5 +1,7 @@
 using System.Text;
 using Microsoft.Win32;
+using UltimateRDP.Agent.Drops;
+using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
@@ -17,13 +19,24 @@ internal static class Program
 
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Without an option the agent runs, and shows nothing: no window, no message box, no
+    /// console output, whatever fails. The options print their result, on the console of
+    /// the parent process or in a message box.
+    /// </summary>
     [STAThread]
     private static int Main(string[] args)
     {
+        var logger = new FileLogger(AgentInfo.LogDirectory);
+        FatalErrors.Install(logger);
+
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
-        var logger = new FileLogger(AgentInfo.LogDirectory);
+        // Without a handler, WinForms would show its error dialog for an error in a
+        // handler of the UI thread. The drag threads install their own.
+        Application.ThreadException += (_, e) => logger.Error("Unexpected error on the UI thread; the agent goes on.", e.Exception);
+
         if (args.Length > 1)
         {
             CommandLineOutput.Error(Strings.TooManyArguments + "\n\n" + Usage());
@@ -80,34 +93,77 @@ internal static class Program
         return text.ToString().TrimEnd('\n');
     }
 
+    /// <summary>
+    /// Runs the agent until it is asked to exit or the session ends. Every failure is
+    /// logged and ends the agent quietly with exit code 1.
+    /// </summary>
     private static int Run(FileLogger logger)
     {
-        using var instanceMutex = new Mutex(initiallyOwned: true, AgentInfo.InstanceMutexName, out var createdNew);
-        if (!createdNew)
+        Mutex instanceMutex;
+        try
         {
-            logger.Info("The agent is already running in this session; this second copy exits.");
-            return 0;
+            instanceMutex = new Mutex(initiallyOwned: true, AgentInfo.InstanceMutexName, out var createdNew);
+            if (!createdNew)
+            {
+                instanceMutex.Dispose();
+                logger.Info("The agent is already running in this session; this second copy exits.");
+                return 0;
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException)
+        {
+            logger.Warn($"Cannot create the single instance mutex; this copy exits. {ex.Message}");
+            return FatalErrors.ExitCode;
         }
 
         try
         {
-            using var exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, AgentInfo.ExitEventName);
             var settings = AgentSettings.Load(AgentInfo.SettingsPath, logger);
             logger.MinimumLevel = settings.LogLevel;
+            logger.Info($"{AgentInfo.ProductName} {AgentInfo.Version} started in session {SessionId()}; {settings}.");
 
-            Application.ThreadException += (_, e) => logger.Error("Unhandled error on the UI thread.", e.Exception);
-            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-                logger.Error("Unhandled error; the agent stops.", e.ExceptionObject as Exception);
-
+            using var exitEvent = CreateExitEvent(logger);
             using var context = new TrayContext(logger, settings, exitEvent);
-            Application.Run(context);
+            context.Run();
             return 0;
+        }
+        catch (Exception ex)
+        {
+            logger.Error("The agent stopped on an unexpected error.", ex);
+            InputInjector.ReleaseIfDown();
+            return FatalErrors.ExitCode;
         }
         finally
         {
-            instanceMutex.ReleaseMutex();
+            try
+            {
+                instanceMutex.ReleaseMutex();
+            }
+            catch (ApplicationException)
+            {
+                // Not owned any more; nothing to release.
+            }
+
+            instanceMutex.Dispose();
         }
     }
+
+    /// <summary>The event that --uninstall sets to stop the agent, or null when it cannot be created.</summary>
+    private static EventWaitHandle? CreateExitEvent(FileLogger logger)
+    {
+        try
+        {
+            return new EventWaitHandle(false, EventResetMode.AutoReset, AgentInfo.ExitEventName);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException)
+        {
+            logger.Warn($"Cannot create the exit event; --uninstall will not stop this agent. {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string SessionId() =>
+        Kernel32.ProcessIdToSessionId((uint)Environment.ProcessId, out var session) ? session.ToString(System.Globalization.CultureInfo.InvariantCulture) : "(unknown)";
 
     private static int Install(FileLogger logger)
     {

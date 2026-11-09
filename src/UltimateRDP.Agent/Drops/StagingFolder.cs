@@ -26,7 +26,39 @@ internal sealed class StagingFolder : IDisposable
         _root = root;
     }
 
-    /// <summary>Deletes the folders older than <see cref="KeepFor"/>. Called when the agent starts.</summary>
+    /// <summary>
+    /// Deletes the folders older than <see cref="KeepFor"/> on a thread pool thread, when
+    /// the staging folder exists. Called when the agent starts; costs one check of the
+    /// disk in the sessions that never staged anything.
+    /// </summary>
+    public static void DeleteOldFoldersInBackground(FileLogger logger, string root)
+    {
+        try
+        {
+            if (!Path.IsPathFullyQualified(root) || !Directory.Exists(root))
+            {
+                return;
+            }
+
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    new StagingFolder(logger, root).DeleteOldFolders();
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn($"Could not clean the staging folder {root}. {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"Could not clean the staging folder {root}. {ex.Message}");
+        }
+    }
+
+    /// <summary>Deletes the folders older than <see cref="KeepFor"/>.</summary>
     public void DeleteOldFolders()
     {
         try
@@ -58,6 +90,11 @@ internal sealed class StagingFolder : IDisposable
     /// </summary>
     public IReadOnlyList<string> Stage(string id, IReadOnlyList<MappedItem> sources)
     {
+        if (!Path.IsPathFullyQualified(_root))
+        {
+            throw new IOException("The folder of the user profile is unknown, so there is no staging folder.");
+        }
+
         var folder = Path.Combine(_root, SafeName(id));
         Directory.CreateDirectory(folder);
         var staged = new List<string>(sources.Count);
@@ -101,7 +138,15 @@ internal sealed class StagingFolder : IDisposable
             timer = new Timer(
                 _ =>
                 {
-                    Delete(folder, "one hour after its drop");
+                    try
+                    {
+                        Delete(folder, "one hour after its drop");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warn($"Could not delete the staging folder {folder}. {ex.Message}");
+                    }
+
                     lock (_gate)
                     {
                         _timers.Remove(timer!);

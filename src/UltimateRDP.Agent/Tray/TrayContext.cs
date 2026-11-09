@@ -1,91 +1,71 @@
-using System.Diagnostics;
 using UltimateRDP.Agent.Channel;
 using UltimateRDP.Agent.Drops;
-using UltimateRDP.Agent.Localization;
+using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Logging;
-using UltimateRDP.Agent.Resources;
 using UltimateRDP.Agent.Settings;
+using UltimateRDP.Core.Agent;
 
 namespace UltimateRDP.Agent.Tray;
 
 /// <summary>
-/// Application context of the agent: the tray icon and its menu, the channel loop and
-/// the session notifications. Lives on the UI thread. The menu and the dialogs follow the
-/// Windows display language of the session.
+/// Application context of the agent, on the UI thread: the channel loop, the hidden
+/// session window, and the tray icon when the <c>trayIcon</c> setting asks for it.
 /// </summary>
+/// <remarks>
+/// Most sessions of a server are opened with the Microsoft client and never see an
+/// UltimateRDP client. For them the agent stays invisible and light: the tray icon, its
+/// menu and the drag infrastructure are only created when they are needed, that is when
+/// a client speaks on the channel (or at once with <c>"trayIcon": "always"</c>).
+/// </remarks>
 internal sealed class TrayContext : ApplicationContext
 {
+    /// <summary>Wait for the drag and the channel thread when the agent exits normally.</summary>
+    private static readonly TimeSpan StopWait = TimeSpan.FromSeconds(2);
+
+    /// <summary>Wait for each of them when the session ends: a log off must never wait on the agent.</summary>
+    private static readonly TimeSpan SessionEndWait = TimeSpan.FromMilliseconds(500);
+
     private readonly FileLogger _logger;
     private readonly AgentSettings _settings;
     private readonly ChannelLoop _loop;
-    private readonly SessionNotificationWindow _sessionWindow;
-    private readonly TrayIconFactory _iconFactory;
-    private readonly NotifyIcon _notifyIcon;
-    private readonly ContextMenuStrip _menu;
-    private readonly ToolStripMenuItem _stageItem;
-    private readonly StagingFolder _staging;
-    private readonly NativeDropCoordinator _native;
-    private readonly SynchronizationContext _uiContext;
-    private readonly RegisteredWaitHandle? _exitWait;
+    private readonly SessionNotificationWindow _window;
+    private readonly Lock _servicesGate = new();
+    private AgentServices? _services;
+    private bool _servicesStopped;
+    private AgentTrayIcon? _tray;
+    private bool _clientConnected;
     private bool _exiting;
 
     public TrayContext(FileLogger logger, AgentSettings settings, EventWaitHandle? exitEvent)
     {
         _logger = logger;
         _settings = settings;
+        _loop = new ChannelLoop(logger, exitEvent);
+        _window = new SessionNotificationWindow(_loop, logger, OnSessionEnding);
+        _loop.ClientPresenceChanged += present => _window.Post(() => OnClientPresence(present));
+        _loop.ExitRequested += () => _window.Post(() => Exit("a request from --uninstall"));
 
-        _stageItem = new ToolStripMenuItem(Strings.TrayStageFiles, null, (_, _) => ToggleStageFiles());
+        StagingFolder.DeleteOldFoldersInBackground(logger, AgentInfo.StagingDirectory);
+        UpdateTray();
+        _loop.Start(Handle);
+    }
 
-        _menu = new ContextMenuStrip();
-        _menu.Items.AddRange(
-        [
-            _stageItem,
-            new ToolStripSeparator(),
-            new ToolStripMenuItem(Strings.TrayOpenLogFolder, null, (_, _) => OpenLogFolder()),
-            new ToolStripMenuItem(Strings.TrayAbout, null, (_, _) => ShowAbout()),
-            new ToolStripSeparator(),
-            new ToolStripMenuItem(Strings.TrayExit, null, (_, _) => Exit("the Exit menu")),
-        ]);
-        _menu.Opening += (_, _) => UpdateChecks();
-        UpdateChecks();
-
-        _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
-
-        _iconFactory = new TrayIconFactory(SystemInformation.SmallIconSize);
-        _notifyIcon = new NotifyIcon
+    /// <summary>
+    /// Runs the message loop of the UI thread until the agent exits. While no tray icon
+    /// exists, a plain Windows message loop is enough for the hidden session window; the
+    /// WinForms loop, which loads GDI+ at once, only starts with the icon, whose menu needs
+    /// it.
+    /// </summary>
+    public void Run()
+    {
+        if (_tray is null && !RunPlainLoop())
         {
-            Icon = _iconFactory.Icon,
-            Text = AgentInfo.ProductName,
-            ContextMenuStrip = _menu,
-            Visible = true,
-        };
-
-        using (var process = Process.GetCurrentProcess())
-        {
-            _logger.Info($"{AgentInfo.ProductName} {AgentInfo.Version} started in session {process.SessionId}.");
+            return;
         }
 
-        _logger.Info($"Settings: {settings}.");
-        _staging = new StagingFolder(logger, AgentInfo.StagingDirectory);
-        ThreadPool.QueueUserWorkItem(_ => _staging.DeleteOldFolders());
-
-        var probe = new DriveRedirectionProbe(logger);
-        var language = new ClientLanguage();
-        _loop = new ChannelLoop(logger);
-        _native = new NativeDropCoordinator(logger, _loop.TrySend, settings, probe, _staging, language);
-        var logoff = new SessionLogoff(logger, _loop.TrySend, language);
-        var handler = new AgentProtocolHandler(logger, _loop.TrySend, probe, _native, logoff, language);
-        _sessionWindow = new SessionNotificationWindow(_loop, logger);
-        _loop.Start(handler.Handle);
-
-        if (exitEvent is not null)
+        if (!_exiting)
         {
-            _exitWait = ThreadPool.RegisterWaitForSingleObject(
-                exitEvent,
-                (_, _) => _uiContext.Post(_ => Exit("a request from --uninstall"), null),
-                null,
-                Timeout.Infinite,
-                executeOnlyOnce: true);
+            Application.Run(this);
         }
     }
 
@@ -93,20 +73,122 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (disposing)
         {
-            _exitWait?.Unregister(null);
-            _notifyIcon.Visible = false;
-            _notifyIcon.Dispose();
-            _menu.Dispose();
-            _iconFactory.Dispose();
-            _sessionWindow.Dispose();
-
-            // The drag in progress ends first, while its result can still be sent.
-            _native.Dispose();
-            _loop.Dispose();
-            _staging.Dispose();
+            StopAll(StopWait);
+            _tray?.Dispose();
+            _tray = null;
+            _window.Dispose();
         }
 
         base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// Dispatches the messages of the thread until the agent exits or the tray icon is
+    /// created. Returns false when the loop ended for good (exit or WM_QUIT), true when the
+    /// WinForms loop must take over.
+    /// </summary>
+    private bool RunPlainLoop()
+    {
+        while (!_exiting && _tray is null)
+        {
+            var result = User32.GetMessage(out var message, IntPtr.Zero, 0, 0);
+            if (result == 0)
+            {
+                Exit("a WM_QUIT message");
+                return false;
+            }
+
+            if (result < 0)
+            {
+                // Cannot happen with these arguments; the WinForms loop takes over.
+                _logger.Warn("GetMessage failed; switching to the WinForms message loop.");
+                return true;
+            }
+
+            User32.TranslateMessage(message);
+            User32.DispatchMessage(message);
+        }
+
+        return !_exiting;
+    }
+
+    /// <summary>Handles one line from the client, on the channel thread.</summary>
+    private void Handle(byte[] payload)
+    {
+        AgentServices services;
+        lock (_servicesGate)
+        {
+            if (_servicesStopped)
+            {
+                return;
+            }
+
+            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend);
+        }
+
+        services.Handle(payload);
+    }
+
+    private void OnClientPresence(bool present)
+    {
+        _clientConnected = present;
+        UpdateTray();
+    }
+
+    private void UpdateTray()
+    {
+        if (_exiting)
+        {
+            return;
+        }
+
+        if (TrayIconModes.IsVisible(_settings.TrayIcon, _clientConnected))
+        {
+            if (_tray is null)
+            {
+                _tray = new AgentTrayIcon(_logger, _settings, () => Exit("the Exit menu"));
+                WakeMessageLoop();
+            }
+
+            _tray.Visible = true;
+        }
+        else if (_tray is not null)
+        {
+            _tray.Visible = false;
+        }
+    }
+
+    /// <summary>
+    /// The session ends (WM_ENDSESSION). Windows may end the process as soon as this
+    /// returns, so everything happens here and quickly: the simulated button is released,
+    /// the drag is cancelled, the channel is closed. The log is already on disk, since
+    /// every line is written at once.
+    /// </summary>
+    private void OnSessionEnding()
+    {
+        _logger.Info("The session is ending; the agent exits.");
+        InputInjector.ReleaseIfDown();
+        StopAll(SessionEndWait);
+        Exit("the end of the session");
+    }
+
+    /// <summary>Stops the drag first, while its result can still be sent, then the channel.</summary>
+    private void StopAll(TimeSpan wait)
+    {
+        AgentServices? services;
+        lock (_servicesGate)
+        {
+            if (_servicesStopped)
+            {
+                return;
+            }
+
+            _servicesStopped = true;
+            services = _services;
+        }
+
+        services?.Stop(wait);
+        _loop.Stop(wait);
     }
 
     private void Exit(string reason)
@@ -118,82 +200,19 @@ internal sealed class TrayContext : ApplicationContext
 
         _exiting = true;
         _logger.Info($"Exiting after {reason}.");
-        _notifyIcon.Visible = false;
+        if (_tray is not null)
+        {
+            _tray.Visible = false;
+        }
+
         ExitThread();
+        WakeMessageLoop();
     }
 
-    private void UpdateChecks()
-    {
-        _stageItem.Checked = _settings.StageFiles;
-    }
-
-    private void ToggleStageFiles()
-    {
-        _settings.SetStageFiles(!_settings.StageFiles);
-        _logger.Info($"Stage files in the session before the drop: {_settings.StageFiles}.");
-        UpdateChecks();
-    }
-
-    private void OpenLogFolder()
-    {
-        try
-        {
-            Directory.CreateDirectory(_logger.Directory);
-            Process.Start(new ProcessStartInfo { FileName = _logger.Directory, UseShellExecute = true })?.Dispose();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
-        {
-            _logger.Warn($"Cannot open the log folder. {ex.Message}");
-            MessageBox.Show(
-                LocalText.Of(nameof(Strings.CannotOpenLogFolder), _logger.Directory, ex.Message).ForUser(),
-                AgentInfo.ProductName,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-        }
-    }
-
-    private void ShowAbout()
-    {
-        var openButton = new TaskDialogButton(Strings.AboutOpenProjectPage);
-        var page = new TaskDialogPage
-        {
-            Caption = LocalText.Of(nameof(Strings.AboutCaption), AgentInfo.ProductName).ForUser(),
-            Heading = $"{AgentInfo.ProductName} {AgentInfo.Version}",
-            Text = LocalText.Of(nameof(Strings.AboutText), Link(AgentInfo.ProjectUrl)).ForUser(),
-            Footnote = new TaskDialogFootnote(
-                $"{LocalText.Of(nameof(Strings.AboutPublisher), AgentInfo.Publisher).ForUser()}\n{Link(AgentInfo.PublisherUrl)}"),
-            Icon = TaskDialogIcon.Information,
-            EnableLinks = true,
-            Buttons = { openButton, TaskDialogButton.Close },
-        };
-
-        // Only the two addresses written above are links.
-        page.LinkClicked += (_, e) =>
-        {
-            if (e.LinkHref is AgentInfo.ProjectUrl or AgentInfo.PublisherUrl)
-            {
-                OpenUrl(e.LinkHref);
-            }
-        };
-
-        if (TaskDialog.ShowDialog(page) == openButton)
-        {
-            OpenUrl(AgentInfo.ProjectUrl);
-        }
-    }
-
-    private void OpenUrl(string url)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true })?.Dispose();
-        }
-        catch (System.ComponentModel.Win32Exception ex)
-        {
-            _logger.Warn($"Cannot open {url}. {ex.Message}");
-        }
-    }
-
-    /// <summary>Task dialog markup that shows <paramref name="url"/> as a link to itself.</summary>
-    private static string Link(string url) => $"<a href=\"{url}\">{url}</a>";
+    /// <summary>
+    /// A message sent with SendMessage, such as WM_ENDSESSION, is handled inside GetMessage,
+    /// which then keeps waiting for a posted message. Posting an empty action makes the
+    /// plain loop check its state again.
+    /// </summary>
+    private void WakeMessageLoop() => _window.Post(static () => { });
 }

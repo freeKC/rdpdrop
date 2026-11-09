@@ -50,6 +50,18 @@ internal sealed class SessionLogoff
 
     private void LogOffAfterDelay(string id)
     {
+        try
+        {
+            LogOff(id);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Log off {id}: unexpected error.", ex);
+        }
+    }
+
+    private void LogOff(string id)
+    {
         Thread.Sleep(AnswerDelay);
         if (User32.ExitWindowsEx(User32.EwxLogoff | User32.EwxForceIfHung, User32.ShtdnReasonMajorOther | User32.ShtdnReasonFlagPlanned))
         {

@@ -13,6 +13,12 @@ internal static class InputInjector
 {
     private static readonly Lock Gate = new();
 
+    /// <summary>How long <see cref="ReleaseIfDown"/> waits for a call in progress on another thread.</summary>
+    private static readonly TimeSpan ReleaseGateWait = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>True between a press that went through and the release that follows it.</summary>
+    private static volatile bool _buttonDown;
+
     /// <summary>
     /// Converts a point of the session desktop, as sent by the client (zero at the top
     /// left corner of the remote desktop), to a screen point. The virtual screen origin
@@ -47,7 +53,13 @@ internal static class InputInjector
     {
         lock (Gate)
         {
-            return Send([Move(point), Button(down: true)]);
+            var sent = Send([Move(point), Button(down: true)]);
+            if (sent)
+            {
+                _buttonDown = true;
+            }
+
+            return sent;
         }
     }
 
@@ -56,6 +68,7 @@ internal static class InputInjector
     {
         lock (Gate)
         {
+            _buttonDown = false;
             return Send([Move(point), Button(down: false)]);
         }
     }
@@ -65,7 +78,43 @@ internal static class InputInjector
     {
         lock (Gate)
         {
+            _buttonDown = false;
             return Send([Button(down: false)]);
+        }
+    }
+
+    /// <summary>
+    /// Releases the simulated button when a press of the agent is still down. Used when the
+    /// agent ends abruptly: at the end of the session or after an unexpected error. Never
+    /// waits long for another thread, and never throws.
+    /// </summary>
+    public static void ReleaseIfDown()
+    {
+        if (!_buttonDown)
+        {
+            return;
+        }
+
+        var entered = false;
+        try
+        {
+            entered = Gate.TryEnter(ReleaseGateWait);
+            if (_buttonDown)
+            {
+                _buttonDown = false;
+                Send([Button(down: false)]);
+            }
+        }
+        catch (Exception)
+        {
+            // Nothing more can be done for the button.
+        }
+        finally
+        {
+            if (entered)
+            {
+                Gate.Exit();
+            }
         }
     }
 

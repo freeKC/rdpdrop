@@ -14,7 +14,9 @@ internal enum LogLevel
 /// <summary>
 /// Writes one text file per day, agent-yyyyMMdd.log, and deletes files older than
 /// <see cref="RetentionDays"/> days. Thread safe. Never throws: a failure to write the
-/// log must not stop the agent.
+/// log must not stop the agent. Each line goes to the file at once, so nothing waits in
+/// memory when the process ends. Without a usable folder (no full path, or a folder
+/// that cannot be created) the lines are dropped and the agent runs without a log.
 /// </summary>
 internal sealed class FileLogger
 {
@@ -28,17 +30,23 @@ internal sealed class FileLogger
 
     private readonly object _gate = new();
     private readonly string _directory;
+    private readonly bool _usable;
     private DateOnly _currentDay;
+    private DateOnly _failedDay;
 
     public FileLogger(string directory)
     {
         _directory = directory;
+        _usable = Path.IsPathFullyQualified(directory);
     }
 
     /// <summary>Lines below this level are not written. Info by default.</summary>
     public LogLevel MinimumLevel { get; set; } = LogLevel.Info;
 
     public string Directory => _directory;
+
+    /// <summary>True when a line of <paramref name="level"/> would be written.</summary>
+    public bool IsEnabled(LogLevel level) => _usable && level >= MinimumLevel;
 
     public void Debug(string message) => Write(LogLevel.Debug, message);
 
@@ -51,42 +59,64 @@ internal sealed class FileLogger
 
     public void Write(LogLevel level, string message)
     {
-        if (level < MinimumLevel)
+        if (!IsEnabled(level))
         {
             return;
         }
 
-        var now = DateTime.Now;
-        var line = new StringBuilder()
-            .Append(now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture))
-            .Append(' ')
-            .Append(LevelText(level))
-            .Append(" [")
-            .Append(Environment.CurrentManagedThreadId.ToString(CultureInfo.InvariantCulture))
-            .Append("] ")
-            .Append(message)
-            .AppendLine()
-            .ToString();
-
-        lock (_gate)
+        try
         {
-            try
+            var now = DateTime.Now;
+            var line = new StringBuilder()
+                .Append(now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture))
+                .Append(' ')
+                .Append(LevelText(level))
+                .Append(" [")
+                .Append(Environment.CurrentManagedThreadId.ToString(CultureInfo.InvariantCulture))
+                .Append("] ")
+                .Append(message)
+                .AppendLine()
+                .ToString();
+
+            lock (_gate)
             {
                 var today = DateOnly.FromDateTime(now);
+                if (today == _failedDay)
+                {
+                    // The folder could not be created today; try again tomorrow only.
+                    return;
+                }
+
                 if (today != _currentDay)
                 {
-                    System.IO.Directory.CreateDirectory(_directory);
+                    try
+                    {
+                        System.IO.Directory.CreateDirectory(_directory);
+                    }
+                    catch (Exception)
+                    {
+                        _failedDay = today;
+                        return;
+                    }
+
                     _currentDay = today;
-                    DeleteOldFiles(today);
+                    try
+                    {
+                        DeleteOldFiles(today);
+                    }
+                    catch (Exception)
+                    {
+                        // The old files are tried again tomorrow; today's line still goes out.
+                    }
                 }
 
                 var path = Path.Combine(_directory, FilePrefix + now.ToString(DateFormat, CultureInfo.InvariantCulture) + FileExtension);
                 File.AppendAllText(path, line, Utf8NoBom);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Nowhere to report it; drop the line.
-            }
+        }
+        catch (Exception)
+        {
+            // Nowhere to report it; drop the line.
         }
     }
 

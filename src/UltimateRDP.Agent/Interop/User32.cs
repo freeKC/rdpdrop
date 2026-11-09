@@ -28,6 +28,47 @@ internal static partial class User32
     /// <summary>wParam of WM_WTSSESSION_CHANGE: the remote client disconnected.</summary>
     public const int WtsRemoteDisconnect = 0x4;
 
+    /// <summary>wParam of WM_WTSSESSION_CHANGE: a user logged on to the session.</summary>
+    public const int WtsSessionLogon = 0x5;
+
+    /// <summary>WM_QUERYENDSESSION: the session is about to end; the answer must be TRUE at once.</summary>
+    public const int WmQueryEndSession = 0x0011;
+
+    /// <summary>WM_ENDSESSION: wParam is nonzero when the session really ends.</summary>
+    public const int WmEndSession = 0x0016;
+
+    /// <summary>WM_APP: first message number free for the application.</summary>
+    public const int WmApp = 0x8000;
+
+    /// <summary>MSG: a message taken from the queue of the thread.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Msg
+    {
+        public IntPtr Hwnd;
+        public uint Message;
+        public IntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public Point Point;
+        public uint Private;
+    }
+
+    /// <summary>
+    /// Waits for the next message of the thread. Returns a positive value for a message,
+    /// zero for WM_QUIT and -1 on error.
+    /// </summary>
+    [LibraryImport("user32.dll", EntryPoint = "GetMessageW", SetLastError = true)]
+    public static partial int GetMessage(out Msg lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    /// <summary>Turns key messages into character messages.</summary>
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool TranslateMessage(in Msg lpMsg);
+
+    /// <summary>Hands a message to the window procedure of its window.</summary>
+    [LibraryImport("user32.dll", EntryPoint = "DispatchMessageW")]
+    public static partial IntPtr DispatchMessage(in Msg lpMsg);
+
     /// <summary>Screen point in physical pixels.</summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct Point

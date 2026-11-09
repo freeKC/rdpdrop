@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Core.Agent;
 
 namespace UltimateRDP.Agent.Settings;
 
@@ -18,12 +19,13 @@ internal sealed class AgentSettings
     private readonly Lock _saveGate = new();
     private volatile bool _stageFiles;
 
-    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles)
+    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon)
     {
         _path = path;
         _logger = logger;
         LogLevel = logLevel;
         _stageFiles = stageFiles;
+        TrayIcon = trayIcon;
     }
 
     /// <summary>
@@ -35,13 +37,34 @@ internal sealed class AgentSettings
     /// <summary>Lowest level written to the log. Only editable in the file.</summary>
     public LogLevel LogLevel { get; }
 
+    /// <summary>When the tray icon is shown. Auto by default. Only editable in the file.</summary>
+    public TrayIconMode TrayIcon { get; }
+
+    /// <summary>True when the settings file exists. False without a usable path.</summary>
+    public static bool FileExists(string path)
+    {
+        try
+        {
+            return Path.IsPathFullyQualified(path) && File.Exists(path);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Reads the file. Never throws and never shows anything: a missing, unreadable or
+    /// malformed file gives the defaults and a warning in the log.
+    /// </summary>
     public static AgentSettings Load(string path, FileLogger logger)
     {
         var logLevel = LogLevel.Info;
         var stageFiles = false;
+        var trayIcon = TrayIconMode.Auto;
         try
         {
-            if (File.Exists(path))
+            if (FileExists(path))
             {
                 var data = JsonSerializer.Deserialize<SettingsData>(WithoutByteOrderMark(File.ReadAllBytes(path)), JsonOptions);
                 if (data is not null)
@@ -49,15 +72,20 @@ internal sealed class AgentSettings
                     // A number out of range would silence the log entirely.
                     logLevel = data.LogLevel is { } level && Enum.IsDefined(level) ? level : LogLevel.Info;
                     stageFiles = data.StageFiles ?? false;
+                    trayIcon = TrayIconModes.Parse(data.TrayIcon, out var recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The trayIcon setting \"{data.TrayIcon}\" is unknown; using \"auto\". Use \"auto\", \"always\" or \"never\".");
+                    }
                 }
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
+        catch (Exception ex)
         {
             logger.Warn($"Could not read the settings file {path}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, logLevel, stageFiles);
+        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon);
     }
 
     /// <summary>
@@ -72,7 +100,7 @@ internal sealed class AgentSettings
 
     /// <summary>Readable summary for the log.</summary>
     public override string ToString() =>
-        $"stage files {StageFiles}, log level {LogLevel}";
+        $"stage files {StageFiles}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}";
 
     private bool Save()
     {
@@ -80,19 +108,25 @@ internal sealed class AgentSettings
         {
             LogLevel = LogLevel == LogLevel.Info ? null : LogLevel,
             StageFiles = StageFiles,
+            TrayIcon = TrayIcon == TrayIconMode.Auto ? null : TrayIconModes.ToSetting(TrayIcon),
         };
 
         lock (_saveGate)
         {
             try
             {
+                if (!Path.IsPathFullyQualified(_path))
+                {
+                    throw new IOException("The folder of the user profile is unknown.");
+                }
+
                 Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
                 var temp = _path + ".tmp";
                 File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(data, JsonOptions));
                 File.Move(temp, _path, overwrite: true);
                 return true;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
             {
                 _logger.Warn($"Could not save the settings file {_path}. {ex.Message}");
                 return false;
@@ -128,5 +162,11 @@ internal sealed class AgentSettings
 
         /// <summary>Offer staged local copies to the drag in the session. False when absent.</summary>
         public bool? StageFiles { get; set; }
+
+        /// <summary>
+        /// "auto", "always" or "never". Auto when absent. Read as text, so that an unknown
+        /// value only resets this setting and not the whole file.
+        /// </summary>
+        public string? TrayIcon { get; set; }
     }
 }

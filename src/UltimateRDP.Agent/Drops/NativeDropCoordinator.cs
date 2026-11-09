@@ -83,7 +83,7 @@ internal sealed class NativeDropCoordinator : IDisposable
             previousSession?.Cancel(LocalText.Of(nameof(Strings.CancelNewerDrag)));
         }
 
-        drag.AckTimer = new Timer(_ => SendProvisionalAck(drag), null, ProvisionalAckDelay, Timeout.InfiniteTimeSpan);
+        drag.AckTimer = new Timer(_ => Guarded(drag, () => SendProvisionalAck(drag)), null, ProvisionalAckDelay, Timeout.InfiniteTimeSpan);
         var worker = new Thread(() => Prepare(drag, previous))
         {
             IsBackground = true,
@@ -180,7 +180,13 @@ internal sealed class NativeDropCoordinator : IDisposable
         session?.Drop(drop.X, drop.Y);
     }
 
-    public void Dispose()
+    public void Dispose() => Stop(StopWait);
+
+    /// <summary>
+    /// Cancels the drag in progress, if any, and waits at most <paramref name="wait"/> for
+    /// it to end, so that the simulated button is released before the agent exits.
+    /// </summary>
+    public void Stop(TimeSpan wait)
     {
         NativeDrag? current;
         lock (_gate)
@@ -195,7 +201,7 @@ internal sealed class NativeDropCoordinator : IDisposable
             // The drag thread releases the simulated button when it ends; waiting a little
             // keeps the agent from exiting with the button still down in the session.
             session.Cancel(LocalText.Of(nameof(Strings.CancelAgentStopping)));
-            if (!session.WaitFinished(StopWait))
+            if (!session.WaitFinished(wait))
             {
                 _logger.Warn($"Drag {current.Id}: the drag did not end before the agent stopped.");
             }
@@ -421,6 +427,21 @@ internal sealed class NativeDropCoordinator : IDisposable
         if (drag.Drop is not null)
         {
             _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: ForClient(reason), Effect: DropEffect.None));
+        }
+    }
+
+    /// <summary>
+    /// Runs a timer callback. An error there would end the process; it is logged instead.
+    /// </summary>
+    private void Guarded(NativeDrag drag, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Drag {drag.Id}: unexpected error in a timer.", ex);
         }
     }
 

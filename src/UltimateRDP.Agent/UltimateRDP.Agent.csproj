@@ -16,6 +16,22 @@
     <Description>UltimateRDP agent: receives drops from the UltimateRDP client inside a Remote Desktop session.</Description>
   </PropertyGroup>
 
+  <!--
+    The agent runs in every session of a Remote Desktop server and waits most of the
+    time: workstation garbage collection without the background collection thread, and
+    a heap that favours a small size over speed. The framework keeps its own exception
+    texts, which the log needs.
+  -->
+  <PropertyGroup>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\UltimateRDP.Core\UltimateRDP.Core.csproj" />
   </ItemGroup>
