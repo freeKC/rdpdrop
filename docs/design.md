@@ -1420,20 +1420,25 @@ without an UltimateRDP client:
 * no thread, timer or registry read was added.
 
 Measured on this development computer on 2026-11-09, at idle in a session
-without the channel, sixty seconds per run, with the Release builds of 0.4.3
-and 0.4.4 started one after the other: the private working set and the
-private bytes at the end, the threads at the end, the processor time after
-the first five seconds (counted in steps of 15.6 ms), and the new lines of
-the log.
+without the channel, sixty seconds per run, started with PowerShell
+`Start-Process` without a client, one build after the other: the private
+working set and the private bytes at the end, the threads at the end, the
+processor time after the first five seconds (counted in steps of 15.6 ms),
+and the new lines of the log. "Published" is the self contained single file
+executable that the release workflow builds; "bin" is the Release build of
+`src/UltimateRDP.Agent`.
 
 | Build | Runs | Private working set | Private bytes | Threads | Processor time after 5 s | Log lines |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0.3.0, above | | about 4 MB | | 5 | not measurable | 1 |
-| 0.4.3 | 3 | 4.0 MB each | 7.2 MB | 5 each | 31 ms once, 0 twice | 1 each |
-| 0.4.4 | 4 | 4.0 MB three times, 1.9 MB once | 7.2 to 7.3 MB | 5 three times, 6 once | 0 each | 1 each |
+| 0.4.3, published | 2 | 4.7 MB each | 7.7 to 7.8 MB | 5 each | 16 ms once, 0 once | 1 each |
+| 0.4.4, published | 2 | 4.7 to 4.8 MB | 7.8 MB | 5 each | 0 each | 1 each |
+| 0.4.3, bin | 3 | 4.0 MB each | 7.2 MB | 5 each | 31 ms once, 0 twice | 1 each |
+| 0.4.4, bin | 4 | 4.0 MB three times, 1.9 MB once | 7.2 to 7.3 MB | 5 three times, 6 once | 0 each | 1 each |
 
-The thread counts sampled every five seconds in the last two runs of each
-build are the same series for both. The 1.9 MB and the sixth thread came
+The single file executable takes about 0.7 MB more private working set than
+the bin build, in 0.4.3 as in 0.4.4. The thread counts sampled every five
+seconds give the same series for both versions. The 1.9 MB and the sixth thread came
 once each and did not come back in the next run, as the 31 ms of processor
 time of one run of 0.4.3 did not.
 
