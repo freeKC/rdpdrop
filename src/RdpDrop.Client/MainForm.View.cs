@@ -1,11 +1,13 @@
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
 using RdpDrop.Client.Settings;
 
 namespace RdpDrop.Client;
 
 /// <summary>
-/// View menu and full screen keys of the main form. Every choice acts on the active
-/// session and becomes the saved choice for the sessions opened later.
+/// View menu and full screen keys of the main form. Every display choice acts on the
+/// active session and becomes the saved choice for the sessions opened later. The
+/// language applies at once to the whole window.
 /// </summary>
 internal sealed partial class MainForm
 {
@@ -35,6 +37,7 @@ internal sealed partial class MainForm
         _viewMenu.FullScreenClicked += (_, _) => ActiveSession?.ToggleFullScreen("menu");
         _viewMenu.AllMonitorsChosen += (_, value) => OnAllMonitorsChosen(value);
         _viewMenu.KeyboardHookModeChosen += (_, mode) => OnKeyboardHookModeChosen(mode);
+        _viewMenu.LanguageChosen += (_, choice) => OnLanguageChosen(choice);
         _viewMenu.Root.DropDownOpening += (_, _) => ShowViewChoices();
     }
 
@@ -43,6 +46,7 @@ internal sealed partial class MainForm
     /// </summary>
     private void ShowViewChoices()
     {
+        _viewMenu.ShowLanguage(_settings.Language);
         var session = ActiveSession;
         if (session is null)
         {
@@ -87,6 +91,23 @@ internal sealed partial class MainForm
         _settings.KeyboardHookMode = mode;
         SaveViewChoices();
         ActiveSession?.SetKeyboardHookMode(mode);
+    }
+
+    /// <summary>
+    /// Saves the language choice, sets the culture, writes every text again and tells the
+    /// agents, so that the texts they send next follow the new language.
+    /// </summary>
+    private void OnLanguageChosen(string choice)
+    {
+        if (choice == _settings.Language)
+        {
+            return;
+        }
+
+        _settings.Language = choice;
+        SaveViewChoices();
+        UiLanguage.Apply(choice);
+        ApplyTexts();
     }
 
     private void SaveViewChoices()

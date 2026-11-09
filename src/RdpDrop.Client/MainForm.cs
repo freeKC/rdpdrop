@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
+using RdpDrop.Client.Resources;
 using RdpDrop.Client.Sessions;
 using RdpDrop.Client.Settings;
 
@@ -9,10 +11,12 @@ namespace RdpDrop.Client;
 /// The main window: menus, one tab per session, and the status bar that follows the
 /// active tab. Menus and shortcuts act on the active tab.
 /// </summary>
+/// <remarks>
+/// Every text comes from the resources. <see cref="ApplyTexts"/> writes them all again
+/// after a change of language.
+/// </remarks>
 internal sealed partial class MainForm : Form
 {
-    private const string DisconnectedMarker = " (disconnected)";
-
     private readonly string? _initialPath;
     private readonly ClientSettings _settings;
     private readonly RecentConnections _recent;
@@ -23,12 +27,16 @@ internal sealed partial class MainForm : Form
     {
         Dock = DockStyle.Fill,
         TextAlign = ContentAlignment.MiddleCenter,
-        Text = "No session is open. Use File, Open .rdp or File, Recent to start one.",
     };
 
-    private readonly ToolStripMenuItem _connectItem = new("&Connect");
-    private readonly ToolStripMenuItem _disconnectItem = new("&Disconnect");
-    private readonly ToolStripMenuItem _findAgentItem = new("&Look for the agent again");
+    private readonly ToolStripMenuItem _sessionMenu = new();
+    private readonly ToolStripMenuItem _connectItem = new();
+    private readonly ToolStripMenuItem _disconnectItem = new();
+    private readonly ToolStripMenuItem _findAgentItem = new();
+    private readonly ToolStripMenuItem _helpMenu = new();
+    private readonly ToolStripMenuItem _aboutItem = new();
+    private readonly ToolStripMenuItem _projectItem = new();
+    private readonly ToolStripMenuItem _logsItem = new();
     private readonly ToolStripStatusLabel _connectionLabel = new();
     private readonly ToolStripStatusLabel _agentLabel = new();
     private readonly ToolStripStatusLabel _dropLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
@@ -38,12 +46,13 @@ internal sealed partial class MainForm : Form
 
     /// <summary>
     /// Creates the window. <paramref name="initialPath"/> is opened in the first tab once
-    /// the window is shown; without it the window starts empty.
+    /// the window is shown; without it the window starts empty. <paramref name="settings"/>
+    /// are the saved choices, already loaded to set the language.
     /// </summary>
-    public MainForm(string? initialPath)
+    public MainForm(string? initialPath, ClientSettings settings)
     {
         _initialPath = initialPath;
-        _settings = ClientSettings.Load(ClientSettings.DefaultPath);
+        _settings = settings;
         _recent = new RecentConnections(_settings, ClientSettings.DefaultPath);
         InitializeFileMenu();
         InitializeViewMenu();
@@ -68,7 +77,7 @@ internal sealed partial class MainForm : Form
         _tabs.SelectedIndexChanged += (_, _) => OnActiveTabChanged();
 
         ClientLog.Info("Main form created.");
-        OnActiveTabChanged();
+        ApplyTexts();
         Shown += (_, _) => OnShown();
     }
 
@@ -85,8 +94,8 @@ internal sealed partial class MainForm : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Title = "Open a Remote Desktop file",
-            Filter = "Remote Desktop files (*.rdp)|*.rdp",
+            Title = Strings.OpenDialogTitle,
+            Filter = Strings.OpenDialogFilter,
             CheckFileExists = true,
         };
         return dialog.ShowDialog(owner) == DialogResult.OK ? dialog.FileName : null;
@@ -188,7 +197,7 @@ internal sealed partial class MainForm : Form
         if (!RdpFileLoader.TryLoad(path, out var fullPath, out var file, out var error))
         {
             _recent.Remove(path);
-            MessageBox.Show(this, error, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, error.ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
@@ -301,7 +310,9 @@ internal sealed partial class MainForm : Form
     {
         if (session.Parent is TabPage page)
         {
-            var text = session.State == SessionState.Disconnected ? session.Title + DisconnectedMarker : session.Title;
+            var text = session.State == SessionState.Disconnected
+                ? LocalText.Of(nameof(Strings.TabDisconnected), session.Title).ToString()
+                : session.Title;
             if (page.Text != text)
             {
                 page.Text = text;
@@ -328,23 +339,45 @@ internal sealed partial class MainForm : Form
         _disconnectItem.Click += (_, _) => ActiveSession?.Disconnect();
         _findAgentItem.Click += (_, _) => ActiveSession?.LookForAgent();
 
-        var session = new ToolStripMenuItem("&Session");
-        session.DropDownItems.AddRange([_connectItem, _disconnectItem, _findAgentItem]);
-        session.DropDownOpening += (_, _) => UpdateMenu();
+        _sessionMenu.DropDownItems.AddRange([_connectItem, _disconnectItem, _findAgentItem]);
+        _sessionMenu.DropDownOpening += (_, _) => UpdateMenu();
 
-        var about = new ToolStripMenuItem("&About RdpDrop");
-        about.Click += (_, _) => ShowAbout();
-        var project = new ToolStripMenuItem("&Project page");
-        project.Click += (_, _) => OpenWithShell(AppInfo.ProjectUrl);
-        var logs = new ToolStripMenuItem("Open &log folder");
-        logs.Click += (_, _) => OpenLogFolder();
-
-        var help = new ToolStripMenuItem("&Help");
-        help.DropDownItems.AddRange([about, project, logs]);
+        _aboutItem.Click += (_, _) => ShowAbout();
+        _projectItem.Click += (_, _) => OpenWithShell(AppInfo.ProjectUrl);
+        _logsItem.Click += (_, _) => OpenLogFolder();
+        _helpMenu.DropDownItems.AddRange([_aboutItem, _projectItem, _logsItem]);
 
         var menu = new MenuStrip();
-        menu.Items.AddRange([_fileMenu.Root, session, _viewMenu.Root, help]);
+        menu.Items.AddRange([_fileMenu.Root, _sessionMenu, _viewMenu.Root, _helpMenu]);
         return menu;
+    }
+
+    /// <summary>
+    /// Writes every text of the window in the current user interface language: menus,
+    /// empty window hint, tab texts, status bar and the texts of each session. Called once
+    /// at start and after each change of language.
+    /// </summary>
+    private void ApplyTexts()
+    {
+        _fileMenu.ApplyTexts();
+        _viewMenu.ApplyTexts();
+        _sessionMenu.Text = Strings.MenuSession;
+        _connectItem.Text = Strings.MenuConnect;
+        _disconnectItem.Text = Strings.MenuDisconnect;
+        _findAgentItem.Text = Strings.MenuFindAgent;
+        _helpMenu.Text = Strings.MenuHelp;
+        _aboutItem.Text = Strings.MenuAbout;
+        _projectItem.Text = Strings.MenuProjectPage;
+        _logsItem.Text = Strings.MenuOpenLogFolder;
+        _emptyLabel.Text = Strings.EmptyWindowHint;
+
+        foreach (var session in Sessions)
+        {
+            session.ApplyTexts();
+            OnSessionStateChanged(session);
+        }
+
+        OnActiveTabChanged();
     }
 
     /// <summary>Shows the texts and the title of the active session.</summary>
@@ -352,7 +385,7 @@ internal sealed partial class MainForm : Form
     {
         var session = ActiveSession;
         Text = session?.WindowTitle ?? AppInfo.Name;
-        SetLabel(_connectionLabel, session?.ConnectionText ?? "No session");
+        SetLabel(_connectionLabel, session?.ConnectionText ?? Strings.StatusNoSession);
         SetLabel(_agentLabel, session?.AgentText ?? string.Empty);
         SetLabel(_dropLabel, session?.DropText ?? string.Empty);
         _agentLabel.Visible = session is not null;
@@ -364,7 +397,7 @@ internal sealed partial class MainForm : Form
         _connectItem.Enabled = session is { State: SessionState.Disconnected, IsClosing: false };
         _disconnectItem.Enabled = session is { IsClosing: false } && session.State != SessionState.Disconnected;
         _findAgentItem.Enabled = session?.CanLookForAgent == true;
-        _fileMenu.ShowActiveSession(session is { IsClosing: false });
+        _fileMenu.ShowActiveSession(session is { IsClosing: false }, session?.CanLogOff == true);
         ShowViewChoices();
     }
 
@@ -382,12 +415,8 @@ internal sealed partial class MainForm : Form
     {
         MessageBox.Show(
             this,
-            $"{AppInfo.Name} {AppInfo.Version}{Environment.NewLine}{Environment.NewLine}"
-            + $"Drag files and folders from this computer and drop them into the Remote Desktop session.{Environment.NewLine}{Environment.NewLine}"
-            + $"Saved credentials: RdpDrop never saves a password. Windows saves it when you tick \"Remember me\" in its credential prompt. "
-            + $"Before connecting, RdpDrop uses the generic credential TERMSRV/<host> of the Windows Credential Manager when there is one.{Environment.NewLine}{Environment.NewLine}"
-            + $"{AppInfo.ProjectUrl}",
-            $"About {AppInfo.Name}",
+            LocalText.Of(nameof(Strings.AboutText), AppInfo.Name, AppInfo.Version, AppInfo.ProjectUrl).ToString(),
+            LocalText.Of(nameof(Strings.AboutTitle), AppInfo.Name).ToString(),
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
     }

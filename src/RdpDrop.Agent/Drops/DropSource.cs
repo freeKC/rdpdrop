@@ -1,3 +1,6 @@
+using RdpDrop.Agent.Localization;
+using RdpDrop.Agent.Resources;
+
 namespace RdpDrop.Agent.Drops;
 
 /// <summary>
@@ -11,7 +14,7 @@ internal sealed class DropSource
     private volatile bool _dropRequested;
     private volatile bool _released;
     private volatile bool _cancelRequested;
-    private volatile string? _cancelReason;
+    private volatile LocalText? _cancelReason;
     private int _feedbackCount;
 
     /// <summary>True once the client sent the drop.</summary>
@@ -24,7 +27,7 @@ internal sealed class DropSource
     public bool CancelRequested => _cancelRequested;
 
     /// <summary>Why the drag was cancelled.</summary>
-    public string? CancelReason => _cancelReason;
+    public LocalText? CancelReason => _cancelReason;
 
     /// <summary>Number of GiveFeedback calls: each one follows a DragEnter or DragOver on the target.</summary>
     public int FeedbackCount => Volatile.Read(ref _feedbackCount);
@@ -34,7 +37,7 @@ internal sealed class DropSource
     public void MarkReleased() => _released = true;
 
     /// <summary>Asks for a cancel. The first reason is kept. Returns false when a cancel was already asked.</summary>
-    public bool RequestCancel(string reason)
+    public bool RequestCancel(LocalText reason)
     {
         if (_cancelRequested)
         {
@@ -62,7 +65,8 @@ internal sealed class DropSource
 
         if (escapePressed)
         {
-            RequestCancel("Escape was pressed in the session");
+            RequestCancel(LocalText.Of(nameof(Strings.CancelEscape)));
+
             return DragAction.Cancel;
         }
 

@@ -1,7 +1,9 @@
 using System.Globalization;
 using RdpDrop.Client.Channel;
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
 using RdpDrop.Client.Rdp;
+using RdpDrop.Client.Resources;
 using RdpDrop.Core.Paths;
 using RdpDrop.Core.Protocol;
 
@@ -33,15 +35,13 @@ internal sealed partial class SessionView
     // and an enter in a row; a leave only counts when no drag over follows it quickly.
     private const int LeaveDelayMilliseconds = 150;
 
-    private const string NoLiveDragText = "Drop refused: the drag did not start in the session. Drag the files again.";
-
     private readonly System.Windows.Forms.Timer _ackTimer = new() { Interval = AckTimeoutMilliseconds };
     private readonly System.Windows.Forms.Timer _moveTimer = new() { Interval = MoveIntervalMilliseconds };
     private readonly System.Windows.Forms.Timer _leaveTimer = new() { Interval = LeaveDelayMilliseconds };
     private DropZoneBanner? _banner;
     private LiveDrag? _live;
     private string? _pendingDropId;
-    private string? _dropTextBeforeDrag;
+    private LocalText? _dropTextBeforeDrag;
 
     private enum AckState
     {
@@ -103,25 +103,25 @@ internal sealed partial class SessionView
     /// <summary>
     /// Why a drop cannot be sent now, or null when it can.
     /// </summary>
-    private string? DropRefusalReason()
+    private LocalText? DropRefusalReason()
     {
         if (State != SessionState.Connected)
         {
-            return "Drop refused: not connected.";
+            return LocalText.Of(nameof(Strings.DropRefusedNotConnected));
         }
 
         return _agent.State switch
         {
             AgentState.Ready => null,
-            AgentState.Waiting => "Drop refused: the RdpDrop agent has not answered yet.",
-            _ => "Drop refused: the RdpDrop agent is not running in the remote session.",
+            AgentState.Waiting => LocalText.Of(nameof(Strings.DropRefusedAgentWaiting)),
+            _ => LocalText.Of(nameof(Strings.DropRefusedNoAgent)),
         };
     }
 
     private void OnFileDragOver(object? sender, FileDragEventArgs e)
     {
         _leaveTimer.Stop();
-        _dropTextBeforeDrag ??= DropText;
+        _dropTextBeforeDrag ??= _dropText;
         var reason = DropRefusalReason();
         if (reason is not null)
         {
@@ -182,7 +182,7 @@ internal sealed partial class SessionView
         var reason = DropRefusalReason();
         if (reason is not null)
         {
-            ClientLog.Info(Invariant($"Drop of {e.Files.Count} item(s) refused: {reason}"));
+            ClientLog.Info(Invariant($"Drop of {e.Files.Count} item(s) refused: {reason.ToEnglish()}"));
             EndLiveDrag(sendLeave: true);
             ShowDropStatus(reason);
             return;
@@ -197,7 +197,7 @@ internal sealed partial class SessionView
         // Every drop ends a live drag; without one for these files there is nothing to drop.
         ClientLog.Info(Invariant($"Drop of {e.Files.Count} item(s) refused: no live drag for these files."));
         EndLiveDrag(sendLeave: true);
-        ShowDropStatus(NoLiveDragText);
+        ShowDropStatus(LocalText.Of(nameof(Strings.DropRefusedNoLiveDrag)));
     }
 
     private void StartLiveDrag(FileDragEventArgs e)
@@ -223,7 +223,7 @@ internal sealed partial class SessionView
         if (!_agent.SendDrag(new DragEnterMessage(id, remote.X, remote.Y, items, e.KeyState), id))
         {
             live.State = AckState.Refused;
-            live.Problem = "Drop failed: the message could not be sent to the agent.";
+            live.Problem = LocalText.Of(nameof(Strings.DropFailedNotSent));
             return;
         }
 
@@ -231,7 +231,7 @@ internal sealed partial class SessionView
         _ackTimer.Stop();
         _ackTimer.Start();
         _moveTimer.Start();
-        ShowDropStatus(Invariant($"Dragging {items.Count} item(s) into the session..."));
+        ShowDropStatus(LocalText.Of(nameof(Strings.Dragging), items.Count));
     }
 
     private void QueueMove(FileDragEventArgs e)
@@ -287,9 +287,9 @@ internal sealed partial class SessionView
     {
         if (live.State is AckState.Refused or AckState.TimedOut)
         {
-            ClientLog.Info($"Drop {live.Id} not sent: {live.Problem}");
+            ClientLog.Info($"Drop {live.Id} not sent: {live.Problem?.ToEnglish()}");
             EndLiveDrag(sendLeave: true);
-            ShowDropStatus(live.Problem ?? "Drop refused.");
+            ShowDropStatus(live.Problem ?? LocalText.Of(nameof(Strings.DropRefused)));
             return DragDropEffects.None;
         }
 
@@ -299,13 +299,13 @@ internal sealed partial class SessionView
         if (!_agent.SendDrag(drop, live.Id))
         {
             EndLiveDrag(sendLeave: true);
-            ShowDropStatus("Drop failed: the message could not be sent to the agent.");
+            ShowDropStatus(LocalText.Of(nameof(Strings.DropFailedNotSent)));
             return DragDropEffects.None;
         }
 
         _pendingDropId = live.Id;
         EndLiveDrag(sendLeave: false);
-        ShowDropStatus(Invariant($"Dragging {live.Items.Count} item(s) into the session..."));
+        ShowDropStatus(LocalText.Of(nameof(Strings.Dragging), live.Items.Count));
         return DragDropEffects.Copy;
     }
 
@@ -324,14 +324,16 @@ internal sealed partial class SessionView
 
                 if (!string.IsNullOrWhiteSpace(ack.Message))
                 {
-                    ShowDropStatus(ack.Message);
+                    ShowDropStatus(LocalText.Raw(ack.Message));
                 }
 
                 return;
             }
 
             live.State = AckState.Refused;
-            live.Problem = "Drop refused: " + (string.IsNullOrWhiteSpace(ack.Message) ? "the agent refused the drag." : ack.Message);
+            live.Problem = string.IsNullOrWhiteSpace(ack.Message)
+                ? LocalText.Of(nameof(Strings.DropRefusedByAgent))
+                : LocalText.Of(nameof(Strings.DropRefusedReason), ack.Message);
             _ackTimer.Stop();
             ShowDropStatus(live.Problem);
             return;
@@ -340,7 +342,7 @@ internal sealed partial class SessionView
         if (ack.Id == _pendingDropId && !ack.Accepted && !string.IsNullOrWhiteSpace(ack.Message))
         {
             // The drop is on its way; its result follows and says the same.
-            ShowDropStatus("Drop refused: " + ack.Message);
+            ShowDropStatus(LocalText.Of(nameof(Strings.DropRefusedReason), ack.Message));
         }
     }
 
@@ -355,7 +357,7 @@ internal sealed partial class SessionView
 
         ClientLog.Warn(Invariant($"Drag {live.Id}: no dragAck within {AckTimeoutMilliseconds} ms."));
         live.State = AckState.TimedOut;
-        live.Problem = "The agent did not acknowledge the drag";
+        live.Problem = LocalText.Of(nameof(Strings.AgentNoAck));
         ShowDropStatus(live.Problem);
 
         // The agent may still start the drag late; tell it the drag is over.
@@ -386,15 +388,16 @@ internal sealed partial class SessionView
         _leaveTimer.Stop();
     }
 
-    private List<DropItem>? MapItems(IReadOnlyList<string> files, out string? problem)
+    private List<DropItem>? MapItems(IReadOnlyList<string> files, out LocalText? problem)
     {
         var items = new List<DropItem>(files.Count);
         foreach (var path in files)
         {
-            if (!ClientPathMapper.TryMapToTsClient(path, out _, out var pathProblem))
+            var rejection = ClientPathMapper.Classify(path, out _);
+            if (rejection != PathRejection.None)
             {
-                ClientLog.Info($"Drop refused: {pathProblem}");
-                problem = $"Drop refused: {pathProblem}";
+                ClientLog.Info($"Drop refused: {ClientPathMapper.Describe(rejection, path)}");
+                problem = LocalText.Of(nameof(Strings.DropRefusedReason), PathTexts.Describe(rejection, path));
                 return null;
             }
 
@@ -448,24 +451,29 @@ internal sealed partial class SessionView
         ShowDropStatus(DescribeResult(result));
     }
 
-    private static string DescribeResult(DropResultMessage result) => (result.Status, result.Effect) switch
+    /// <remarks>The messages of the agent are already in the language of the client.</remarks>
+    private static LocalText DescribeResult(DropResultMessage result) => (result.Status, result.Effect) switch
     {
-        (DropStatus.Ok, DropEffect.Copy or DropEffect.Link) =>
-            $"Dropped on {WindowName(result.TargetWindow)} ({(result.Effect == DropEffect.Copy ? "copy" : "link")})",
+        (DropStatus.Ok, DropEffect.Copy or DropEffect.Link) => LocalText.Of(
+            nameof(Strings.DroppedOn),
+            WindowName(result.TargetWindow),
+            LocalText.Of(result.Effect == DropEffect.Copy ? nameof(Strings.EffectCopy) : nameof(Strings.EffectLink))),
         (DropStatus.Ok, _) => !string.IsNullOrWhiteSpace(result.Message)
-            ? result.Message
-            : "Nothing under the cursor accepted the files.",
+            ? LocalText.Raw(result.Message)
+            : LocalText.Of(nameof(Strings.NothingAccepted)),
         (DropStatus.Cancelled, _) => !string.IsNullOrWhiteSpace(result.Message)
-            ? $"Cancelled: {result.Message}"
-            : "Drop cancelled.",
-        _ => $"Drop failed: {(string.IsNullOrWhiteSpace(result.Message) ? "no detail from the agent." : result.Message)}",
+            ? LocalText.Of(nameof(Strings.CancelledReason), result.Message)
+            : LocalText.Of(nameof(Strings.DropCancelled)),
+        _ => string.IsNullOrWhiteSpace(result.Message)
+            ? LocalText.Of(nameof(Strings.DropFailedNoDetail))
+            : LocalText.Of(nameof(Strings.DropFailedReason), result.Message),
     };
 
-    private static string WindowName(TargetWindowInfo? window) =>
-        !string.IsNullOrWhiteSpace(window?.Title) ? window.Title
-        : !string.IsNullOrWhiteSpace(window?.ProcessName) ? window.ProcessName
-        : !string.IsNullOrWhiteSpace(window?.ClassName) ? window.ClassName
-        : "the window under the cursor";
+    private static LocalText WindowName(TargetWindowInfo? window) =>
+        !string.IsNullOrWhiteSpace(window?.Title) ? LocalText.Raw(window.Title)
+        : !string.IsNullOrWhiteSpace(window?.ProcessName) ? LocalText.Raw(window.ProcessName)
+        : !string.IsNullOrWhiteSpace(window?.ClassName) ? LocalText.Raw(window.ClassName)
+        : LocalText.Of(nameof(Strings.WindowUnderCursor));
 
     /// <summary>State of the drag in progress over the session.</summary>
     private sealed class LiveDrag(string id, IReadOnlyList<string> files, IReadOnlyList<DropItem> items)
@@ -479,7 +487,8 @@ internal sealed partial class SessionView
         public AckState State { get; set; } = AckState.Pending;
 
         /// <summary>Text shown while the drag is refused.</summary>
-        public string? Problem { get; set; }
+        public LocalText? Problem { get; set; }
+
 
         /// <summary>True once dragEnter went out.</summary>
         public bool Sent { get; set; }

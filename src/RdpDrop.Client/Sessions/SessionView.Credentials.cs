@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using MSTSCLib;
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
+using RdpDrop.Client.Resources;
 
 namespace RdpDrop.Client.Sessions;
 
@@ -24,8 +26,9 @@ internal sealed partial class SessionView
     {
         var deleted = SavedCredentials.Delete(Host);
         ShowDropStatus(deleted
-            ? $"Saved credentials for {Host} forgotten; the next connection asks for them."
-            : $"No saved credentials for {Host}.");
+            ? LocalText.Of(nameof(Strings.CredentialsForgotten), Host)
+            : LocalText.Of(nameof(Strings.NoSavedCredentials), Host));
+
         return deleted;
     }
 

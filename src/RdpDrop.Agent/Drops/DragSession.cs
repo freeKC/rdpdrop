@@ -1,5 +1,7 @@
 using RdpDrop.Agent.Interop;
+using RdpDrop.Agent.Localization;
 using RdpDrop.Agent.Logging;
+using RdpDrop.Agent.Resources;
 using RdpDrop.Core.Protocol;
 
 namespace RdpDrop.Agent.Drops;
@@ -23,7 +25,7 @@ internal sealed record DragCompletion(
     DragOutcome Outcome,
     DragDropEffects Effect,
     TargetWindowInfo? Target,
-    string? Message);
+    LocalText? Message);
 
 /// <summary>
 /// Replays one drag of the client inside the session, as a real OLE drag whose source is
@@ -98,7 +100,7 @@ internal sealed class DragSession
     /// Raised once on the drag thread when the drag loop runs (true) or when the drag
     /// could not start (false, with the reason).
     /// </summary>
-    public event Action<DragSession, bool, string?>? Started;
+    public event Action<DragSession, bool, LocalText?>? Started;
 
     /// <summary>Raised once on the drag thread when the session is over.</summary>
     public event Action<DragSession, DragCompletion>? Completed;
@@ -161,7 +163,7 @@ internal sealed class DragSession
     }
 
     /// <summary>Ends the drag without a drop. Callable from any thread.</summary>
-    public void Cancel(string reason)
+    public void Cancel(LocalText reason)
     {
         if (!_source.RequestCancel(reason))
         {
@@ -218,7 +220,7 @@ internal sealed class DragSession
         {
             _logger.Error($"Drag {Id}: the drag thread failed.", ex);
             ReleaseIfStillDown();
-            Complete(DragOutcome.Failed, DragDropEffects.None, "The drag in the session failed: " + ex.Message);
+            Complete(DragOutcome.Failed, DragDropEffects.None, LocalText.Of(nameof(Strings.DragThreadFailed), ex.Message));
         }
         finally
         {
@@ -237,7 +239,7 @@ internal sealed class DragSession
     private void OnThreadException(object? sender, ThreadExceptionEventArgs e)
     {
         _logger.Error($"Drag {Id}: unexpected error on the drag thread.", e.Exception);
-        _source.RequestCancel("the agent hit an unexpected error");
+        _source.RequestCancel(LocalText.Of(nameof(Strings.CancelUnexpected)));
         ReleaseIfStillDown();
         if (_inDoDragDrop)
         {
@@ -253,7 +255,7 @@ internal sealed class DragSession
             return;
         }
 
-        Complete(DragOutcome.Failed, DragDropEffects.None, "The drag in the session failed: " + e.Exception.Message);
+        Complete(DragOutcome.Failed, DragDropEffects.None, LocalText.Of(nameof(Strings.DragThreadFailed), e.Exception.Message));
     }
 
     private void Arm()
@@ -285,7 +287,7 @@ internal sealed class DragSession
             case Phase.Pressed when inPhase > PressTimeoutMilliseconds:
                 InputInjector.Release();
                 _pressed = false;
-                Fail("The session did not deliver the simulated button press to the agent.");
+                Fail(LocalText.Of(nameof(Strings.PressNotDelivered)));
                 break;
 
             case Phase.Dragging:
@@ -311,7 +313,7 @@ internal sealed class DragSession
         {
             if (!InputInjector.PressAt(_startPoint))
             {
-                Fail("The session does not accept simulated input; it may be locked or showing a secure desktop.");
+                Fail(LocalText.Of(nameof(Strings.InputRefused)));
                 return;
             }
 
@@ -324,7 +326,9 @@ internal sealed class DragSession
         if (inPhase > PressTimeoutMilliseconds)
         {
             var other = WindowProbe.Describe(_startPoint);
-            Fail($"Another window ({other?.ClassName ?? "unknown"}) stays above the drop point, so the drag cannot start.");
+            Fail(other?.ClassName is { Length: > 0 } className
+                ? LocalText.Of(nameof(Strings.WindowAbovePoint), className)
+                : LocalText.Of(nameof(Strings.UnknownWindowAbovePoint)));
         }
     }
 
@@ -335,13 +339,13 @@ internal sealed class DragSession
         // never reaches the target is cancelled.
         if (!_source.CancelRequested && !_source.DropRequested && now - Interlocked.Read(ref _lastMessageTicks) > IdleTimeout.TotalMilliseconds)
         {
-            Cancel("no message from the client for five seconds");
+            Cancel(LocalText.Of(nameof(Strings.CancelIdle)));
             return;
         }
 
         if (_source.DropRequested && _target is null && !_source.CancelRequested && now - ReadDropTicks() > DropTimeoutMilliseconds)
         {
-            Cancel("the drop did not reach the target in time");
+            Cancel(LocalText.Of(nameof(Strings.CancelDropTimeout)));
             return;
         }
 
@@ -430,7 +434,7 @@ internal sealed class DragSession
         }
 
         var effect = DragDropEffects.None;
-        string? error = null;
+        LocalText? error = null;
         try
         {
             // Copy and link only: a move accepted by the remote Explorer would delete the
@@ -440,7 +444,7 @@ internal sealed class DragSession
         }
         catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException or InvalidOperationException)
         {
-            error = "DoDragDrop failed: " + ex.Message;
+            error = LocalText.Of(nameof(Strings.DoDragDropFailed), ex.Message);
             _logger.Warn($"Drag {Id}: {error}");
         }
         finally
@@ -512,14 +516,14 @@ internal sealed class DragSession
         _pressed = false;
     }
 
-    private void Fail(string reason)
+    private void Fail(LocalText reason)
     {
         _logger.Warn($"Drag {Id}: {reason}");
         Complete(DragOutcome.Failed, DragDropEffects.None, reason);
     }
 
     /// <summary>Raises <see cref="Started"/> once, whatever the path that ends the start.</summary>
-    private void RaiseStarted(bool started, string? reason)
+    private void RaiseStarted(bool started, LocalText? reason)
     {
         if (_startedRaised)
         {
@@ -537,7 +541,7 @@ internal sealed class DragSession
         }
     }
 
-    private void Complete(DragOutcome outcome, DragDropEffects effect, string? message)
+    private void Complete(DragOutcome outcome, DragDropEffects effect, LocalText? message)
     {
         if (_phase == Phase.Done)
         {
@@ -553,10 +557,13 @@ internal sealed class DragSession
         // the client gets a refusal instead of waiting.
         if (!wasDragging)
         {
-            RaiseStarted(false, outcome == DragOutcome.Cancelled ? "The drag was cancelled before it started." : message);
+            RaiseStarted(false, outcome == DragOutcome.Cancelled ? LocalText.Of(nameof(Strings.DragCancelledBeforeStart)) : message);
         }
 
-        var cancelText = outcome == DragOutcome.Cancelled ? "The drag was cancelled: " + (_source.CancelReason ?? "no reason given") + "." : null;
+        var cancelText = outcome == DragOutcome.Cancelled
+            ? LocalText.Of(nameof(Strings.DragCancelledReason), _source.CancelReason ?? LocalText.Of(nameof(Strings.NoReasonGiven)))
+            : null;
+
         try
         {
             Completed?.Invoke(this, new DragCompletion(Id, outcome, effect, _target, message ?? cancelText));

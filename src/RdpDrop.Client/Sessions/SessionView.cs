@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using RdpDrop.Client.Channel;
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
 using RdpDrop.Client.Rdp;
+using RdpDrop.Client.Resources;
 using RdpDrop.Client.Settings;
 using RdpDrop.Core.RdpFiles;
 
@@ -14,7 +16,9 @@ namespace RdpDrop.Client.Sessions;
 /// publishes and calls its operations; it knows nothing of the control.
 /// </summary>
 /// <remarks>
-/// Every member is called on the UI thread, like the control itself.
+/// Every member is called on the UI thread, like the control itself. The texts are kept
+/// as <see cref="LocalText"/>, so that <see cref="ApplyTexts"/> can show them again in
+/// another language.
 /// </remarks>
 internal sealed partial class SessionView : UserControl
 {
@@ -30,6 +34,8 @@ internal sealed partial class SessionView : UserControl
     private bool _closeReported;
     private bool _reconnectRequested;
     private System.Windows.Forms.Timer? _closeTimer;
+    private LocalText _connectionText = LocalText.Of(nameof(Strings.ConnectionNotConnected));
+    private LocalText _dropText = LocalText.Empty;
 
     /// <summary>
     /// Creates the view for <paramref name="file"/>, read from <paramref name="rdpPath"/>.
@@ -71,11 +77,12 @@ internal sealed partial class SessionView : UserControl
         _agent.StateChanged += (_, _) => OnAgentStateChanged();
         _agent.DropResultReceived += (_, result) => OnDropResult(result);
         InitializeDrops();
+        InitializeLogOff();
 
         ClientLog.Info($"Session view created for {Host} from {rdpPath}");
         if (!file.RequestsDriveRedirection)
         {
-            ShowDropStatus("This .rdp file does not redirect drives: drops will not work.");
+            ShowDropStatus(LocalText.Of(nameof(Strings.FileDoesNotRedirectDrives)));
         }
     }
 
@@ -118,11 +125,20 @@ internal sealed partial class SessionView : UserControl
     /// <summary>True once <see cref="BeginClose"/> was called.</summary>
     public bool IsClosing => _closeRequested;
 
-    public string ConnectionText { get; private set; } = "Not connected";
+    /// <summary>Connection state, in the current user interface language.</summary>
+    public string ConnectionText => _connectionText.ToString();
 
-    public string AgentText { get; private set; } = "Agent: not connected";
+    /// <summary>Agent state, in the current user interface language.</summary>
+    public string AgentText => _agent.State switch
+    {
+        AgentState.Waiting => Strings.AgentWaiting,
+        AgentState.Ready => LocalText.Of(nameof(Strings.AgentReady), _agent.AgentVersion ?? "?").ToString(),
+        AgentState.NotFound => Strings.AgentNotFound,
+        _ => Strings.AgentNotConnected,
+    };
 
-    public string DropText { get; private set; } = string.Empty;
+    /// <summary>Last drop result or message, in the current user interface language.</summary>
+    public string DropText => _dropText.ToString();
 
     /// <summary>True when "Look for the agent again" makes sense.</summary>
     public bool CanLookForAgent => IsConnected && _agent.State != AgentState.Ready;
@@ -153,14 +169,14 @@ internal sealed partial class SessionView : UserControl
             _display.OnConnecting(desktop);
             _sessionUsesAllMonitors = _useAllMonitors;
             _channelCreated = true;
-            SetConnection(SessionState.Connecting, $"Connecting to {Host}...");
+            SetConnection(SessionState.Connecting, LocalText.Of(nameof(Strings.ConnectingTo), Host));
             ClientLog.Info($"Connecting to {Host} with {RdpPath}, control version {SafeControlVersion()}");
             _rdp.Connect();
         }
         catch (Exception ex) when (ex is COMException or ArgumentException or InvalidOperationException or AxHost.InvalidActiveXStateException)
         {
             ClientLog.Error($"Connect to {Host} failed", ex);
-            SetConnection(SessionState.Disconnected, $"Cannot connect: {ex.Message}");
+            SetConnection(SessionState.Disconnected, LocalText.Of(nameof(Strings.CannotConnect), ex.Message));
         }
     }
 
@@ -174,7 +190,7 @@ internal sealed partial class SessionView : UserControl
         try
         {
             ClientLog.Info($"Disconnect from {Host} requested.");
-            SetConnectionText("Disconnecting...");
+            SetConnectionText(LocalText.Of(nameof(Strings.Disconnecting)));
             _rdp.Disconnect();
         }
         catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
@@ -217,12 +233,26 @@ internal sealed partial class SessionView : UserControl
     /// <summary>Starts a new agent discovery, from the menu.</summary>
     public void LookForAgent() => _agent.RestartDiscovery("menu");
 
+    /// <summary>
+    /// Shows every text again in the current user interface language, and tells the agent
+    /// the new language so that the texts it sends next follow it. Texts that came from
+    /// the agent or the control stay as they were written.
+    /// </summary>
+    public void ApplyTexts()
+    {
+        _agent.AnnounceLanguage();
+        ConnectionTextChanged?.Invoke(this, EventArgs.Empty);
+        AgentTextChanged?.Invoke(this, EventArgs.Empty);
+        DropTextChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
             ClientLog.Info($"Session view for {Host} disposed.");
             _closeTimer?.Dispose();
+            DisposeLogOff();
             _childTargets.RevokeAll();
             DisposeDrops();
             _agent.Dispose();
@@ -255,13 +285,13 @@ internal sealed partial class SessionView : UserControl
     private void OnRdpConnecting()
     {
         ClientLog.Info($"Event OnConnecting ({Host})");
-        SetConnection(SessionState.Connecting, $"Connecting to {Host}...");
+        SetConnection(SessionState.Connecting, LocalText.Of(nameof(Strings.ConnectingTo), Host));
     }
 
     private void OnRdpConnected()
     {
         ClientLog.Info($"Event OnConnected ({Host})");
-        SetConnection(SessionState.Connected, $"Connected to {Host}");
+        SetConnection(SessionState.Connected, LocalText.Of(nameof(Strings.ConnectedTo), Host));
         _childTargets.Refresh("connected");
         _agent.Start();
     }
@@ -269,7 +299,7 @@ internal sealed partial class SessionView : UserControl
     private void OnRdpLoginComplete()
     {
         ClientLog.Info($"Event OnLoginComplete ({Host})");
-        SetConnection(SessionState.Connected, $"Logged on to {Host}");
+        SetConnection(SessionState.Connected, LocalText.Of(nameof(Strings.LoggedOnTo), Host));
         _childTargets.Refresh("logged on");
         _display.OnLoggedOn();
         _agent.RestartDiscovery("logged on");
@@ -283,6 +313,7 @@ internal sealed partial class SessionView : UserControl
         _agent.Stop();
         _display.OnDisconnected();
         ResetDrops();
+        EndLogOff();
         ShowFullScreenState(false);
         SetConnection(SessionState.Disconnected, DescribeDisconnect(reason, text));
 
@@ -302,13 +333,14 @@ internal sealed partial class SessionView : UserControl
     /// Codes 1 to 3 are normal ends of a session; the control describes code 1 as an
     /// internal error, so they get their own text.
     /// </summary>
-    private static string DescribeDisconnect(int reason, string description) => reason switch
+    /// <remarks>The description comes from the control, in the language of Windows.</remarks>
+    private static LocalText DescribeDisconnect(int reason, string description) => reason switch
     {
-        1 => "Disconnected",
-        2 => "Disconnected: the session was closed from the remote computer",
-        3 => "Disconnected by the remote computer",
-        _ when string.IsNullOrWhiteSpace(description) => Invariant($"Disconnected (code {reason})"),
-        _ => $"Disconnected: {description.ReplaceLineEndings(" ").Replace("  ", " ", StringComparison.Ordinal).Trim()}",
+        1 => LocalText.Of(nameof(Strings.Disconnected)),
+        2 => LocalText.Of(nameof(Strings.DisconnectedSessionClosed)),
+        3 => LocalText.Of(nameof(Strings.DisconnectedByRemote)),
+        _ when string.IsNullOrWhiteSpace(description) => LocalText.Of(nameof(Strings.DisconnectedCode), reason),
+        _ => LocalText.Of(nameof(Strings.DisconnectedReason), description.ReplaceLineEndings(" ").Replace("  ", " ", StringComparison.Ordinal).Trim()),
     };
 
     private void OnRdpFatalError(int errorCode)
@@ -317,9 +349,10 @@ internal sealed partial class SessionView : UserControl
         _agent.Stop();
         _display.OnDisconnected();
         ResetDrops();
+        EndLogOff();
         _reconnectRequested = false;
         ShowFullScreenState(false);
-        SetConnection(SessionState.Disconnected, Invariant($"Fatal error {errorCode} in the Remote Desktop control"));
+        SetConnection(SessionState.Disconnected, LocalText.Of(nameof(Strings.FatalError), errorCode));
         if (_closeRequested)
         {
             BeginInvoke(ReportClosed);
@@ -329,26 +362,26 @@ internal sealed partial class SessionView : UserControl
     private void OnAutoReconnecting(int reason, int attempt)
     {
         ClientLog.Info(Invariant($"Auto reconnecting to {Host}, reason={reason} attempt={attempt}"));
-        SetConnectionText(Invariant($"Reconnecting to {Host} (attempt {attempt})..."));
+        SetConnectionText(LocalText.Of(nameof(Strings.Reconnecting), Host, attempt));
     }
 
     private void OnAutoReconnected()
     {
         ClientLog.Info($"Auto reconnected to {Host}");
-        SetConnection(SessionState.Connected, $"Connected to {Host}");
+        SetConnection(SessionState.Connected, LocalText.Of(nameof(Strings.ConnectedTo), Host));
         _childTargets.Refresh("reconnected");
     }
 
-    private void SetConnection(SessionState state, string text)
+    private void SetConnection(SessionState state, LocalText text)
     {
         State = state;
         SetConnectionText(text);
         RaiseStateChanged();
     }
 
-    private void SetConnectionText(string text)
+    private void SetConnectionText(LocalText text)
     {
-        ConnectionText = text;
+        _connectionText = text;
         ConnectionTextChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -356,28 +389,22 @@ internal sealed partial class SessionView : UserControl
 
     private void OnAgentStateChanged()
     {
-        AgentText = _agent.State switch
-        {
-            AgentState.Waiting => "Agent: waiting",
-            AgentState.Ready => $"Agent ready (v{_agent.AgentVersion ?? "?"})",
-            AgentState.NotFound => "No agent on the remote computer",
-            _ => "Agent: not connected",
-        };
         AgentTextChanged?.Invoke(this, EventArgs.Empty);
 
         if (_agent.State == AgentState.Ready && _agent.DriveRedirectionAvailable == false)
         {
-            ShowDropStatus("The session sees no redirected drive: drops will not work. Turn on drives under Local Resources.");
+            ShowDropStatus(LocalText.Of(nameof(Strings.SessionSeesNoDrive)));
         }
 
         RaiseStateChanged();
     }
 
-    private void ShowDropStatus(string text)
+    private void ShowDropStatus(LocalText text)
     {
-        DropText = text;
+        _dropText = text;
         DropTextChanged?.Invoke(this, EventArgs.Empty);
     }
+
 
     private string SafeControlVersion()
     {

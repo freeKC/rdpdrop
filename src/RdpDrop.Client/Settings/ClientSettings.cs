@@ -1,12 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RdpDrop.Client.Logging;
+using RdpDrop.Core.Localization;
 using RdpDrop.Core.Recent;
 
 namespace RdpDrop.Client.Settings;
 
 /// <summary>
-/// Display choices and recent connections remembered between runs in
+/// Display choices, language and recent connections remembered between runs in
 /// %LOCALAPPDATA%\RdpDrop\client.json.
 /// Loading never fails: a missing, unreadable or odd file gives the defaults.
 /// </summary>
@@ -33,6 +34,12 @@ internal sealed class ClientSettings
 
     public bool UseAllMonitors { get; set; }
 
+    /// <summary>
+    /// Language of the user interface: "auto" for the Windows display language, or one of
+    /// the two letter codes of <see cref="UiLanguages.Codes"/>.
+    /// </summary>
+    public string Language { get; set; } = UiLanguages.Automatic;
+
     /// <summary>Full paths of the .rdp files opened lately, most recent first.</summary>
     public List<string> RecentFiles { get; set; } = [];
 
@@ -42,7 +49,7 @@ internal sealed class ClientSettings
         {
             if (File.Exists(path))
             {
-                var loaded = JsonSerializer.Deserialize<ClientSettings>(File.ReadAllBytes(path), JsonOptions);
+                var loaded = JsonSerializer.Deserialize<ClientSettings>(WithoutByteOrderMark(File.ReadAllBytes(path)), JsonOptions);
                 if (loaded is not null)
                 {
                     return loaded.Normalized();
@@ -77,7 +84,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}";
 
     private ClientSettings Normalized()
     {
@@ -96,9 +103,17 @@ internal sealed class ClientSettings
             KeyboardHookMode = DefaultKeyboardHookMode;
         }
 
+        Language = UiLanguages.NormalizeChoice(Language);
         RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;
     }
+
+    /// <summary>
+    /// A file saved by hand, with Notepad for example, may start with the UTF-8 byte order
+    /// mark, which the JSON reader refuses.
+    /// </summary>
+    private static ReadOnlySpan<byte> WithoutByteOrderMark(byte[] bytes) =>
+        bytes.AsSpan().StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]) ? bytes.AsSpan(3) : bytes;
 
     private static JsonSerializerOptions CreateJsonOptions()
     {

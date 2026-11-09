@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
+using RdpDrop.Client.Resources;
 using RdpDrop.Core.RdpFiles;
 
 namespace RdpDrop.Client.Sessions;
@@ -13,7 +15,7 @@ internal static class RdpFileLoader
     /// Reads <paramref name="path"/>. On success returns true with the full path and the
     /// file; otherwise returns false with a message for the user, already logged.
     /// </summary>
-    public static bool TryLoad(string path, out string fullPath, [NotNullWhen(true)] out RdpFile? file, out string error)
+    public static bool TryLoad(string path, out string fullPath, [NotNullWhen(true)] out RdpFile? file, out LocalText error)
     {
         fullPath = path;
         file = null;
@@ -25,20 +27,21 @@ internal static class RdpFileLoader
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             ClientLog.Error($"Cannot read {path}", ex);
-            error = $"Cannot read the file {path}.{Environment.NewLine}{ex.Message}";
+            error = LocalText.Of(nameof(Strings.CannotReadFile), path, ex.Message);
             return false;
         }
 
         if (string.IsNullOrWhiteSpace(file.FullAddress))
         {
             ClientLog.Error($"{fullPath} has no full address setting.");
-            error = $"The file {fullPath} does not name a computer to connect to (no \"full address\" line).";
+            error = LocalText.Of(nameof(Strings.FileHasNoAddress), fullPath);
             file = null;
             return false;
         }
 
         ClientLog.Info($"Using {fullPath}");
-        error = string.Empty;
+        error = LocalText.Empty;
+
         return true;
     }
 }

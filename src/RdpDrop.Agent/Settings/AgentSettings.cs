@@ -43,7 +43,7 @@ internal sealed class AgentSettings
         {
             if (File.Exists(path))
             {
-                var data = JsonSerializer.Deserialize<SettingsData>(File.ReadAllBytes(path), JsonOptions);
+                var data = JsonSerializer.Deserialize<SettingsData>(WithoutByteOrderMark(File.ReadAllBytes(path)), JsonOptions);
                 if (data is not null)
                 {
                     // A number out of range would silence the log entirely.
@@ -99,6 +99,13 @@ internal sealed class AgentSettings
             }
         }
     }
+
+    /// <summary>
+    /// A file saved by hand, with Notepad for example, may start with the UTF-8 byte order
+    /// mark, which the JSON reader refuses.
+    /// </summary>
+    private static ReadOnlySpan<byte> WithoutByteOrderMark(byte[] bytes) =>
+        bytes.AsSpan().StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]) ? bytes.AsSpan(3) : bytes;
 
     private static JsonSerializerOptions CreateJsonOptions()
     {

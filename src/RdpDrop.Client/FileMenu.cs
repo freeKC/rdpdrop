@@ -1,11 +1,13 @@
 using System.Globalization;
+using RdpDrop.Client.Localization;
+using RdpDrop.Client.Resources;
 
 namespace RdpDrop.Client;
 
 /// <summary>
-/// The File menu: open a .rdp file, recent connections, tabs, saved credentials and
-/// Quit. Like <see cref="ViewMenu"/>, it only shows the state it is given and raises an
-/// event per choice; the form decides what a choice does.
+/// The File menu: open a .rdp file, recent connections, tabs, log off, saved credentials
+/// and Quit. Like <see cref="ViewMenu"/>, it only shows the state it is given and raises
+/// an event per choice; the form decides what a choice does.
 /// </summary>
 /// <remarks>
 /// Ctrl+O and Ctrl+W are only shown here. The form handles them, so that they reach the
@@ -13,17 +15,16 @@ namespace RdpDrop.Client;
 /// </remarks>
 internal sealed class FileMenu
 {
-    private readonly ToolStripMenuItem _openItem = new("&Open .rdp...") { ShortcutKeyDisplayString = "Ctrl+O" };
-    private readonly ToolStripMenuItem _recentItem = new("&Recent");
-    private readonly ToolStripMenuItem _clearRecentItem = new("&Clear recent");
-    private readonly ToolStripMenuItem _reopenItem = new("Reopen in &new tab");
-    private readonly ToolStripMenuItem _closeTabItem = new("&Close tab") { ShortcutKeyDisplayString = "Ctrl+W" };
-    private readonly ToolStripMenuItem _forgetItem = new("&Forget saved credentials")
-    {
-        ToolTipText = "RdpDrop never saves credentials. Windows saves them when you tick \"Remember me\" in its credential prompt.",
-    };
-
-    private readonly ToolStripMenuItem _quitItem = new("&Quit");
+    private readonly ToolStripMenuItem _openItem = new() { ShortcutKeyDisplayString = "Ctrl+O" };
+    private readonly ToolStripMenuItem _recentItem = new();
+    private readonly ToolStripMenuItem _clearRecentItem = new();
+    private readonly ToolStripMenuItem _reopenItem = new();
+    private readonly ToolStripMenuItem _closeTabItem = new() { ShortcutKeyDisplayString = "Ctrl+W" };
+    private readonly ToolStripMenuItem _logOffItem = new();
+    private readonly ToolStripMenuItem _forgetItem = new();
+    private readonly ToolStripMenuItem _quitItem = new();
+    private IReadOnlyList<string> _recentPaths = [];
+    private string? _credentialsHost;
 
     public FileMenu()
     {
@@ -31,10 +32,10 @@ internal sealed class FileMenu
         _clearRecentItem.Click += (_, _) => ClearRecentClicked?.Invoke(this, EventArgs.Empty);
         _reopenItem.Click += (_, _) => ReopenClicked?.Invoke(this, EventArgs.Empty);
         _closeTabItem.Click += (_, _) => CloseTabClicked?.Invoke(this, EventArgs.Empty);
+        _logOffItem.Click += (_, _) => LogOffClicked?.Invoke(this, EventArgs.Empty);
         _forgetItem.Click += (_, _) => ForgetCredentialsClicked?.Invoke(this, EventArgs.Empty);
         _quitItem.Click += (_, _) => QuitClicked?.Invoke(this, EventArgs.Empty);
 
-        ShowRecent([]);
         Root.DropDownItems.AddRange(
         [
             _openItem,
@@ -43,10 +44,13 @@ internal sealed class FileMenu
             _reopenItem,
             _closeTabItem,
             new ToolStripSeparator(),
+            _logOffItem,
+            new ToolStripSeparator(),
             _forgetItem,
             new ToolStripSeparator(),
             _quitItem,
         ]);
+        ApplyTexts();
     }
 
     public event EventHandler? OpenClicked;
@@ -60,11 +64,29 @@ internal sealed class FileMenu
 
     public event EventHandler? CloseTabClicked;
 
+    public event EventHandler? LogOffClicked;
+
     public event EventHandler? ForgetCredentialsClicked;
 
     public event EventHandler? QuitClicked;
 
-    public ToolStripMenuItem Root { get; } = new("&File");
+    public ToolStripMenuItem Root { get; } = new();
+
+    /// <summary>Writes every entry in the current user interface language.</summary>
+    public void ApplyTexts()
+    {
+        Root.Text = Strings.MenuFile;
+        _openItem.Text = Strings.MenuOpenRdp;
+        _recentItem.Text = Strings.MenuRecent;
+        _clearRecentItem.Text = Strings.MenuClearRecent;
+        _reopenItem.Text = Strings.MenuReopen;
+        _closeTabItem.Text = Strings.MenuCloseTab;
+        _logOffItem.Text = Strings.MenuLogOff;
+        _quitItem.Text = Strings.MenuQuit;
+        _forgetItem.ToolTipText = Strings.ForgetCredentialsTip;
+        ShowRecent(_recentPaths);
+        ShowSavedCredentials(_credentialsHost, _forgetItem.Enabled);
+    }
 
     /// <summary>
     /// Lists <paramref name="paths"/>, most recent first, numbered 1 to 9 then 0, with
@@ -72,6 +94,7 @@ internal sealed class FileMenu
     /// </summary>
     public void ShowRecent(IReadOnlyList<string> paths)
     {
+        _recentPaths = [.. paths];
         var items = _recentItem.DropDownItems;
         foreach (var old in items.OfType<ToolStripItem>().Where(item => item != _clearRecentItem).ToList())
         {
@@ -91,7 +114,7 @@ internal sealed class FileMenu
 
         if (paths.Count == 0)
         {
-            items.Add(new ToolStripMenuItem("(none)") { Enabled = false });
+            items.Add(new ToolStripMenuItem(Strings.MenuRecentNone) { Enabled = false });
         }
 
         items.Add(new ToolStripSeparator());
@@ -105,16 +128,21 @@ internal sealed class FileMenu
     /// </summary>
     public void ShowSavedCredentials(string? host, bool saved)
     {
+        _credentialsHost = host;
         _forgetItem.Text = host is null
-            ? "&Forget saved credentials"
-            : $"&Forget saved credentials for {host.Replace("&", "&&", StringComparison.Ordinal)}";
+            ? Strings.MenuForgetCredentials
+            : LocalText.Of(nameof(Strings.MenuForgetCredentialsFor), host.Replace("&", "&&", StringComparison.Ordinal)).ToString();
         _forgetItem.Enabled = host is not null && saved;
     }
 
-    /// <summary>Enables the entries that need an active tab.</summary>
-    public void ShowActiveSession(bool hasSession)
+    /// <summary>
+    /// Enables the entries that need an active tab, and the log off entry when the
+    /// session is connected and its agent is ready.
+    /// </summary>
+    public void ShowActiveSession(bool hasSession, bool canLogOff)
     {
         _reopenItem.Enabled = hasSession;
         _closeTabItem.Enabled = hasSession;
+        _logOffItem.Enabled = canLogOff;
     }
 }

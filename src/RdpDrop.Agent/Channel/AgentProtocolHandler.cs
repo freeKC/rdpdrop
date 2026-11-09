@@ -1,5 +1,7 @@
 using RdpDrop.Agent.Drops;
+using RdpDrop.Agent.Localization;
 using RdpDrop.Agent.Logging;
+using RdpDrop.Agent.Resources;
 using RdpDrop.Core.Protocol;
 using Message = RdpDrop.Core.Protocol.Message;
 
@@ -8,7 +10,8 @@ namespace RdpDrop.Agent.Channel;
 /// <summary>
 /// Reacts to the messages sent by the client. Runs on the channel thread; the drag
 /// messages go to the <see cref="NativeDropCoordinator"/>, which does the slow work on its
-/// own threads.
+/// own threads, and the log off request to the <see cref="SessionLogoff"/>. The hello of
+/// the client sets the language of the texts sent back.
 /// </summary>
 internal sealed class AgentProtocolHandler
 {
@@ -16,13 +19,23 @@ internal sealed class AgentProtocolHandler
     private readonly Func<Message, bool> _send;
     private readonly DriveRedirectionProbe _probe;
     private readonly NativeDropCoordinator _native;
+    private readonly SessionLogoff _logoff;
+    private readonly ClientLanguage _language;
 
-    public AgentProtocolHandler(FileLogger logger, Func<Message, bool> send, DriveRedirectionProbe probe, NativeDropCoordinator native)
+    public AgentProtocolHandler(
+        FileLogger logger,
+        Func<Message, bool> send,
+        DriveRedirectionProbe probe,
+        NativeDropCoordinator native,
+        SessionLogoff logoff,
+        ClientLanguage language)
     {
         _logger = logger;
         _send = send;
         _probe = probe;
         _native = native;
+        _logoff = logoff;
+        _language = language;
     }
 
     /// <summary>Handles one line, given as its ASCII bytes.</summary>
@@ -64,6 +77,10 @@ internal sealed class AgentProtocolHandler
                 _native.OnDragLeave(leave);
                 break;
 
+            case LogoffMessage logoff:
+                _logoff.OnLogoff(logoff);
+                break;
+
             case null:
                 _logger.Warn($"Protocol error: the \"{envelope.Type ?? "(none)"}\" message is unknown or malformed. Ignored.");
                 break;
@@ -76,8 +93,9 @@ internal sealed class AgentProtocolHandler
 
     private void OnHello(HelloMessage hello)
     {
+        var language = _language.Set(hello.ClientLanguage);
         var available = _probe.IsAvailable();
-        _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}; drive redirection available: {available}.");
+        _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}, language {hello.ClientLanguage ?? "(not said)"} (texts in {language}); drive redirection available: {available}.");
         _send(HelloMessage.FromAgent(AgentInfo.Version, available));
     }
 
@@ -89,7 +107,8 @@ internal sealed class AgentProtocolHandler
             _send(new DropResultMessage(
                 envelope.Id,
                 DropStatus.Error,
-                Message: $"The RdpDrop agent in the session speaks protocol {ProtocolConstants.ProtocolVersion} and the client speaks protocol {envelope.Version}. Install the same version of RdpDrop on both sides."));
+                Message: LocalText.Of(nameof(Strings.ProtocolMismatch), ProtocolConstants.ProtocolVersion, envelope.Version).In(_language.Culture)));
+
         }
     }
 }

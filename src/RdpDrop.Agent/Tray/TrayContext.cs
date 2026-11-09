@@ -1,14 +1,17 @@
 using System.Diagnostics;
 using RdpDrop.Agent.Channel;
 using RdpDrop.Agent.Drops;
+using RdpDrop.Agent.Localization;
 using RdpDrop.Agent.Logging;
+using RdpDrop.Agent.Resources;
 using RdpDrop.Agent.Settings;
 
 namespace RdpDrop.Agent.Tray;
 
 /// <summary>
 /// Application context of the agent: the tray icon and its menu, the channel loop and
-/// the session notifications. Lives on the UI thread.
+/// the session notifications. Lives on the UI thread. The menu and the dialogs follow the
+/// Windows display language of the session.
 /// </summary>
 internal sealed class TrayContext : ApplicationContext
 {
@@ -31,17 +34,17 @@ internal sealed class TrayContext : ApplicationContext
         _logger = logger;
         _settings = settings;
 
-        _stageItem = new ToolStripMenuItem("Stage files in the session before the drop", null, (_, _) => ToggleStageFiles());
+        _stageItem = new ToolStripMenuItem(Strings.TrayStageFiles, null, (_, _) => ToggleStageFiles());
 
         _menu = new ContextMenuStrip();
         _menu.Items.AddRange(
         [
             _stageItem,
             new ToolStripSeparator(),
-            new ToolStripMenuItem("Open log folder", null, (_, _) => OpenLogFolder()),
-            new ToolStripMenuItem("About", null, (_, _) => ShowAbout()),
+            new ToolStripMenuItem(Strings.TrayOpenLogFolder, null, (_, _) => OpenLogFolder()),
+            new ToolStripMenuItem(Strings.TrayAbout, null, (_, _) => ShowAbout()),
             new ToolStripSeparator(),
-            new ToolStripMenuItem("Exit", null, (_, _) => Exit("the Exit menu")),
+            new ToolStripMenuItem(Strings.TrayExit, null, (_, _) => Exit("the Exit menu")),
         ]);
         _menu.Opening += (_, _) => UpdateChecks();
         UpdateChecks();
@@ -67,9 +70,11 @@ internal sealed class TrayContext : ApplicationContext
         ThreadPool.QueueUserWorkItem(_ => _staging.DeleteOldFolders());
 
         var probe = new DriveRedirectionProbe(logger);
+        var language = new ClientLanguage();
         _loop = new ChannelLoop(logger);
-        _native = new NativeDropCoordinator(logger, _loop.TrySend, settings, probe, _staging);
-        var handler = new AgentProtocolHandler(logger, _loop.TrySend, probe, _native);
+        _native = new NativeDropCoordinator(logger, _loop.TrySend, settings, probe, _staging, language);
+        var logoff = new SessionLogoff(logger, _loop.TrySend, language);
+        var handler = new AgentProtocolHandler(logger, _loop.TrySend, probe, _native, logoff, language);
         _sessionWindow = new SessionNotificationWindow(_loop, logger);
         _loop.Start(handler.Handle);
 
@@ -139,20 +144,23 @@ internal sealed class TrayContext : ApplicationContext
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {
             _logger.Warn($"Cannot open the log folder. {ex.Message}");
-            MessageBox.Show($"Cannot open {_logger.Directory}.\n\n{ex.Message}", AgentInfo.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(
+                LocalText.Of(nameof(Strings.CannotOpenLogFolder), _logger.Directory, ex.Message).ForUser(),
+                AgentInfo.ProductName,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
         }
     }
 
     private void ShowAbout()
     {
-        var openButton = new TaskDialogButton("Open the project page");
+        var openButton = new TaskDialogButton(Strings.AboutOpenProjectPage);
         var page = new TaskDialogPage
         {
-            Caption = "About " + AgentInfo.ProductName,
+            Caption = LocalText.Of(nameof(Strings.AboutCaption), AgentInfo.ProductName).ForUser(),
             Heading = $"{AgentInfo.ProductName} {AgentInfo.Version}",
-            Text = "Receives files dropped on the RdpDrop client window and drops them, through drive redirection, "
-                + "on the window under the cursor in this session. When nothing there accepts them, the drop is ignored.\n\n"
-                + AgentInfo.ProjectUrl,
+            Text = LocalText.Of(nameof(Strings.AboutText), AgentInfo.ProjectUrl).ForUser(),
+
             Icon = TaskDialogIcon.Information,
             Buttons = { openButton, TaskDialogButton.Close },
         };

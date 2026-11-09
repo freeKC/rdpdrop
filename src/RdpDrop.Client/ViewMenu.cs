@@ -1,30 +1,32 @@
 using System.Globalization;
+using RdpDrop.Client.Localization;
+using RdpDrop.Client.Resources;
 using RdpDrop.Client.Settings;
 using RdpDrop.Core.Display;
+using RdpDrop.Core.Localization;
 
 namespace RdpDrop.Client;
 
 /// <summary>
-/// The View menu: display mode, scale factor, full screen, monitors and Windows keys.
-/// It only shows the state it is given and raises an event per choice; the form decides
-/// what a choice does.
+/// The View menu: display mode, scale factor, full screen, monitors, Windows keys and
+/// language. It only shows the state it is given and raises an event per choice; the
+/// form decides what a choice does.
 /// </summary>
 internal sealed class ViewMenu
 {
-    private readonly ToolStripMenuItem _resizeItem = new("&Resize session to window");
-    private readonly ToolStripMenuItem _scaleItem = new("&Scale to window");
-    private readonly ToolStripMenuItem _scaleFactorItem = new("Scale &factor");
-    private readonly ToolStripMenuItem _autoScaleItem = new("&Auto");
+    private readonly ToolStripMenuItem _resizeItem = new();
+    private readonly ToolStripMenuItem _scaleItem = new();
+    private readonly ToolStripMenuItem _scaleFactorItem = new();
+    private readonly ToolStripMenuItem _autoScaleItem = new();
     private readonly List<(int Factor, ToolStripMenuItem Item)> _factorItems = [];
-    private readonly ToolStripMenuItem _fullScreenItem = new("F&ull screen") { ShortcutKeyDisplayString = "F11" };
-    private readonly ToolStripMenuItem _allMonitorsItem = new("Use all &monitors");
-    private readonly ToolStripMenuItem _windowsKeysItem = new("&Windows keys");
-    private readonly ToolStripMenuItem[] _keyboardItems =
-    [
-        new("On this &computer"),
-        new("In the &session"),
-        new("In the session when &full screen"),
-    ];
+    private readonly ToolStripMenuItem _fullScreenItem = new() { ShortcutKeyDisplayString = "F11" };
+    private readonly ToolStripMenuItem _allMonitorsItem = new();
+    private readonly ToolStripMenuItem _windowsKeysItem = new();
+    private readonly ToolStripMenuItem[] _keyboardItems = [new(), new(), new()];
+    private readonly ToolStripMenuItem _languageItem = new();
+    private readonly ToolStripMenuItem _autoLanguageItem = new();
+    private readonly List<(string Code, ToolStripMenuItem Item)> _languageItems = [];
+    private int _autoFactor = 100;
 
     public ViewMenu()
     {
@@ -53,6 +55,18 @@ internal sealed class ViewMenu
 
         _windowsKeysItem.DropDownItems.AddRange(_keyboardItems);
 
+        // Each language is named in its own language, so that anyone can find theirs.
+        _autoLanguageItem.Click += (_, _) => LanguageChosen?.Invoke(this, UiLanguages.Automatic);
+        _languageItem.DropDownItems.Add(_autoLanguageItem);
+        _languageItem.DropDownItems.Add(new ToolStripSeparator());
+        foreach (var (code, nativeName) in UiLanguage.Languages)
+        {
+            var item = new ToolStripMenuItem(nativeName);
+            item.Click += (_, _) => LanguageChosen?.Invoke(this, code);
+            _languageItems.Add((code, item));
+            _languageItem.DropDownItems.Add(item);
+        }
+
         Root.DropDownItems.AddRange(
         [
             _resizeItem,
@@ -64,7 +78,10 @@ internal sealed class ViewMenu
             _allMonitorsItem,
             new ToolStripSeparator(),
             _windowsKeysItem,
+            new ToolStripSeparator(),
+            _languageItem,
         ]);
+        ApplyTexts();
     }
 
     public event EventHandler<DisplayMode>? DisplayModeChosen;
@@ -80,7 +97,28 @@ internal sealed class ViewMenu
     /// <summary>Raised with 0 (this computer), 1 (the session) or 2 (the session in full screen).</summary>
     public event EventHandler<int>? KeyboardHookModeChosen;
 
-    public ToolStripMenuItem Root { get; } = new("&View");
+    /// <summary>Raised with "auto" or a two letter language code.</summary>
+    public event EventHandler<string>? LanguageChosen;
+
+    public ToolStripMenuItem Root { get; } = new();
+
+    /// <summary>Writes every entry in the current user interface language.</summary>
+    public void ApplyTexts()
+    {
+        Root.Text = Strings.MenuView;
+        _resizeItem.Text = Strings.MenuResizeSession;
+        _scaleItem.Text = Strings.MenuScaleToWindow;
+        _scaleFactorItem.Text = Strings.MenuScaleFactor;
+        _fullScreenItem.Text = Strings.MenuFullScreen;
+        _allMonitorsItem.Text = Strings.MenuAllMonitors;
+        _windowsKeysItem.Text = Strings.MenuWindowsKeys;
+        _keyboardItems[0].Text = Strings.MenuKeysLocal;
+        _keyboardItems[1].Text = Strings.MenuKeysRemote;
+        _keyboardItems[2].Text = Strings.MenuKeysFullScreen;
+        _languageItem.Text = Strings.MenuLanguage;
+        _autoLanguageItem.Text = Strings.MenuLanguageAuto;
+        _autoScaleItem.Text = LocalText.Of(nameof(Strings.MenuScaleAuto), Percent(_autoFactor)).ToString();
+    }
 
     public void ShowDisplayMode(DisplayMode mode)
     {
@@ -94,7 +132,8 @@ internal sealed class ViewMenu
     /// </summary>
     public void ShowScaleFactor(int? choice, int autoFactor)
     {
-        _autoScaleItem.Text = $"&Auto ({Percent(autoFactor)})";
+        _autoFactor = autoFactor;
+        _autoScaleItem.Text = LocalText.Of(nameof(Strings.MenuScaleAuto), Percent(autoFactor)).ToString();
         _autoScaleItem.Checked = choice is null;
         foreach (var (factor, item) in _factorItems)
         {
@@ -115,6 +154,16 @@ internal sealed class ViewMenu
         for (var i = 0; i < _keyboardItems.Length; i++)
         {
             _keyboardItems[i].Checked = i == mode;
+        }
+    }
+
+    /// <summary>Checks "auto" or the chosen language.</summary>
+    public void ShowLanguage(string choice)
+    {
+        _autoLanguageItem.Checked = choice == UiLanguages.Automatic;
+        foreach (var (code, item) in _languageItems)
+        {
+            item.Checked = choice == code;
         }
     }
 

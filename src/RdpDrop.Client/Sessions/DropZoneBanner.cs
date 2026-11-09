@@ -1,3 +1,5 @@
+using RdpDrop.Client.Resources;
+
 namespace RdpDrop.Client.Sessions;
 
 /// <summary>
@@ -40,7 +42,6 @@ internal sealed class DropZoneBanner : Form
             ForeColor = Color.White,
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font(SystemFonts.MessageBoxFont ?? Control.DefaultFont, FontStyle.Bold),
-            Text = "Drop here to send the files into the session",
         };
         Controls.Add(_label);
     }
@@ -63,6 +64,13 @@ internal sealed class DropZoneBanner : Form
     /// </summary>
     public void ShowOver(Rectangle screenArea, Form? owner, bool topMost)
     {
+        // Read at each show, so that the banner follows a change of language.
+        var text = Strings.DropZoneBanner;
+        if (_label.Text != text)
+        {
+            _label.Text = text;
+        }
+
         var height = Math.Min(BannerHeight * DeviceDpi / 96, Math.Max(1, screenArea.Height));
         var bounds = new Rectangle(screenArea.X, screenArea.Y, screenArea.Width, height);
         if (Bounds != bounds)

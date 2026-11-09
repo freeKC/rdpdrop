@@ -1,5 +1,7 @@
 using Timer = System.Threading.Timer;
+using RdpDrop.Agent.Localization;
 using RdpDrop.Agent.Logging;
+using RdpDrop.Agent.Resources;
 using RdpDrop.Agent.Settings;
 using RdpDrop.Core.Protocol;
 using Message = RdpDrop.Core.Protocol.Message;
@@ -11,7 +13,8 @@ namespace RdpDrop.Agent.Drops;
 /// and optionally stages the items, then starts a <see cref="DragSession"/>), answers
 /// with <c>dragAck</c>, forwards <c>dragMove</c>, <c>drop</c> and <c>dragLeave</c>, and
 /// sends the <c>dropResult</c>. A drop that nothing under the cursor accepts is ignored.
-/// One drag at a time: a new <c>dragEnter</c> cancels the current one.
+/// One drag at a time: a new <c>dragEnter</c> cancels the current one. The texts sent to
+/// the client are in its language; the log keeps them in English.
 /// </summary>
 internal sealed class NativeDropCoordinator : IDisposable
 {
@@ -26,26 +29,25 @@ internal sealed class NativeDropCoordinator : IDisposable
 
     private const int RememberedDrags = 16;
 
-    /// <summary>Message of the result when the drop ended and no window accepted it.</summary>
-    private const string NothingAcceptedText = "Nothing under the cursor accepted the files.";
-
     private readonly FileLogger _logger;
     private readonly Func<Message, bool> _send;
     private readonly AgentSettings _settings;
     private readonly DriveRedirectionProbe _probe;
     private readonly StagingFolder _staging;
+    private readonly ClientLanguage _language;
     private readonly Lock _gate = new();
     private readonly Queue<string> _endedOrder = new();
-    private readonly Dictionary<string, string> _ended = [];
+    private readonly Dictionary<string, LocalText> _ended = [];
     private NativeDrag? _current;
 
-    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging)
+    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging, ClientLanguage language)
     {
         _logger = logger;
         _send = send;
         _settings = settings;
         _probe = probe;
         _staging = staging;
+        _language = language;
     }
 
     /// <summary>Starts a drag in the session. Called on the channel thread; returns at once.</summary>
@@ -78,7 +80,7 @@ internal sealed class NativeDropCoordinator : IDisposable
                 previousSession = previous.Session;
             }
 
-            previousSession?.Cancel("a newer drag started");
+            previousSession?.Cancel(LocalText.Of(nameof(Strings.CancelNewerDrag)));
         }
 
         drag.AckTimer = new Timer(_ => SendProvisionalAck(drag), null, ProvisionalAckDelay, Timeout.InfiniteTimeSpan);
@@ -135,7 +137,7 @@ internal sealed class NativeDropCoordinator : IDisposable
             session = drag.Session;
         }
 
-        session?.Cancel("the drag left the session on the client");
+        session?.Cancel(LocalText.Of(nameof(Strings.CancelLeft)));
     }
 
     /// <summary>
@@ -147,7 +149,7 @@ internal sealed class NativeDropCoordinator : IDisposable
         var drag = Find(drop.Id);
         if (drag is null)
         {
-            string? reason;
+            LocalText? reason;
             lock (_gate)
             {
                 _ended.TryGetValue(drop.Id, out reason);
@@ -155,7 +157,7 @@ internal sealed class NativeDropCoordinator : IDisposable
 
             if (reason is null)
             {
-                reason = "No drag in progress for this drop.";
+                reason = LocalText.Of(nameof(Strings.NoDragForDrop));
                 _logger.Warn($"Drag {drop.Id}: drop at ({drop.X}, {drop.Y}) ignored, no drag in progress with this id.");
             }
             else
@@ -163,7 +165,7 @@ internal sealed class NativeDropCoordinator : IDisposable
                 _logger.Info($"Drag {drop.Id}: drop after the drag already ended ({reason}).");
             }
 
-            _send(new DropResultMessage(drop.Id, DropStatus.Error, Message: reason, Effect: DropEffect.None));
+            _send(new DropResultMessage(drop.Id, DropStatus.Error, Message: ForClient(reason), Effect: DropEffect.None));
             return;
         }
 
@@ -192,7 +194,7 @@ internal sealed class NativeDropCoordinator : IDisposable
         {
             // The drag thread releases the simulated button when it ends; waiting a little
             // keeps the agent from exiting with the button still down in the session.
-            session.Cancel("the agent is stopping");
+            session.Cancel(LocalText.Of(nameof(Strings.CancelAgentStopping)));
             if (!session.WaitFinished(StopWait))
             {
                 _logger.Warn($"Drag {current.Id}: the drag did not end before the agent stopped.");
@@ -214,20 +216,20 @@ internal sealed class NativeDropCoordinator : IDisposable
         {
             if (previous?.Session is { } previousSession && !previousSession.WaitFinished(PreviousDragWait))
             {
-                Refuse(drag, "The previous drop is still being delivered in the session. Try again once it is done.");
+                Refuse(drag, LocalText.Of(nameof(Strings.PreviousDropBusy)));
                 return;
             }
 
             if (drag.Enter.Items.Count == 0)
             {
-                Refuse(drag, "The drag holds no file or folder.");
+                Refuse(drag, LocalText.Of(nameof(Strings.DragHoldsNothing)));
                 return;
             }
 
             var items = ItemMapper.Map(drag.Enter.Items, _probe, out var error);
             if (items is null)
             {
-                Refuse(drag, error ?? "The items cannot be dropped.");
+                Refuse(drag, error ?? LocalText.Of(nameof(Strings.ItemsCannotBeDropped)));
                 return;
             }
 
@@ -242,7 +244,7 @@ internal sealed class NativeDropCoordinator : IDisposable
                 }
                 catch (Exception ex) when (ItemMapper.IsFileError(ex))
                 {
-                    Refuse(drag, "The files could not be copied into the session before the drag. " + ex.Message);
+                    Refuse(drag, LocalText.Of(nameof(Strings.StagingFailed), ex.Message));
                     return;
                 }
             }
@@ -255,7 +257,7 @@ internal sealed class NativeDropCoordinator : IDisposable
                     _staging.ScheduleDelete(drag.Id);
                 }
 
-                Forget(drag, "The drag was cancelled before it started.");
+                Forget(drag, LocalText.Of(nameof(Strings.DragCancelledBeforeStart)));
                 return;
             }
 
@@ -279,7 +281,7 @@ internal sealed class NativeDropCoordinator : IDisposable
 
                 if (drag.Left || drag.Abandoned)
                 {
-                    session.Cancel("the drag left the session on the client");
+                    session.Cancel(LocalText.Of(nameof(Strings.CancelLeft)));
                 }
             }
 
@@ -289,7 +291,7 @@ internal sealed class NativeDropCoordinator : IDisposable
         catch (Exception ex)
         {
             _logger.Error($"Drag {drag.Id}: preparing the drag failed.", ex);
-            Refuse(drag, "The agent hit an unexpected error: " + ex.Message);
+            Refuse(drag, LocalText.Of(nameof(Strings.UnexpectedError), ex.Message));
         }
     }
 
@@ -307,14 +309,14 @@ internal sealed class NativeDropCoordinator : IDisposable
             }
 
             var text = drag.Staging
-                ? $"Copying {drag.Enter.Items.Count} item(s) into the session before the drag starts..."
-                : "Starting the drag in the session...";
+                ? LocalText.Of(nameof(Strings.StagingProgress), drag.Enter.Items.Count)
+                : LocalText.Of(nameof(Strings.StartingDrag));
             _logger.Info($"Drag {drag.Id}: provisional dragAck, {text}");
-            _send(new DragAckMessage(drag.Id, true, text));
+            _send(new DragAckMessage(drag.Id, true, ForClient(text)));
         }
     }
 
-    private void OnStarted(NativeDrag drag, bool started, string? reason)
+    private void OnStarted(NativeDrag drag, bool started, LocalText? reason)
     {
         drag.AckTimer?.Dispose();
         lock (drag.AckGate)
@@ -335,7 +337,7 @@ internal sealed class NativeDropCoordinator : IDisposable
             if (!drag.Left && !drag.Abandoned)
             {
                 _logger.Info($"Drag {drag.Id}: dragAck refused, {reason}");
-                _send(new DragAckMessage(drag.Id, false, reason));
+                _send(new DragAckMessage(drag.Id, false, ForClient(reason)));
             }
         }
     }
@@ -354,47 +356,47 @@ internal sealed class NativeDropCoordinator : IDisposable
         {
             case DragOutcome.Dropped when completion.Effect.HasFlag(DragDropEffects.Copy) || completion.Effect.HasFlag(DragDropEffects.Link):
                 var effect = completion.Effect.HasFlag(DragDropEffects.Copy) ? DropEffect.Copy : DropEffect.Link;
-                var where = target?.Title ?? target?.ClassName ?? "the window under the cursor";
-                Forget(drag, "The drag already ended with a drop.");
-                _send(new DropResultMessage(drag.Id, DropStatus.Ok, Message: $"Dropped on {where}", Effect: effect, TargetWindow: target));
+                object where = target?.Title ?? target?.ClassName ?? (object)LocalText.Of(nameof(Strings.WindowUnderCursor));
+                Forget(drag, LocalText.Of(nameof(Strings.DragEndedWithDrop)));
+                _send(new DropResultMessage(drag.Id, DropStatus.Ok, Message: ForClient(LocalText.Of(nameof(Strings.DroppedOn), where)), Effect: effect, TargetWindow: target));
                 break;
 
             case DragOutcome.Dropped:
-                Forget(drag, "The drag already ended with a drop.");
+                Forget(drag, LocalText.Of(nameof(Strings.DragEndedWithDrop)));
                 _logger.Info($"Drag {drag.Id}: nothing under the cursor accepted the files; the drop is ignored.");
-                _send(new DropResultMessage(drag.Id, DropStatus.Ok, Message: NothingAcceptedText, Effect: DropEffect.None, TargetWindow: target));
+                _send(new DropResultMessage(drag.Id, DropStatus.Ok, Message: ForClient(LocalText.Of(nameof(Strings.NothingAccepted))), Effect: DropEffect.None, TargetWindow: target));
                 break;
 
             case DragOutcome.Cancelled when drop is not null:
-                Forget(drag, completion.Message ?? "The drag was cancelled.");
-                _send(new DropResultMessage(drag.Id, DropStatus.Cancelled, Message: completion.Message, Effect: DropEffect.None));
+                Forget(drag, completion.Message ?? LocalText.Of(nameof(Strings.DragCancelled)));
+                _send(new DropResultMessage(drag.Id, DropStatus.Cancelled, Message: ForClient(completion.Message), Effect: DropEffect.None));
                 break;
 
             case DragOutcome.Cancelled:
                 // The client is still dragging when the watchdog fires; tell it the drag is over.
-                Forget(drag, completion.Message ?? "The drag was cancelled.");
+                Forget(drag, completion.Message ?? LocalText.Of(nameof(Strings.DragCancelled)));
                 lock (drag.AckGate)
                 {
                     if (!drag.Left && !drag.Abandoned && drag.HasAck)
                     {
-                        _send(new DragAckMessage(drag.Id, false, completion.Message));
+                        _send(new DragAckMessage(drag.Id, false, ForClient(completion.Message)));
                     }
                 }
 
                 break;
 
             default:
-                Forget(drag, completion.Message ?? "The drag in the session failed.");
+                Forget(drag, completion.Message ?? LocalText.Of(nameof(Strings.DragFailed)));
                 if (drop is not null)
                 {
-                    _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: completion.Message, Effect: DropEffect.None));
+                    _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: ForClient(completion.Message), Effect: DropEffect.None));
                 }
 
                 break;
         }
     }
 
-    private void Refuse(NativeDrag drag, string reason)
+    private void Refuse(NativeDrag drag, LocalText reason)
     {
         drag.AckTimer?.Dispose();
         _logger.Info($"Drag {drag.Id}: refused, {reason}");
@@ -413,17 +415,21 @@ internal sealed class NativeDropCoordinator : IDisposable
         lock (drag.AckGate)
         {
             drag.TryMarkAck();
-            _send(new DragAckMessage(drag.Id, false, reason));
+            _send(new DragAckMessage(drag.Id, false, ForClient(reason)));
         }
 
         if (drag.Drop is not null)
         {
-            _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: reason, Effect: DropEffect.None));
+            _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: ForClient(reason), Effect: DropEffect.None));
         }
     }
 
+    /// <summary>A text for the client, in its language; null stays null.</summary>
+    private string? ForClient(LocalText? text) => text?.In(_language.Culture);
+
     /// <summary>Clears the drag if it is the current one and remembers why it ended, for a late drop.</summary>
-    private void Forget(NativeDrag drag, string reason)
+    private void Forget(NativeDrag drag, LocalText reason)
+
     {
         lock (_gate)
         {

@@ -1,4 +1,6 @@
 using System.Security;
+using RdpDrop.Agent.Localization;
+using RdpDrop.Agent.Resources;
 using RdpDrop.Core.Paths;
 using RdpDrop.Core.Protocol;
 
@@ -18,24 +20,21 @@ internal static class ItemMapper
 {
     private const int MaxNamesInMessage = 5;
 
-    private const string NoRedirectionText =
-        "The local drives are not redirected to this session, so the dropped files cannot be read. "
-        + "In the connection settings, open Local Resources, choose More, select the drives to share, then reconnect.";
-
     /// <summary>
     /// Returns the mapped items, or null with <paramref name="error"/> set to a text for
     /// the user when an item cannot be dropped or reached.
     /// </summary>
-    public static IReadOnlyList<MappedItem>? Map(IReadOnlyList<DropItem> items, DriveRedirectionProbe probe, out string? error)
+    public static IReadOnlyList<MappedItem>? Map(IReadOnlyList<DropItem> items, DriveRedirectionProbe probe, out LocalText? error)
     {
         var mapped = new List<MappedItem>(items.Count);
         var unreachable = new List<string>();
-        var rejected = new List<string>();
+        var rejected = new List<LocalText>();
         foreach (var item in items)
         {
-            if (!ClientPathMapper.TryMapToTsClient(item.ClientPath, out var path, out var reason))
+            var rejection = ClientPathMapper.Classify(item.ClientPath, out var path);
+            if (rejection != PathRejection.None)
             {
-                rejected.Add(reason ?? $"\"{item.ClientPath}\" cannot be dropped.");
+                rejected.Add(PathText(rejection, item.ClientPath));
                 continue;
             }
 
@@ -50,13 +49,13 @@ internal static class ItemMapper
 
         if (rejected.Count > 0)
         {
-            error = string.Join(" ", rejected);
+            error = LocalText.Join(rejected);
             return null;
         }
 
         if (unreachable.Count > 0)
         {
-            error = probe.IsAvailable() ? UnreachableText(unreachable) : NoRedirectionText;
+            error = probe.IsAvailable() ? UnreachableText(unreachable) : LocalText.Of(nameof(Strings.NoRedirection));
             return null;
         }
 
@@ -91,21 +90,30 @@ internal static class ItemMapper
         return name;
     }
 
-    private static string UnreachableText(IReadOnlyList<string> paths)
+    private static LocalText UnreachableText(IReadOnlyList<string> paths)
     {
         if (paths.Count == 1)
         {
-            return $"{paths[0]} cannot be reached from the remote session. "
-                + "Check that its drive is shared in the Local Resources settings of the connection and that it is still plugged in.";
+            return LocalText.Of(nameof(Strings.UnreachableOne), paths[0]);
         }
 
         var names = string.Join(", ", paths.Take(MaxNamesInMessage));
-        if (paths.Count > MaxNamesInMessage)
-        {
-            names += $" and {paths.Count - MaxNamesInMessage} more";
-        }
-
-        return $"{paths.Count} items cannot be reached from the remote session: {names}. "
-            + "Check that their drives are shared in the Local Resources settings of the connection and that they are still plugged in.";
+        object list = paths.Count > MaxNamesInMessage
+            ? LocalText.Of(nameof(Strings.UnreachableMore), names, paths.Count - MaxNamesInMessage)
+            : names;
+        return LocalText.Of(nameof(Strings.UnreachableMany), paths.Count, list);
     }
+
+    /// <summary>Why <paramref name="path"/> cannot be dropped, in words for the user.</summary>
+    private static LocalText PathText(PathRejection rejection, string path) => rejection switch
+    {
+        PathRejection.Empty => LocalText.Of(nameof(Strings.PathEmpty)),
+        PathRejection.DevicePath => LocalText.Of(nameof(Strings.PathDevice), path),
+        PathRejection.NetworkPath => LocalText.Of(nameof(Strings.PathNetwork), path),
+        PathRejection.RelativePath => LocalText.Of(nameof(Strings.PathRelative), path),
+        PathRejection.DriveRelativePath => LocalText.Of(nameof(Strings.PathDriveRelative), path),
+        PathRejection.DotSegment => LocalText.Of(nameof(Strings.PathDotSegment), path),
+        _ => LocalText.Of(nameof(Strings.PathInvalidCharacters), path),
+    };
+
 }

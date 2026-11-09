@@ -1,5 +1,8 @@
+using System.Text;
 using Microsoft.Win32;
+using RdpDrop.Agent.Localization;
 using RdpDrop.Agent.Logging;
+using RdpDrop.Agent.Resources;
 using RdpDrop.Agent.Settings;
 using RdpDrop.Agent.Setup;
 using RdpDrop.Agent.Tray;
@@ -8,13 +11,9 @@ namespace RdpDrop.Agent;
 
 internal static class Program
 {
-    private const string Usage =
-        "Usage: RdpDrop.Agent.exe [option]\n\n"
-        + "  (no option)          Run the agent in the tray.\n"
-        + "  --install            Start the agent with your session, then run it.\n"
-        + "  --uninstall          Stop starting the agent with your session and stop it.\n"
-        + "  --install-all-users  Start the agent with every user session (elevated prompt).\n"
-        + "  --help               Show this text.";
+    private const string ExecutableName = "RdpDrop.Agent.exe";
+    private const string CurrentUserRoot = "HKEY_CURRENT_USER";
+    private const string LocalMachineRoot = "HKEY_LOCAL_MACHINE";
 
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
 
@@ -27,7 +26,7 @@ internal static class Program
         var logger = new FileLogger(AgentInfo.LogDirectory);
         if (args.Length > 1)
         {
-            CommandLineOutput.Error("Too many arguments.\n\n" + Usage);
+            CommandLineOutput.Error(Strings.TooManyArguments + "\n\n" + Usage());
             return 2;
         }
 
@@ -47,13 +46,38 @@ internal static class Program
                 return InstallAllUsers(logger);
 
             case "--help" or "-h" or "/?":
-                CommandLineOutput.Info(Usage);
+                CommandLineOutput.Info(Usage());
                 return 0;
 
             default:
-                CommandLineOutput.Error($"Unknown option \"{args[0]}\".\n\n" + Usage);
+                CommandLineOutput.Error(LocalText.Of(nameof(Strings.UnknownOption), args[0]).ForUser() + "\n\n" + Usage());
                 return 2;
         }
+    }
+
+    /// <summary>
+    /// The list of options, in the Windows display language. The option names stay as they
+    /// are; the descriptions are aligned after the longest one.
+    /// </summary>
+    private static string Usage()
+    {
+        (string Name, string Description)[] rows =
+        [
+            (Strings.UsageNoOption, Strings.UsageRun),
+            ("--install", Strings.UsageInstall),
+            ("--uninstall", Strings.UsageUninstall),
+            ("--install-all-users", Strings.UsageInstallAllUsers),
+            ("--help", Strings.UsageHelp),
+        ];
+
+        var width = rows.Max(row => row.Name.Length) + 2;
+        var text = new StringBuilder(LocalText.Of(nameof(Strings.UsageTitle), ExecutableName).ForUser()).Append("\n\n");
+        foreach (var (name, description) in rows)
+        {
+            text.Append("  ").Append(name.PadRight(width)).Append(description).Append('\n');
+        }
+
+        return text.ToString().TrimEnd('\n');
     }
 
     private static int Run(FileLogger logger)
@@ -90,12 +114,12 @@ internal static class Program
         var error = StartupRegistration.Register(Registry.CurrentUser);
         if (error is not null)
         {
-            CommandLineOutput.Error($"Cannot write HKEY_CURRENT_USER\\{AgentInfo.RunKeyPath}. {error}");
+            CommandLineOutput.Error(LocalText.Of(nameof(Strings.CannotWriteKey), RunKey(CurrentUserRoot), error).ForUser());
             return 1;
         }
 
         logger.Info($"Installed for the current user: {StartupRegistration.Command}.");
-        CommandLineOutput.Info("The agent now starts with your session.", showBoxWithoutConsole: false);
+        CommandLineOutput.Info(Strings.InstalledForUser, showBoxWithoutConsole: false);
         return Run(logger);
     }
 
@@ -105,33 +129,29 @@ internal static class Program
         if (error is not null)
         {
             CommandLineOutput.Error(
-                $"Cannot write HKEY_LOCAL_MACHINE\\{AgentInfo.RunKeyPath}. {error}\n\n"
-                + "Run this command again from an elevated prompt (Run as administrator).");
+                LocalText.Of(nameof(Strings.CannotWriteKey), RunKey(LocalMachineRoot), error).ForUser()
+                + "\n\n" + Strings.RunElevated);
             return 1;
         }
 
         logger.Info($"Installed for all users: {StartupRegistration.Command}.");
-        CommandLineOutput.Info(
-            "The agent now starts with every user session, from\n"
-            + StartupRegistration.ExecutablePath + "\n\n"
-            + "Keep the executable in a folder that every user can read, such as Program Files. "
-            + "Users already signed in get the agent at their next sign in.");
+        CommandLineOutput.Info(LocalText.Of(nameof(Strings.InstalledForAllUsers), StartupRegistration.ExecutablePath).ForUser());
         return 0;
     }
 
     private static int Uninstall(FileLogger logger)
     {
         var exitCode = 0;
-        var messages = new List<string>();
+        var messages = new List<LocalText>();
 
         var error = StartupRegistration.Unregister(Registry.CurrentUser);
         if (error is null)
         {
-            messages.Add("The agent no longer starts with your session.");
+            messages.Add(LocalText.Of(nameof(Strings.UninstalledForUser)));
         }
         else
         {
-            messages.Add($"Cannot remove the value from HKEY_CURRENT_USER\\{AgentInfo.RunKeyPath}. {error}");
+            messages.Add(LocalText.Of(nameof(Strings.CannotRemoveValue), RunKey(CurrentUserRoot), error));
             exitCode = 1;
         }
 
@@ -140,21 +160,19 @@ internal static class Program
             var machineError = StartupRegistration.Unregister(Registry.LocalMachine);
             if (machineError is null)
             {
-                messages.Add("The agent no longer starts with every user session.");
+                messages.Add(LocalText.Of(nameof(Strings.UninstalledForAllUsers)));
             }
             else
             {
-                messages.Add(
-                    "The agent is still set to start for all users, under HKEY_LOCAL_MACHINE. "
-                    + "Run --uninstall from an elevated prompt to remove that too.");
+                messages.Add(LocalText.Of(nameof(Strings.StillInstalledForAllUsers)));
                 exitCode = 1;
             }
         }
 
-        messages.Add(StopRunningInstance() ? "The running agent was stopped." : "The agent is still running; exit it from its tray menu.");
+        messages.Add(StopRunningInstance() ? LocalText.Of(nameof(Strings.AgentStopped)) : LocalText.Of(nameof(Strings.AgentStillRunning)));
         logger.Info("Uninstall: " + string.Join(" ", messages));
 
-        var text = string.Join("\n", messages);
+        var text = string.Join("\n", messages.Select(message => message.ForUser()));
         if (exitCode == 0)
         {
             CommandLineOutput.Info(text);
@@ -166,6 +184,8 @@ internal static class Program
 
         return exitCode;
     }
+
+    private static string RunKey(string root) => root + "\\" + AgentInfo.RunKeyPath;
 
     /// <summary>
     /// Asks the agent running in this session to exit and waits for it. Returns true

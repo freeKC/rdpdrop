@@ -1,4 +1,7 @@
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
+using RdpDrop.Client.Resources;
+using RdpDrop.Client.Settings;
 
 namespace RdpDrop.Client;
 
@@ -14,6 +17,10 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         ClientLog.Info($"RdpDrop client {AppInfo.Version} starting, arguments: {string.Join(' ', args)}");
 
+        // The language comes first: the open dialog below already shows texts.
+        var settings = ClientSettings.Load(ClientSettings.DefaultPath);
+        UiLanguage.Apply(settings.Language);
+
         // Without an argument the open dialog comes first. When it is
         // cancelled the window opens empty, so that File, Recent is still at hand.
         var path = args.Length > 0 ? args[0] : MainForm.AskForRdpFile(null);
@@ -22,7 +29,7 @@ internal static class Program
             ClientLog.Info("No .rdp file chosen, the window opens empty.");
         }
 
-        Application.Run(new MainForm(path));
+        Application.Run(new MainForm(path, settings));
         ClientLog.Info("RdpDrop client stopped.");
         return 0;
     }
@@ -33,7 +40,7 @@ internal static class Program
         try
         {
             MessageBox.Show(
-                $"An unexpected error occurred.{Environment.NewLine}{exception?.Message}{Environment.NewLine}{Environment.NewLine}Details are in the log folder {ClientLog.Directory}.",
+                LocalText.Of(nameof(Strings.UnexpectedError), exception?.Message, ClientLog.Directory).ToString(),
                 AppInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);

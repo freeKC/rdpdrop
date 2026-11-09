@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
+using RdpDrop.Client.Resources;
 using RdpDrop.Client.Settings;
 
 namespace RdpDrop.Client.Sessions;
@@ -51,7 +53,7 @@ internal sealed partial class SessionView
 
         _scaleChoice = factor;
         RaiseStateChanged();
-        ApplyAfterReconnect("scale factor");
+        ApplyAfterReconnect("scale factor", LocalText.Of(nameof(Strings.SettingScaleFactor)));
     }
 
     public void SetUseAllMonitors(bool useAllMonitors)
@@ -63,7 +65,7 @@ internal sealed partial class SessionView
 
         _useAllMonitors = useAllMonitors;
         RaiseStateChanged();
-        ApplyAfterReconnect("monitor setting");
+        ApplyAfterReconnect("monitor setting", LocalText.Of(nameof(Strings.SettingMonitors)));
     }
 
     /// <summary>
@@ -79,7 +81,7 @@ internal sealed partial class SessionView
 
         _keyboardHookMode = mode;
         RaiseStateChanged();
-        ApplyAfterReconnect("Windows keys setting");
+        ApplyAfterReconnect("Windows keys setting", LocalText.Of(nameof(Strings.SettingWindowsKeys)));
     }
 
     public void ToggleFullScreen(string source)
@@ -87,7 +89,7 @@ internal sealed partial class SessionView
         if (State != SessionState.Connected)
         {
             ClientLog.Info($"Full screen requested from {source} while {State}, ignored");
-            ShowDropStatus("Full screen is available once connected.");
+            ShowDropStatus(LocalText.Of(nameof(Strings.FullScreenNeedsConnection)));
             return;
         }
 
@@ -128,26 +130,29 @@ internal sealed partial class SessionView
     /// <summary>
     /// A setting that the control only reads when connecting: offers to reconnect now when
     /// a session is open, otherwise it applies to the next connection.
+    /// <paramref name="setting"/> names it in the log, <paramref name="settingText"/> for
+    /// the user, as the start of a sentence such as "The new scale factor".
     /// </summary>
-    private void ApplyAfterReconnect(string setting)
+    private void ApplyAfterReconnect(string setting, LocalText settingText)
     {
         if (State == SessionState.Disconnected)
         {
-            ShowDropStatus($"The new {setting} applies when you connect.");
+            ShowDropStatus(LocalText.Of(nameof(Strings.SettingAppliesWhenConnecting), settingText));
             return;
         }
 
         var answer = MessageBox.Show(
             FindForm(),
-            $"The new {setting} applies to a new connection to {Host}.{Environment.NewLine}{Environment.NewLine}Reconnect now?",
+            LocalText.Of(nameof(Strings.SettingReconnectQuestion), settingText, Host).ToString(),
             AppInfo.Name,
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
         if (answer != DialogResult.Yes)
         {
-            ShowDropStatus($"The new {setting} applies at the next connection.");
+            ShowDropStatus(LocalText.Of(nameof(Strings.SettingAppliesNextConnection), settingText));
             return;
         }
+
 
         ClientLog.Info($"Reconnecting to {Host} for the new {setting}.");
         if (State == SessionState.Disconnected)

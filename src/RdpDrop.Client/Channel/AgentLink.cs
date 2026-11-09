@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using AxMSTSCLib;
+using RdpDrop.Client.Localization;
 using RdpDrop.Client.Logging;
 using RdpDrop.Client.Rdp;
 using RdpDrop.Core.Protocol;
@@ -11,7 +12,8 @@ namespace RdpDrop.Client.Channel;
 
 /// <summary>
 /// Runs the RdpDrop protocol over the virtual channel of the control: agent discovery
-/// with hello messages, byte model detection, the live drag messages and their answers.
+/// with hello messages, byte model detection, the live drag messages, the log off request
+/// and their answers.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -58,6 +60,9 @@ internal sealed class AgentLink : IDisposable
 
     /// <summary>Raised for every dropResult message.</summary>
     public event EventHandler<DropResultMessage>? DropResultReceived;
+
+    /// <summary>Raised for every logoffResult message.</summary>
+    public event EventHandler<LogoffResultMessage>? LogoffResultReceived;
 
     public AgentState State { get; private set; } = AgentState.NotConnected;
 
@@ -129,6 +134,36 @@ internal sealed class AgentLink : IDisposable
         return Send(message, $"{message.Type} {id}", log: message is not DragMoveMessage);
     }
 
+    /// <summary>
+    /// Sends the log off request. Returns false when the agent is not ready or the control
+    /// refused the data.
+    /// </summary>
+    public bool SendLogoff(LogoffMessage message)
+    {
+        if (State != AgentState.Ready || Model == ChannelByteModel.Unknown)
+        {
+            return false;
+        }
+
+        return Send(message, $"logoff {message.Id}");
+    }
+
+    /// <summary>
+    /// Sends a hello with the current user interface language, after the user changed it,
+    /// so that the agent writes its next texts in that language. The agent answers with a
+    /// hello, which keeps the link ready. Does nothing unless the agent is ready.
+    /// </summary>
+    public void AnnounceLanguage()
+    {
+        if (!_connected || State != AgentState.Ready)
+        {
+            return;
+        }
+
+        ClientLog.Info($"Telling the agent the new language, {UiLanguage.CurrentCode}.");
+        SendHello();
+    }
+
     public void Dispose()
     {
         _timer.Dispose();
@@ -165,7 +200,7 @@ internal sealed class AgentLink : IDisposable
     private void SendHello()
     {
         _hellosSent++;
-        Send(HelloMessage.FromClient(AppInfo.Version), Invariant($"hello #{_hellosSent}"));
+        Send(HelloMessage.FromClient(AppInfo.Version, UiLanguage.CurrentCode), Invariant($"hello #{_hellosSent}"));
     }
 
     private bool Send(Message message, string what, bool log = true)
@@ -234,6 +269,11 @@ internal sealed class AgentLink : IDisposable
             case DragAckMessage ack:
                 ClientLog.Info($"Drag ack {ack.Id}: accepted {ack.Accepted}, message \"{ack.Message}\"");
                 DragAckReceived?.Invoke(this, ack);
+                break;
+
+            case LogoffResultMessage logoff:
+                ClientLog.Info($"Log off result {logoff.Id}: accepted {logoff.Accepted}, message \"{logoff.Message}\"");
+                LogoffResultReceived?.Invoke(this, logoff);
                 break;
 
             case null:
