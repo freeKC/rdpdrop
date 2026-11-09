@@ -993,47 +993,62 @@ Decided on 2026-11-09 after the first transfer in production with 0.4.1: a
 file of 496 MB took 193 seconds, and the only sign of it was the text in the
 status bar. The user took the transfer for a failure and dragged the file
 again, which the client refused with the "not allowed" cursor. A running
-transfer must be obvious.
+transfer must be obvious. The owner then asked for the same window at every
+drop, so that any drop gets a visible answer.
 
-Decision: a small window, `TransferProgressForm` in the client, opens when
-the transfer starts, that is on the deferred drop after the agent accepted the
-drag with a transfer, and closes when it ends. Only the client changes; the
-protocol does not.
+Decision: a progress window appears at every drop. One small window,
+`DropProgressForm` in the client, opens as soon as the local drop went out to
+the agent, with or without a transfer, and shows the drop until its result.
+A drop that the client refuses before sending it opens no window; the status
+bar says why, as before. Only the client changes; the protocol does not.
 
 What it shows, from top to bottom:
 
-* the name of the file being sent, and "file 2 of 3" on the right; the
-  current file is the first one whose bytes are not all acknowledged
-  (`TransferProgress.CurrentFile` in Core);
-* a progress bar of the acknowledged bytes over the total;
-* "42 %, 2.6 MB/s, 1 min 40 s left": the values of `TransferProgress`, the
-  time left rounded up to five seconds under an hour, then to the minute;
+* the first dropped item and "2 item(s)", or during a transfer the name of
+  the file being sent and "file 2 of 3"; the current file is the first one
+  whose bytes are not all acknowledged (`TransferProgress.CurrentFile` in
+  Core);
+* a progress bar;
+* a status text of two lines, which follows the stage;
 * "Destination:" and the host name of the session;
 * a notice line and one button.
 
 Stages:
 
-1. While the files are listed, before the first chunk, the bar runs without a
-   value (marquee), the text says "Preparing...", the first line gives the
-   first dropped item and the number of items.
-2. During the transfer, the window follows the acknowledgements at most four
-   times a second: it is refreshed where the status bar is, with the same
-   throttling.
-3. After a success: "Transferred 3 file(s) in 3 min 13 s at 2.6 MB/s,
-   dropping into the session...", with the seconds and the rate of the
-   status bar text. When the dropResult arrives, the first part stays and the
-   result of the drop ("Dropped on ...", or why nothing took the files)
-   follows on a second line; the window closes three seconds later, and
-   waits while the mouse is over it.
-4. After a failure, a cancel or a disconnection: the reason, the same text
-   as in the status bar, in red, and the button becomes Close. The window
-   stays open until the user closes it, or until a new drag starts.
+1. Preparing or dropping, with a bar that runs without a value (marquee):
+   * for a drop through drive redirection (small files, or `fastTransfer`
+     set to `never`): "Dropping into the session..." from the local drop
+     until the dropResult;
+   * for a transfer, while the files are listed, before the first chunk:
+     "Preparing...";
+   * after a transfer that succeeded: "Transferred 3 file(s) in 3 min 13 s
+     at 2.6 MB/s, dropping into the session...", with the seconds and the
+     rate of the status bar text, until the dropResult.
+2. Transferring, with a determinate bar of the acknowledged bytes over the
+   total and "42 %, 2.6 MB/s, 1 min 40 s left": the values of
+   `TransferProgress`, the time left rounded up to five seconds under an
+   hour, then to the minute. The window follows the acknowledgements at most
+   four times a second: it is refreshed where the status bar is, with the
+   same throttling.
+3. Result:
+   * a dropResult with status `ok`: the text of the status bar ("Dropped on
+     ...", or "Nothing under the cursor accepted the files."), after the
+     summary of the transfer when there was one, and a full bar; the window
+     closes three seconds later, and waits while the mouse is over it;
+   * a dropResult with status `error` or `cancelled`, a transfer that failed
+     or was cancelled, or a disconnection: the reason, the same text as in
+     the status bar, in red, and the button becomes Close. A disconnection
+     while a drop without transfer waits for its result gives "The drop
+     stopped: the session was disconnected.", which only the window shows.
+     The window stays open until the user closes it, or until a new drag
+     starts.
 
-The button is Cancel while the transfer runs and takes the path of Session,
-Cancel the transfer. While a transfer runs, a drag or a drop over the
-session is refused as before with the status text, and the window also says
-"Wait for this transfer before dropping more files." for five seconds after
-the last refused drag over.
+The button is Cancel while a transfer runs and takes the path of Session,
+Cancel the transfer; otherwise it is Close. While a transfer runs, a drag or
+a drop over the session is refused as before with the status text, and the
+window also says "Wait for this transfer before dropping more files." for
+five seconds after the last refused drag over. A new drag closes the window
+of an earlier drop that is no longer transferring; its drop opens a new one.
 
 Window rules:
 
@@ -1044,9 +1059,9 @@ Window rules:
 * Centered over the session area when it opens, within the working area of
   the screen, until the user moves it. It is about 460 by 170 logical pixels
   of client area, laid out at 96 DPI and scaled to the DPI of its monitor.
-* No close box: the button closes it once the transfer ended.
-* It belongs to the session view that runs the transfer: switching tabs
-  leaves it on screen, and closing that tab cancels the transfer, while the
+* No close box: the button closes it when no transfer runs.
+* It belongs to the session view of the drop: switching tabs leaves it on
+  screen, and closing that tab cancels a transfer in progress, while the
   agent can still be told so that it deletes what it received at once, then
   closes the window. A change of language writes its texts again.
 

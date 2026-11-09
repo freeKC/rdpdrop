@@ -107,6 +107,8 @@ To really end the session, use File, Log off the remote session. The entry is av
 4. Move over the remote application you want. It shows its own drop feedback, for example a highlighted folder or an attachment area.
 5. Release the button on the target. The remote application receives the files as a normal drop.
 
+A progress window appears at every drop. The window "Transfer to the session" opens over the session as soon as you release the button. It shows the dropped items, a bar that runs without a value, "Dropping into the session..." and the name of the remote computer. Then it shows the result, such as "Dropped on Inbox (copy)" or "Nothing under the cursor accepted the files.", and closes by itself three seconds later, unless the mouse is over it. When the drop fails, it shows the reason in red and stays open until you click Close. For large files the same window shows the transfer first, see "Large files" below. The window never takes the keyboard from the session, stays above the main window, and stays open when you switch tabs. Closing the tab of the session closes it.
+
 If nothing under the cursor accepts the drop, the drop is ignored and the status bar says "Nothing under the cursor accepted the files." The agent never copies files on its own.
 
 When the target is Explorer, Explorer shows its usual Windows copy dialog in the session. It shows the progress and asks what to do when a file already exists.
@@ -122,20 +124,20 @@ By default this happens when the dropped files and folders hold 10 MiB or more. 
 What you see:
 
 1. The drag over the session works as usual: the remote application shows its drop feedback.
-2. When you release the button, the drag ends in the session without a drop, and the window "Transfer to the session" opens over the session. The status bar shows the progress too: "Transferring 3 file(s): 42 % (12.3 MB/s, 1 min left)".
+2. When you release the button, the drag ends in the session without a drop, and the window "Transfer to the session" shows the transfer. The status bar shows the progress too: "Transferring 3 file(s): 42 % (12.3 MB/s, 1 min left)".
 3. Once every file is in the session, the agent drops the copies where you released the button, and the status bar says "Dropped on ..." as usual.
 
-The window "Transfer to the session" shows the name of the file being sent with "file 2 of 3", a progress bar, a line such as "42 %, 2.6 MB/s, 1 min 40 s left", and the name of the remote computer. While the client lists the files, the bar runs without a value and the line says "Preparing...". Its Cancel button stops the transfer, as Session, Cancel the transfer does. After a success it says "Transferred 3 file(s) in 3 min 13 s at 2.6 MB/s, dropping into the session...", then shows the result of the drop and closes by itself three seconds later, unless the mouse is over it. After a failure or a cancel it shows the reason in red and stays open until you click Close. The window never takes the keyboard from the session, stays above the main window, and stays open when you switch tabs. Closing the tab of the session cancels the transfer and closes the window.
+During a transfer, the window "Transfer to the session" shows the name of the file being sent with "file 2 of 3", a progress bar, a line such as "42 %, 2.6 MB/s, 1 min 40 s left", and the name of the remote computer. While the client lists the files, the bar runs without a value and the line says "Preparing...". Its Cancel button stops the transfer, as Session, Cancel the transfer does. After a success it says "Transferred 3 file(s) in 3 min 13 s at 2.6 MB/s, dropping into the session...", then shows the result of the drop and closes by itself three seconds later, unless the mouse is over it. After a failure or a cancel it shows the reason in red and stays open until you click Close. Closing the tab of the session cancels the transfer and closes the window.
 
 The copies go to `%LOCALAPPDATA%\UltimateRDP\staging` in the session and are deleted one hour after the drop. The agent checks the size and the SHA-256 checksum of every file. If anything goes wrong, nothing is dropped and the status bar says why. Session, Cancel the transfer stops it; the agent then deletes what it received.
 
 Things to know:
 
-- One transfer at a time. While one runs, a new drag over the session is refused, and the transfer window says "Wait for this transfer before dropping more files." for five seconds.
+- One transfer at a time. While one runs, a new drag over the session is refused, and the progress window says "Wait for this transfer before dropping more files." for five seconds.
 - Drive redirection must still be on: the drag over the session uses it.
 - If you release the button very quickly, before the agent answered the start of the drag, the files go through drive redirection as before.
 - Empty folders inside a dropped folder are not created in the session.
-- The agent must run version 0.4.1 or later, and the client too. The transfer window is new in client 0.4.2 and works with an agent 0.4.1. With an older client or agent, every drop goes through drive redirection.
+- The agent must run version 0.4.1 or later, and the client too. The progress window is new in client 0.4.2 and works with an agent 0.4.1. With an older client or agent, every drop goes through drive redirection.
 
 The client sends the files in chunks of 32 KiB. The setting `transferChunkBytes` in `%LOCALAPPDATA%\UltimateRDP\client.json` changes that size, from 4096 (4 KiB) to 262144 (256 KiB). A value outside these bounds is brought back within them. The setting is only editable in the file, and applies once the client restarts. Leave it alone unless a transfer fails at its start.
 
@@ -159,12 +161,14 @@ Messages of a drag:
 - **"Drop refused: the drag did not start in the session. Drag the files again."**: the client got the drop without a drag in progress for the same files.
 - **"Cancelled"** followed by the reason, for example "Cancelled: The drag was cancelled: Escape was pressed in the session."
 
-Messages of a transfer of large files. The transfer window shows the same progress with more detail, see "Large files" above; the status bar keeps these texts:
+The progress window that appears at every drop shows the result of the drop too, and the progress of a transfer with more detail, see "Dragging into the session" and "Large files" above. The status bar keeps its texts.
+
+Messages of a transfer of large files:
 
 - **"Preparing the transfer of 2 item(s)..."**: the client lists the files to send.
 - **"Transferring 3 file(s): 42 % (12.3 MB/s, 1 min left)"**: the files are on their way. The rate covers the last five seconds; MB means a million bytes.
 - **"Transferred 3 file(s) at 12.3 MB/s, dropping..."**: every file is in the session, and the agent drops the copies.
-- **"Transfer cancelled."**: you cancelled the transfer from the Session menu or the transfer window.
+- **"Transfer cancelled."**: you cancelled the transfer from the Session menu or the progress window.
 - **"A transfer is in progress. Wait for its end, or cancel it from the Session menu."**: a new drag was refused during a transfer.
 - **"Transfer failed"** followed by the reason from the agent, for example "Transfer failed: Data was lost or damaged on the way. Try again."
 - **"Drop refused: There is not enough free space in the session: 1,234 MB needed, 800 MB free."**: the disk of the session cannot hold the files.
@@ -340,7 +344,7 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 - The transfer through drive redirection to the remote desktop.
 - The live drag into a remote application.
 
-The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds the transfer window and only changes the client.
+The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client.
 
 Feedback that helps:
 
