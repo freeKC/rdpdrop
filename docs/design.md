@@ -485,9 +485,10 @@ the fallback for anything missing.
   own.
 * A file that comes through the channel is written below the folder of its
   transfer only: the agent refuses a relative path that does not start with
-  the name of a dropped item, that holds `..`, a device name or a character
-  that Windows refuses, and checks again that the full path stays in the
-  folder.
+  the name of a dropped item, that holds `..`, a device name (CON, PRN, AUX,
+  NUL, COM0 to COM9 and LPT0 to LPT9 with their superscript digit forms,
+  CONIN$, CONOUT$), an alternate data stream or a character that Windows
+  refuses, and checks again that the full path stays in the folder.
 * Simulated input happens only inside the user's own session, only during a
   drag, and only with the left button. See "Step 2" for the details.
 * Messages carry file names, coordinates, modifier key flags and window names.
@@ -742,8 +743,9 @@ only editable in the file. In `auto` the files are transferred when the
 total size of the items of the `dragEnter` is at least the threshold;
 `always` transfers every drop; `never` keeps the behaviour of version 0.3.
 The client gives `size` for each item: the length of a file, or the total
-length of the files of a folder, counted for at most 250 ms when the drag
-starts, so a very large folder may report less than its real size. The rule
+length of the files of a folder, counted for at most 250 ms for all the
+items together when the drag starts, so a very large folder may report less
+than its real size. The rule
 is `FastTransferPolicy` in Core. When it transfers, the agent checks that the
 volume of the staging folder has the total size plus 10 percent free, and
 refuses the drag otherwise with "There is not enough free space in the
@@ -847,9 +849,10 @@ Client:
   usual "Dropped on ...".
 * Session, Cancel the transfer is enabled during a transfer. It stops the
   thread, sends `transferCancel` and shows "Transfer cancelled.". A file that
-  cannot be read, a send that the control refuses, or no acknowledgement for
-  60 seconds while the window is full also send `transferCancel`, with the
-  reason in the status bar.
+  cannot be read, a file whose length changed since it was listed ("changed
+  while it was being sent. Try again."), a send that the control refuses, or
+  no acknowledgement for 60 seconds while the window is full or after the
+  last file also send `transferCancel`, with the reason in the status bar.
 * One transfer at a time: while one runs, a new drag over the session is
   refused with "A transfer is in progress. Wait for its end, or cancel it
   from the Session menu."
@@ -864,9 +867,11 @@ Limits:
 
 * Drive redirection is still needed: the live drag offers the `\\tsclient`
   paths, and the agent checks the items through it before the drag starts.
-* base64 adds a third to the data: the file rate can reach about three
-  quarters of the upstream capacity of the channel, unless the compression of
-  the RDP connection wins some of it back.
+* base64 adds a third to the data: in the one byte per character model the
+  file rate can reach about three quarters of the upstream capacity of the
+  channel; in the UTF-16 model every character costs two bytes on the wire
+  and the rate drops to about three eighths. The model in use is in both
+  logs. The compression of the RDP connection may win some of it back.
 * Empty folders inside a dropped folder are not created; an empty dropped
   folder is.
 * The drop happens where the button was released, after the transfer: a
