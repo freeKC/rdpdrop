@@ -149,4 +149,96 @@ public class DropDecisionTests
     {
         Assert.Throws<ArgumentException>(() => new DropDecision(string.Empty, 0));
     }
+
+    private static DragAckMessage Provisional() => new(DragId, true, "Starting the drag...", Provisional: true);
+
+    [Fact]
+    public void A_drop_is_held_until_a_final_answer()
+    {
+        Assert.True(DropDecision.MustHold(null));
+        Assert.True(DropDecision.MustHold(Provisional()));
+        Assert.False(DropDecision.MustHold(new DragAckMessage(DragId, true)));
+        Assert.False(DropDecision.MustHold(new DragAckMessage(DragId, true, Provisional: false)));
+        Assert.False(DropDecision.MustHold(new DragAckMessage(DragId, false, "No")));
+        Assert.False(DropDecision.MustHold(new DragAckMessage(DragId, true, Transfer: true, TransferId: TransferId, Provisional: true)));
+    }
+
+    /// <summary>
+    /// The gap of 0.4.5: the check of the items took more than 700 ms, the agent sent a
+    /// provisional accept, and the dragAck that offers the transfer came after it. The drop
+    /// now waits for that one.
+    /// </summary>
+    [Fact]
+    public void A_provisional_answer_does_not_decide_and_the_transfer_offered_after_it_does()
+    {
+        var decision = new DropDecision(DragId, 1000);
+
+        Assert.False(decision.OnAck(Provisional(), 1200));
+        Assert.Equal(DropDecisionState.Waiting, decision.State);
+        Assert.True(decision.ProvisionalAnswer);
+        Assert.False(decision.SendsDrop);
+        Assert.False(decision.Expire(2400));
+
+        Assert.True(decision.OnAck(new DragAckMessage(DragId, true, Transfer: true, TransferId: TransferId), 2300));
+
+        Assert.Equal(DropDecisionState.Transfer, decision.State);
+        Assert.True(decision.Deferred);
+        Assert.Equal(TransferId, decision.TransferId);
+        Assert.Equal(1300, decision.WaitedMilliseconds(9999));
+    }
+
+    [Fact]
+    public void A_drop_after_a_provisional_answer_waits_for_the_final_one()
+    {
+        var decision = new DropDecision(DragId, 5000, provisionalAnswer: true);
+
+        Assert.True(decision.ProvisionalAnswer);
+        Assert.Equal(DropDecisionState.Waiting, decision.State);
+        Assert.True(decision.OnAck(new DragAckMessage(DragId, true), 5100));
+
+        Assert.Equal(DropDecisionState.Plain, decision.State);
+        Assert.Null(decision.Deferred);
+        Assert.True(decision.SendsDrop);
+    }
+
+    [Fact]
+    public void A_refusal_after_a_provisional_answer_sends_no_drop()
+    {
+        var decision = new DropDecision(DragId, 0, provisionalAnswer: true);
+
+        Assert.True(decision.OnAck(new DragAckMessage(DragId, false, "The items cannot be read."), 300));
+
+        Assert.Equal(DropDecisionState.Refused, decision.State);
+        Assert.False(decision.SendsDrop);
+    }
+
+    [Fact]
+    public void Without_a_final_answer_the_plain_drop_goes_out_after_the_same_wait()
+    {
+        var decision = new DropDecision(DragId, 0);
+        decision.OnAck(Provisional(), 100);
+
+        Assert.False(decision.Expire(1499));
+        Assert.True(decision.Expire(1500));
+
+        Assert.Equal(DropDecisionState.TimedOut, decision.State);
+        Assert.True(decision.SendsDrop);
+        Assert.Null(decision.Deferred);
+        Assert.StartsWith("only a provisional dragAck within 1500 ms", decision.Describe(), StringComparison.Ordinal);
+
+        var silent = new DropDecision(DragId, 0);
+        Assert.True(silent.Expire(1500));
+        Assert.False(silent.ProvisionalAnswer);
+        Assert.StartsWith("no dragAck within 1500 ms", silent.Describe(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_provisional_answer_of_another_drag_is_ignored()
+    {
+        var decision = new DropDecision(DragId, 0);
+
+        Assert.False(decision.OnAck(new DragAckMessage("other", true, Provisional: true), 10));
+
+        Assert.False(decision.ProvisionalAnswer);
+    }
 }

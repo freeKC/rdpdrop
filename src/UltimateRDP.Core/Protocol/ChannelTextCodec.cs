@@ -8,9 +8,13 @@ namespace UltimateRDP.Core.Protocol;
 /// of the RDP ActiveX control and plain text.
 /// </summary>
 /// <remarks>
-/// Only ASCII travels on the channel, so text here means one character per byte. Bytes
-/// above 0x7F are kept as the character with the same code; the JSON reader rejects
-/// them later.
+/// Every message is ASCII, so text here means one character per byte, with one exception
+/// since 0.5.0: the chunks of a transfer in <c>u15</c>, which the client only sends when
+/// the agent receives its data in the UTF-16 model. <see cref="BytesToText"/> turns those
+/// byte pairs back into the same UTF-16 units, without any check, and the agent reads the
+/// line by hand (<see cref="Transfer.TransferLines.TryParseChunk"/>). In the one byte per
+/// character model, bytes above 0x7F are kept as the character with the same code; the
+/// JSON reader rejects them later.
 /// </remarks>
 public static class ChannelTextCodec
 {

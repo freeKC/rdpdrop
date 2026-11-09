@@ -102,7 +102,8 @@ public static class MessageTypes
 /// <summary>
 /// Sent by both sides. The client fills <see cref="ClientVersion"/> and
 /// <see cref="ClientLanguage"/>; the agent fills <see cref="AgentVersion"/> and
-/// <see cref="DriveRedirectionAvailable"/>. Fields left null are not written.
+/// <see cref="DriveRedirectionAvailable"/> and, since 0.5.0, <see cref="ClientToAgentModel"/>.
+/// Fields left null are not written.
 /// </summary>
 /// <param name="Version">Protocol version, see <see cref="ProtocolConstants.ProtocolVersion"/>.</param>
 /// <param name="ClientVersion">Version of the client, in the hello of the client.</param>
@@ -112,12 +113,19 @@ public static class MessageTypes
 /// Two letter code of the language of the client, in the hello of the client. The agent
 /// writes the texts it sends for that language; see <see cref="Localization.UiLanguages"/>.
 /// </param>
+/// <param name="ClientToAgentModel">
+/// In the hello of the agent: the byte model it detected on the data of the client, named
+/// as <see cref="ChannelByteModelNames"/> says. The client chooses the encoding of the
+/// chunks from it (<see cref="Transfer.ChunkEncodings.Choose"/>); an agent that does not
+/// say gets base64.
+/// </param>
 public sealed record HelloMessage(
     int Version,
     string? ClientVersion = null,
     string? AgentVersion = null,
     bool? DriveRedirectionAvailable = null,
-    string? ClientLanguage = null) : Message(MessageTypes.Hello)
+    string? ClientLanguage = null,
+    string? ClientToAgentModel = null) : Message(MessageTypes.Hello)
 {
     /// <summary>
     /// Builds the hello sent by the client.
@@ -126,10 +134,15 @@ public sealed record HelloMessage(
         new(ProtocolConstants.ProtocolVersion, ClientVersion: clientVersion, ClientLanguage: clientLanguage);
 
     /// <summary>
-    /// Builds the hello sent by the agent.
+    /// Builds the hello sent by the agent, with the byte model it detected on the data of
+    /// the client; <see cref="ChannelByteModel.Unknown"/> leaves the field out.
     /// </summary>
-    public static HelloMessage FromAgent(string agentVersion, bool driveRedirectionAvailable) =>
-        new(ProtocolConstants.ProtocolVersion, AgentVersion: agentVersion, DriveRedirectionAvailable: driveRedirectionAvailable);
+    public static HelloMessage FromAgent(string agentVersion, bool driveRedirectionAvailable, ChannelByteModel clientToAgentModel = ChannelByteModel.Unknown) =>
+        new(
+            ProtocolConstants.ProtocolVersion,
+            AgentVersion: agentVersion,
+            DriveRedirectionAvailable: driveRedirectionAvailable,
+            ClientToAgentModel: ChannelByteModelNames.ToName(clientToAgentModel));
 }
 
 /// <summary>
@@ -275,7 +288,12 @@ public sealed record DragLeaveMessage(string Id) : Message(MessageTypes.DragLeav
 /// files under <paramref name="TransferId"/>. Not written when null.
 /// </param>
 /// <param name="TransferId">Identifier of the transfer, when <paramref name="Transfer"/> is true.</param>
-public sealed record DragAckMessage(string Id, bool Accepted, string? Message = null, bool? Transfer = null, string? TransferId = null) : Message(MessageTypes.DragAck)
+/// <param name="Provisional">
+/// True on an accepted answer sent before the agent decided whether the files are
+/// transferred, because the check of the items is slow: a final dragAck follows. A drop
+/// held by the client waits for that final answer. Not written when null.
+/// </param>
+public sealed record DragAckMessage(string Id, bool Accepted, string? Message = null, bool? Transfer = null, string? TransferId = null, bool? Provisional = null) : Message(MessageTypes.DragAck)
 {
     internal override bool IsValid() =>
         !string.IsNullOrEmpty(Id) && (Transfer != true || !string.IsNullOrEmpty(TransferId));

@@ -270,6 +270,122 @@ public class SimulatedTransferTests(ITestOutputHelper output)
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(60), $"100 MB took {watch.Elapsed.TotalSeconds:0.0} s.");
     }
 
+    public static TheoryData<int> U15ChunkSizes => [TransferSender.DefaultChunkSize, 128 * 1024];
+
+    /// <summary>
+    /// 100 MB in u15 through the whole codec path of the UTF-16 model: chunk lines of
+    /// units, the bytes of the channel in blocks of 1600, the line reader, the hand parser,
+    /// the decoding into the buffer of the receiver, checksums on both sides. The wire
+    /// carries 16 bits per 15 bits of data, plus the fields of each line.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(U15ChunkSizes))]
+    public void One_hundred_megabytes_in_u15_go_through_the_codec_in_a_few_seconds(int chunkSize)
+    {
+        const int Size = 100 * 1000 * 1000;
+        var data = new byte[Size];
+        new Random(7).NextBytes(data);
+        var file = new TransferFile("big.bin", Size);
+        var storage = new NullTransferStorage();
+        var transfer = new SimulatedTransfer(ChannelByteModel.Utf16, [new TransferItem("big.bin", false)], [(file, data)], storage, chunkSize, chunkEncoding: ChunkEncodings.U15) { Batching = new SendQueue() };
+
+        var watch = Stopwatch.StartNew();
+        transfer.Run();
+        watch.Stop();
+
+        Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
+        Assert.Equal(Size, storage.Written);
+        Assert.Equal(ChunkEncodings.U15, transfer.Receiver.ChunkEncoding);
+        var wireBytes = 2.0 * transfer.Channel.CharactersSent;
+        var rate = Size / watch.Elapsed.TotalSeconds / 1_000_000;
+        output.WriteLine($"u15, chunks of {chunkSize} bytes: 100 MB in {watch.Elapsed.TotalSeconds:0.00} s, {rate:0} MB/s, {transfer.Channel.LinesSent} calls, {transfer.Sender.ChunkLines} chunk lines, {wireBytes / 1_000_000:0.0} MB on the wire, {wireBytes / Size:0.0000} wire bytes per file byte.");
+        Assert.InRange(wireBytes / Size, 16.0 / 15, 1.08);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(30), $"100 MB took {watch.Elapsed.TotalSeconds:0.0} s.");
+    }
+
+    [Theory]
+    [MemberData(nameof(U15ChunkSizes))]
+    public void A_few_megabytes_arrive_intact_in_u15(int chunkSize)
+    {
+        var storage = new MemoryTransferStorage();
+        var files = SampleFiles();
+        var transfer = new SimulatedTransfer(ChannelByteModel.Utf16, FolderAndFile, files, storage, chunkSize, chunkEncoding: ChunkEncodings.U15) { Batching = new SendQueue() };
+        var chunkLines = 0;
+        transfer.Channel.Tamper = (_, text) =>
+        {
+            chunkLines += text.Split('\n').Count(line => line.Contains("\"enc\":\"u15\"", StringComparison.Ordinal));
+            return text;
+        };
+
+        transfer.Run();
+
+        Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
+        foreach (var (file, data) in files)
+        {
+            Assert.Equal(data, storage.Content(file.RelativePath));
+        }
+
+        Assert.Equal(transfer.Sender.ChunkLines, chunkLines);
+        Assert.True(transfer.Sender.IsAcknowledged);
+
+        // Chunks of 128 KiB take about 70 000 characters each: two travel in one call of 200 000.
+        Assert.True(2 * transfer.Sender.LongestChunkLine <= SendQueue.DefaultMaxBatchCharacters);
+        Assert.True(transfer.Channel.LinesSent < transfer.Sender.ChunkLines, $"{transfer.Channel.LinesSent} calls for {transfer.Sender.ChunkLines} chunk lines.");
+    }
+
+    [Fact]
+    public void A_chunk_line_of_128_KiB_in_u15_holds_about_70_000_characters()
+    {
+        var files = new List<(TransferFile File, byte[] Data)> { SimulatedTransfer.MakeFile("big.bin", 128 * 1024, 9) };
+        var transfer = new SimulatedTransfer(ChannelByteModel.Utf16, [new TransferItem("big.bin", false)], files, new MemoryTransferStorage(), 128 * 1024, chunkEncoding: ChunkEncodings.U15);
+
+        transfer.Run();
+
+        Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
+        Assert.InRange(transfer.Sender.LongestChunkLine, 69_906 + 100, 69_906 + 200);
+    }
+
+    [Fact]
+    public void Damaged_u15_data_fails_on_the_checksum()
+    {
+        var storage = new MemoryTransferStorage();
+        var transfer = new SimulatedTransfer(ChannelByteModel.Utf16, FolderAndFile, SampleFiles(), storage, chunkEncoding: ChunkEncodings.U15);
+
+        // Change one unit of the third chunk for another unit of the alphabet.
+        transfer.Channel.Tamper = (position, line) =>
+        {
+            if (position != 4)
+            {
+                return line;
+            }
+
+            var index = line.IndexOf("\"data\":\"", StringComparison.Ordinal) + 100;
+            var replacement = line[index] == U15Codec.FirstUnit ? U15Codec.LastUnit : U15Codec.FirstUnit;
+            return string.Concat(line.AsSpan(0, index), replacement.ToString(), line.AsSpan(index + 1));
+        };
+        transfer.Run();
+
+        Assert.Equal(DropStatus.Error, transfer.Result?.Status);
+        Assert.Equal(TransferFailure.HashMismatch, transfer.Receiver.Failure);
+        Assert.Empty(storage.Files);
+    }
+
+    [Fact]
+    public void A_u15_chunk_turned_to_ascii_on_the_way_fails_as_bad_data()
+    {
+        var storage = new MemoryTransferStorage();
+        var transfer = new SimulatedTransfer(ChannelByteModel.Utf16, FolderAndFile, SampleFiles(), storage, chunkEncoding: ChunkEncodings.U15);
+
+        // What an ASCII conversion of the line would do: every unit becomes a question mark.
+        transfer.Channel.Tamper = (position, line) => position == 2
+            ? new string([.. line.Select(c => c > 0x7F ? '?' : c)])
+            : line;
+        transfer.Run();
+
+        Assert.Equal(DropStatus.Error, transfer.Result?.Status);
+        Assert.Equal(TransferFailure.BadData, transfer.Receiver.Failure);
+    }
+
     /// <summary>
     /// The first failure seen in production, replayed through the whole codec path: the
     /// agent handles the deferred drop, and creates the receiver, only after transferBegin,

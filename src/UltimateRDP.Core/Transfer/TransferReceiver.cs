@@ -56,7 +56,10 @@ public enum TransferFailure
     /// <summary>A chunk did not start where the previous one ended: data was lost on the way.</summary>
     DataLost,
 
-    /// <summary>The data of a chunk is not valid base64, or the chunk is too long.</summary>
+    /// <summary>
+    /// The data of a chunk is not valid in its encoding, the chunk is too long, or the
+    /// encoding is unknown or not the one announced by <c>transferBegin</c>.
+    /// </summary>
     BadData,
 
     /// <summary>A file did not have its announced size, or the transfer more bytes than announced.</summary>
@@ -151,6 +154,9 @@ public sealed class TransferReceiver : IDisposable
     /// <summary>Bytes announced by <c>transferBegin</c>.</summary>
     public long ExpectedBytes { get; private set; }
 
+    /// <summary>The encoding of the chunks announced by <c>transferBegin</c>, one of <see cref="ChunkEncodings"/>.</summary>
+    public string ChunkEncoding { get; private set; } = ChunkEncodings.Base64;
+
     /// <summary>Files received and checked.</summary>
     public int ReceivedFiles { get; private set; }
 
@@ -232,6 +238,12 @@ public sealed class TransferReceiver : IDisposable
         _startTicks = _clock();
         ExpectedFiles = begin.Files;
         ExpectedBytes = begin.Bytes;
+        if (!ChunkEncodings.IsKnown(begin.ChunkEncoding))
+        {
+            return Fail(TransferFailure.BadData, null, $"transferBegin announces the chunk encoding \"{begin.ChunkEncoding}\", which this agent does not read.");
+        }
+
+        ChunkEncoding = ChunkEncodings.OrDefault(begin.ChunkEncoding);
         foreach (var item in Items)
         {
             if (!TransferPaths.IsValidName(item.Name))
@@ -309,11 +321,15 @@ public sealed class TransferReceiver : IDisposable
             return Fail(TransferFailure.DataLost, file.RelativePath, $"A chunk starts at byte {chunk.Offset} where byte {_fileReceived} was expected.");
         }
 
-        if (chunk.Data.Length > (TransferSender.MaxChunkSize + 2) / 3 * 4
-            || !Convert.TryFromBase64String(chunk.Data, _buffer, out var count)
-            || count == 0)
+        var encoding = ChunkEncodings.OrDefault(chunk.Enc);
+        if (!string.Equals(encoding, ChunkEncoding, StringComparison.Ordinal))
         {
-            return Fail(TransferFailure.BadData, file.RelativePath, $"A chunk at byte {chunk.Offset} is not valid base64 of 1 to {TransferSender.MaxChunkSize} bytes.");
+            return Fail(TransferFailure.BadData, file.RelativePath, $"A chunk at byte {chunk.Offset} is written in \"{encoding}\" while transferBegin announced \"{ChunkEncoding}\".");
+        }
+
+        if (!TryDecode(chunk, out var count))
+        {
+            return Fail(TransferFailure.BadData, file.RelativePath, $"A chunk at byte {chunk.Offset} is not valid {encoding} of 1 to {TransferSender.MaxChunkSize} bytes.");
         }
 
         if (count > file.Size - _fileReceived)
@@ -341,6 +357,21 @@ public sealed class TransferReceiver : IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>Decodes the data of a chunk into the buffer; false when it is not 1 to <see cref="TransferSender.MaxChunkSize"/> valid bytes.</summary>
+    private bool TryDecode(FileChunkMessage chunk, out int count)
+    {
+        if (ChunkEncoding == ChunkEncodings.U15)
+        {
+            count = chunk.Length ?? 0;
+            return count is > 0 and <= TransferSender.MaxChunkSize && U15Codec.TryDecode(chunk.Data, count, _buffer);
+        }
+
+        count = 0;
+        return chunk.Data.Length <= (TransferSender.MaxChunkSize + 2) / 3 * 4
+            && Convert.TryFromBase64String(chunk.Data, _buffer, out count)
+            && count > 0;
     }
 
     private FileAckMessage? OnFileEnd(FileEndMessage end)

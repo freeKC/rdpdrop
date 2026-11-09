@@ -398,4 +398,92 @@ public class TransferReceiverTests
         Assert.Equal(TransferState.Cancelled, receiver.State);
         Assert.Equal(1, _storage.DeleteAllCalls);
     }
+
+    private static FileChunkMessage U15Chunk(int index, long offset, byte[] data) =>
+        new("t1", index, offset, U15Codec.Encode(data), data.Length, ChunkEncodings.U15);
+
+    [Fact]
+    public void U15_chunks_are_written_and_checked()
+    {
+        using var receiver = Create();
+        var a = new byte[TransferSender.MaxChunkSize + 17];
+        new Random(4).NextBytes(a);
+
+        receiver.Handle(new TransferBeginMessage("t1", 1, a.Length, ChunkEncodings.U15));
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", a.Length));
+        var first = receiver.Handle(U15Chunk(0, 0, a[..TransferSender.MaxChunkSize]));
+        receiver.Handle(U15Chunk(0, TransferSender.MaxChunkSize, a[TransferSender.MaxChunkSize..]));
+        var last = receiver.Handle(new FileEndMessage("t1", 0, Hash(a)));
+
+        Assert.Equal(ChunkEncodings.U15, receiver.ChunkEncoding);
+        Assert.Equal(new FileAckMessage("t1", 0, TransferSender.MaxChunkSize), first);
+        Assert.Equal(new FileAckMessage("t1", 0, a.Length), last);
+        Assert.Equal(TransferState.Succeeded, receiver.State);
+        Assert.Equal(a, _storage.Content("a.txt"));
+    }
+
+    [Fact]
+    public void A_transfer_without_an_announced_encoding_reads_base64()
+    {
+        using var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 1, 3));
+
+        Assert.Equal(ChunkEncodings.Base64, receiver.ChunkEncoding);
+    }
+
+    [Fact]
+    public void An_unknown_chunk_encoding_fails_at_transferBegin()
+    {
+        using var receiver = Create();
+
+        receiver.Handle(new TransferBeginMessage("t1", 1, 3, "l8"));
+
+        Assert.Equal(TransferFailure.BadData, receiver.Failure);
+        Assert.Contains("\"l8\"", receiver.FailureDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_chunk_in_another_encoding_than_announced_fails()
+    {
+        using var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 1, 3, ChunkEncodings.U15));
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", 3));
+
+        receiver.Handle(Chunk(0, 0, [1, 2, 3]));
+
+        Assert.Equal(TransferFailure.BadData, receiver.Failure);
+        Assert.Contains("written in \"base64\" while transferBegin announced \"u15\"", receiver.FailureDetail, StringComparison.Ordinal);
+        Assert.Empty(_storage.Files);
+    }
+
+    public static TheoryData<FileChunkMessage> BadU15Chunks
+    {
+        get
+        {
+            var units = U15Codec.Encode([1, 2, 3]);
+            return
+            [
+                new FileChunkMessage("t1", 0, 0, units, null, ChunkEncodings.U15),
+                new FileChunkMessage("t1", 0, 0, units, 0, ChunkEncodings.U15),
+                new FileChunkMessage("t1", 0, 0, units, 2, ChunkEncodings.U15),
+                new FileChunkMessage("t1", 0, 0, units[..^1], 3, ChunkEncodings.U15),
+                new FileChunkMessage("t1", 0, 0, "???", 3, ChunkEncodings.U15),
+                new FileChunkMessage("t1", 0, 0, U15Codec.Encode(new byte[TransferSender.MaxChunkSize + 1]), TransferSender.MaxChunkSize + 1, ChunkEncodings.U15),
+            ];
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(BadU15Chunks))]
+    public void Bad_u15_data_is_refused(FileChunkMessage chunk)
+    {
+        using var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 1, TransferSender.MaxChunkSize + 1, ChunkEncodings.U15));
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", TransferSender.MaxChunkSize + 1));
+
+        receiver.Handle(chunk);
+
+        Assert.Equal(TransferFailure.BadData, receiver.Failure);
+        Assert.Contains("is not valid u15", receiver.FailureDetail, StringComparison.Ordinal);
+    }
 }

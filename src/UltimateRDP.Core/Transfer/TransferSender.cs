@@ -26,8 +26,9 @@ public sealed record TransferFile(string RelativePath, long Size, DateTime? Modi
 public sealed class TransferSender : IDisposable
 {
     /// <summary>
-    /// Raw bytes per <c>fileChunk</c> by default: about 44 000 characters of base64, so that
-    /// one line stays small on the wire in both byte models (about 88 KB in UTF-16).
+    /// Raw bytes per <c>fileChunk</c> by default: about 44 000 characters of base64, or
+    /// about 17 500 units of <see cref="ChunkEncodings.U15"/>, so that one line stays small
+    /// on the wire in both byte models.
     /// </summary>
     public const int DefaultChunkSize = 32 * 1024;
 
@@ -35,8 +36,9 @@ public sealed class TransferSender : IDisposable
     public const int MinChunkSize = 4 * 1024;
 
     /// <summary>
-    /// Largest chunk size: about 350 000 characters of base64, within the line limit. The
-    /// agent accepts any chunk up to this size.
+    /// Largest chunk size: about 350 000 characters of base64 or 140 000 units of
+    /// <see cref="ChunkEncodings.U15"/>, within the line limit. The agent accepts any chunk
+    /// up to this size.
     /// </summary>
     public const int MaxChunkSize = 256 * 1024;
 
@@ -63,9 +65,10 @@ public sealed class TransferSender : IDisposable
     /// Most bytes sent and not yet acknowledged, from <see cref="MinWindowBytes"/> to
     /// <see cref="MaxWindowBytes"/>; see <see cref="EffectiveWindow"/> for the window used.
     /// </param>
-    /// <exception cref="ArgumentException">A size is negative, or the total does not fit.</exception>
+    /// <param name="chunkEncoding">How the chunks are written, one of <see cref="ChunkEncodings"/>; see <see cref="ChunkEncodings.Choose"/>.</param>
+    /// <exception cref="ArgumentException">A size is negative, the total does not fit, or the encoding is unknown.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The chunk size or the window is out of its bounds.</exception>
-    public TransferSender(string transferId, IReadOnlyList<TransferFile> files, int chunkSize = DefaultChunkSize, long windowBytes = DefaultWindowBytes)
+    public TransferSender(string transferId, IReadOnlyList<TransferFile> files, int chunkSize = DefaultChunkSize, long windowBytes = DefaultWindowBytes, string chunkEncoding = ChunkEncodings.Base64)
     {
         ArgumentException.ThrowIfNullOrEmpty(transferId);
         ArgumentNullException.ThrowIfNull(files);
@@ -73,7 +76,13 @@ public sealed class TransferSender : IDisposable
         ArgumentOutOfRangeException.ThrowIfGreaterThan(chunkSize, MaxChunkSize);
         ArgumentOutOfRangeException.ThrowIfLessThan(windowBytes, MinWindowBytes);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBytes, MaxWindowBytes);
+        if (chunkEncoding is not (ChunkEncodings.Base64 or ChunkEncodings.U15))
+        {
+            throw new ArgumentException($"The chunk encoding \"{chunkEncoding}\" is unknown.", nameof(chunkEncoding));
+        }
+
         TransferId = transferId;
+        ChunkEncoding = chunkEncoding;
         Files = files;
         ChunkSize = chunkSize;
         WindowBytes = EffectiveWindow(windowBytes, chunkSize);
@@ -94,6 +103,9 @@ public sealed class TransferSender : IDisposable
 
     /// <summary>The files, in the order they are sent.</summary>
     public IReadOnlyList<TransferFile> Files { get; }
+
+    /// <summary>How the chunks are written, one of <see cref="ChunkEncodings"/>.</summary>
+    public string ChunkEncoding { get; }
 
     /// <summary>Most raw bytes in one <c>fileChunk</c>.</summary>
     public int ChunkSize { get; }
@@ -144,7 +156,7 @@ public sealed class TransferSender : IDisposable
         }
 
         _begun = true;
-        return new TransferBeginMessage(TransferId, Files.Count, TotalBytes);
+        return new TransferBeginMessage(TransferId, Files.Count, TotalBytes, ChunkEncoding);
     }
 
     /// <summary>Starts the next file.</summary>
@@ -188,7 +200,7 @@ public sealed class TransferSender : IDisposable
             throw new ArgumentException("The chunk goes past the announced size of the file.", nameof(data));
         }
 
-        var line = TransferLines.EncodeChunk(TransferId, _current, _offset, data);
+        var line = TransferLines.EncodeChunk(TransferId, _current, _offset, data, ChunkEncoding);
         _hash!.AppendData(data);
         _offset += data.Length;
         SentBytes += data.Length;

@@ -1,7 +1,7 @@
 namespace UltimateRDP.Core.Protocol;
 
 /// <summary>One line waiting in a <see cref="SendQueue"/>.</summary>
-/// <param name="Text">The line, ASCII, ending with <c>\n</c>.</param>
+/// <param name="Text">The line, ending with <c>\n</c>: ASCII, or a chunk in <c>u15</c>.</param>
 /// <param name="Type">The type of the message, for the log.</param>
 /// <param name="Subject">What the line belongs to: the id of the drag or the transfer, or a hello number.</param>
 /// <param name="TransferPosition">

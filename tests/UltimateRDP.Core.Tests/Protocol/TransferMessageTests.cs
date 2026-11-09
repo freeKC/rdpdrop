@@ -177,4 +177,70 @@ public class TransferMessageTests
     {
         Assert.Equal(valid, TransferHash.IsValidHex(value));
     }
+
+    [Fact]
+    public void The_hello_of_the_agent_says_the_model_of_the_data_of_the_client()
+    {
+        var utf16 = ToJson(HelloMessage.FromAgent("0.5.0", true, ChannelByteModel.Utf16));
+        var oneByte = ToJson(HelloMessage.FromAgent("0.5.0", true, ChannelByteModel.OneBytePerChar));
+        var unknown = ToJson(HelloMessage.FromAgent("0.5.0", true));
+
+        Assert.Equal("utf16", utf16.GetProperty("clientToAgentModel").GetString());
+        Assert.Equal("oneBytePerChar", oneByte.GetProperty("clientToAgentModel").GetString());
+        Assert.False(unknown.TryGetProperty("clientToAgentModel", out _));
+    }
+
+    [Theory]
+    [InlineData("""{"type":"hello","version":1,"agentVersion":"0.5.0","clientToAgentModel":"utf16"}""", ChannelByteModel.Utf16)]
+    [InlineData("""{"type":"hello","version":1,"agentVersion":"0.5.0","clientToAgentModel":"oneBytePerChar"}""", ChannelByteModel.OneBytePerChar)]
+    [InlineData("""{"type":"hello","version":1,"agentVersion":"0.4.4","driveRedirectionAvailable":true}""", ChannelByteModel.Unknown)]
+    [InlineData("""{"type":"hello","version":1,"agentVersion":"0.6.0","clientToAgentModel":"other"}""", ChannelByteModel.Unknown)]
+    public void The_client_reads_the_model_and_an_older_agent_gets_base64(string json, ChannelByteModel model)
+    {
+        var hello = Assert.IsType<HelloMessage>(Parse(json));
+        var read = ChannelByteModelNames.FromName(hello.ClientToAgentModel);
+
+        Assert.Equal(model, read);
+        Assert.Equal(model == ChannelByteModel.Utf16 ? ChunkEncodings.U15 : ChunkEncodings.Base64, ChunkEncodings.Choose(read));
+    }
+
+    [Fact]
+    public void TransferBegin_announces_the_chunk_encoding()
+    {
+        var json = ToJson(new TransferBeginMessage("t1", 1, 2, ChunkEncodings.U15));
+
+        Assert.Equal("u15", json.GetProperty("chunkEncoding").GetString());
+        Assert.False(ToJson(new TransferBeginMessage("t1", 1, 2)).TryGetProperty("chunkEncoding", out _));
+        Assert.Null(Assert.IsType<TransferBeginMessage>(Parse("""{"type":"transferBegin","transferId":"t1","files":1,"bytes":2}""")).ChunkEncoding);
+    }
+
+    [Fact]
+    public void A_provisional_dragAck_says_so_and_a_final_one_does_not()
+    {
+        var provisional = ToJson(new DragAckMessage("d1", true, "Starting...", Provisional: true));
+
+        Assert.True(provisional.GetProperty("provisional").GetBoolean());
+        Assert.False(ToJson(new DragAckMessage("d1", true)).TryGetProperty("provisional", out _));
+        Assert.Null(Assert.IsType<DragAckMessage>(Parse("""{"type":"dragAck","id":"d1","accepted":true}""")).Provisional);
+        Assert.True(Assert.IsType<DragAckMessage>(Parse("""{"type":"dragAck","id":"d1","accepted":true,"provisional":true}""")).Provisional);
+    }
+
+    [Fact]
+    public void A_serialized_chunk_writes_its_data_last()
+    {
+        var u15 = LineFraming.EncodeLine(new FileChunkMessage("t1", 0, 5, "AAAA", 3, ChunkEncodings.U15));
+        var base64 = LineFraming.EncodeLine(new FileChunkMessage("t1", 0, 5, "AAAA"));
+
+        Assert.Equal("""{"type":"fileChunk","transferId":"t1","fileIndex":0,"offset":5,"length":3,"enc":"u15","data":"AAAA"}""" + "\n", u15);
+        Assert.Equal("""{"type":"fileChunk","transferId":"t1","fileIndex":0,"offset":5,"data":"AAAA"}""" + "\n", base64);
+    }
+
+    [Fact]
+    public void Model_names_go_both_ways()
+    {
+        Assert.Equal("utf16", ChannelByteModelNames.ToName(ChannelByteModel.Utf16));
+        Assert.Equal("oneBytePerChar", ChannelByteModelNames.ToName(ChannelByteModel.OneBytePerChar));
+        Assert.Null(ChannelByteModelNames.ToName(ChannelByteModel.Unknown));
+        Assert.Equal(ChannelByteModel.Unknown, ChannelByteModelNames.FromName(null));
+    }
 }

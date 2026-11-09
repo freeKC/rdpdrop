@@ -10,7 +10,11 @@ namespace UltimateRDP.Core.Protocol;
 /// <param name="TransferId">Identifier given by the agent in its <see cref="DragAckMessage"/>.</param>
 /// <param name="Files">Number of files that follow, folders being sent file by file.</param>
 /// <param name="Bytes">Total size of these files.</param>
-public sealed record TransferBeginMessage(string TransferId, int Files, long Bytes) : Message(MessageTypes.TransferBegin)
+/// <param name="ChunkEncoding">
+/// How the chunks of the transfer are written, one of <see cref="ChunkEncodings"/>. Null,
+/// as a client before 0.5.0 sends it, means base64.
+/// </param>
+public sealed record TransferBeginMessage(string TransferId, int Files, long Bytes, string? ChunkEncoding = null) : Message(MessageTypes.TransferBegin)
 {
     internal override bool IsValid() => !string.IsNullOrEmpty(TransferId) && Files >= 0 && Bytes >= 0;
 }
@@ -35,17 +39,27 @@ public sealed record FileBeginMessage(string TransferId, int FileIndex, string R
 
 /// <summary>
 /// Sent by the client: one piece of a file, at most <see cref="TransferSender.MaxChunkSize"/>
-/// bytes, encoded in base64. The client sends <see cref="TransferSender.DefaultChunkSize"/>
-/// bytes unless its settings say otherwise.
+/// bytes, encoded as the <c>chunkEncoding</c> of <see cref="TransferBeginMessage"/> says.
+/// The client sends <see cref="TransferSender.DefaultChunkSize"/> bytes unless its settings
+/// say otherwise. <see cref="TransferLines"/> builds and reads the line of a chunk without
+/// the serializer.
 /// </summary>
 /// <param name="TransferId">Identifier of the transfer.</param>
 /// <param name="FileIndex">Position of the file in the transfer.</param>
 /// <param name="Offset">Position of the first byte of this piece in the file.</param>
-/// <param name="Data">The bytes, in base64.</param>
-public sealed record FileChunkMessage(string TransferId, int FileIndex, long Offset, string Data) : Message(MessageTypes.FileChunk)
+/// <param name="Data">The bytes, in base64, or in the units of <see cref="U15Codec"/> when <paramref name="Enc"/> says so. Written last.</param>
+/// <param name="Length">The number of bytes, which ends the data of <see cref="ChunkEncodings.U15"/>. Not written when null, as for base64.</param>
+/// <param name="Enc">The encoding of <paramref name="Data"/>, one of <see cref="ChunkEncodings"/>. Not written when null, which means base64.</param>
+public sealed record FileChunkMessage(
+    string TransferId,
+    int FileIndex,
+    long Offset,
+    [property: System.Text.Json.Serialization.JsonPropertyOrder(1)] string Data,
+    int? Length = null,
+    string? Enc = null) : Message(MessageTypes.FileChunk)
 {
     internal override bool IsValid() =>
-        !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && Offset >= 0 && Data is not null;
+        !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && Offset >= 0 && Data is not null && Length is null or >= 0;
 }
 
 /// <summary>

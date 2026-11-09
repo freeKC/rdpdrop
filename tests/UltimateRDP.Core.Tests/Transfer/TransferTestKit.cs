@@ -147,6 +147,8 @@ internal sealed class SimulatedChannel
         }
 
         // Whatever the control does with the string, the agent gets ASCII bytes or UTF-16LE.
+        // In the one byte per character model a character above 0xFF cannot travel at all.
+        Assert.True(_model == ChannelByteModel.Utf16 || line.All(c => c <= 0xFF), "A line above 0xFF was sent in the one byte per character model.");
         var bytes = _model == ChannelByteModel.OneBytePerChar
             ? Encoding.Latin1.GetBytes(line)
             : MemoryMarshal.AsBytes(line.AsSpan()).ToArray();
@@ -195,7 +197,9 @@ internal sealed class SimulatedChannel
         _agentLines.Append(ChannelTextCodec.BytesToText(bytes.AsSpan(0, usable), _agentModel));
         while (_agentLines.TryReadLine(out var line))
         {
-            var message = MessageSerializer.Deserialize(Encoding.ASCII.GetBytes(line.Trim(['\0', ' '])));
+            // As the agent: a u15 chunk is read by hand from the string, any other line as ASCII JSON.
+            var trimmed = line.Trim(['\0', ' ']);
+            var message = TransferLines.TryParseChunk(trimmed, out var dense) ? dense : MessageSerializer.Deserialize(Encoding.ASCII.GetBytes(trimmed));
             Assert.NotNull(message);
             foreach (var reply in Agent?.Invoke(message) ?? [])
             {
@@ -213,11 +217,11 @@ internal sealed class SimulatedChannel
 /// <summary>Drives a whole transfer through a <see cref="SimulatedChannel"/>.</summary>
 internal sealed class SimulatedTransfer
 {
-    public SimulatedTransfer(ChannelByteModel model, IReadOnlyList<TransferItem> items, IReadOnlyList<(TransferFile File, byte[] Data)> files, ITransferStorage storage, int chunkSize = TransferSender.DefaultChunkSize, long windowBytes = TransferSender.DefaultWindowBytes)
+    public SimulatedTransfer(ChannelByteModel model, IReadOnlyList<TransferItem> items, IReadOnlyList<(TransferFile File, byte[] Data)> files, ITransferStorage storage, int chunkSize = TransferSender.DefaultChunkSize, long windowBytes = TransferSender.DefaultWindowBytes, string chunkEncoding = ChunkEncodings.Base64)
     {
         Files = files;
         Channel = new SimulatedChannel(model);
-        Sender = new TransferSender("t1", [.. files.Select(file => file.File)], chunkSize, windowBytes);
+        Sender = new TransferSender("t1", [.. files.Select(file => file.File)], chunkSize, windowBytes, chunkEncoding);
         Receiver = new TransferReceiver("t1", items, storage, () => Environment.TickCount64);
         Channel.Agent = message =>
         {

@@ -19,7 +19,7 @@ public class TransferSenderTests
     {
         using var sender = TwoFiles();
 
-        Assert.Equal(new TransferBeginMessage("t1", 2, (3 * Chunk) + 10), sender.Begin());
+        Assert.Equal(new TransferBeginMessage("t1", 2, (3 * Chunk) + 10, ChunkEncodings.Base64), sender.Begin());
         Assert.Equal(new FileBeginMessage("t1", 0, "a.bin", 3 * Chunk), sender.BeginFile());
         var first = Read(sender.EncodeChunk(new byte[Chunk]));
         var second = Read(sender.EncodeChunk(new byte[Chunk]));

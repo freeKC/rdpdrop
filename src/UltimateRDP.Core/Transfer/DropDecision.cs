@@ -17,7 +17,11 @@ public enum DropDecisionState
     /// <summary>The agent refused the drag: the drop is not sent.</summary>
     Refused,
 
-    /// <summary>No dragAck came within <see cref="DropDecision.MaxWait"/>: the drop goes out without a transfer.</summary>
+    /// <summary>
+    /// No final dragAck came within <see cref="DropDecision.MaxWait"/>: the drop goes out
+    /// without a transfer. <see cref="DropDecision.ProvisionalAnswer"/> tells whether the
+    /// agent answered at all.
+    /// </summary>
     TimedOut,
 
     /// <summary>The client gave the drop up before the agent answered: cancelled by the user, or the session ended.</summary>
@@ -32,7 +36,11 @@ public enum DropDecisionState
 /// otherwise, or not at all when the drag was refused.
 /// </summary>
 /// <remarks>
-/// Times are milliseconds of any steady clock. The first answer decides; later ones are
+/// A provisional dragAck (<see cref="DragAckMessage.Provisional"/>) does not decide: the
+/// agent sent it before it decided the transfer, and a final dragAck follows. The drop
+/// stays held for that one, within the same <see cref="MaxWait"/>; a drop that happens
+/// after a provisional answer is held as well (<see cref="MustHold"/>). Times are
+/// milliseconds of any steady clock. The first final answer decides; later ones are
 /// ignored. This class is not thread safe.
 /// </remarks>
 public sealed class DropDecision
@@ -42,12 +50,33 @@ public sealed class DropDecision
 
     /// <param name="dragId">The drag whose drop is held.</param>
     /// <param name="heldMilliseconds">When the local drop happened.</param>
-    public DropDecision(string dragId, long heldMilliseconds)
+    /// <param name="provisionalAnswer">True when a provisional dragAck arrived before the drop.</param>
+    public DropDecision(string dragId, long heldMilliseconds, bool provisionalAnswer = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(dragId);
         DragId = dragId;
         HeldAt = heldMilliseconds;
+        ProvisionalAnswer = provisionalAnswer;
     }
+
+    /// <summary>
+    /// True when a local drop must be held: no dragAck of its drag arrived yet
+    /// (<paramref name="lastAck"/> is null), or only a provisional one.
+    /// </summary>
+    public static bool MustHold(DragAckMessage? lastAck) => lastAck is null || !IsFinal(lastAck);
+
+    /// <summary>
+    /// True for a dragAck that decides the drop: a refusal, an accept that offers a
+    /// transfer, or an accept that is not provisional.
+    /// </summary>
+    public static bool IsFinal(DragAckMessage ack)
+    {
+        ArgumentNullException.ThrowIfNull(ack);
+        return !ack.Accepted || ack.Transfer == true || ack.Provisional != true;
+    }
+
+    /// <summary>True once a provisional dragAck of the drag arrived, before the drop or during the wait.</summary>
+    public bool ProvisionalAnswer { get; private set; }
 
     /// <summary>The drag whose drop is held.</summary>
     public string DragId { get; }
@@ -79,14 +108,20 @@ public sealed class DropDecision
 
     /// <summary>
     /// The dragAck <paramref name="ack"/> arrived at <paramref name="nowMilliseconds"/>.
-    /// Returns true when it took the decision; false when the decision was already taken
-    /// or the answer belongs to another drag.
+    /// Returns true when it took the decision; false when the decision was already taken,
+    /// the answer belongs to another drag, or it is provisional and the wait goes on.
     /// </summary>
     public bool OnAck(DragAckMessage ack, long nowMilliseconds)
     {
         ArgumentNullException.ThrowIfNull(ack);
         if (State != DropDecisionState.Waiting || ack.Id != DragId)
         {
+            return false;
+        }
+
+        if (!IsFinal(ack))
+        {
+            ProvisionalAnswer = true;
             return false;
         }
 
@@ -143,6 +178,7 @@ public sealed class DropDecision
         DropDecisionState.Transfer => $"the agent offered transfer {TransferId}, so the drop goes out deferred and the files follow through the channel",
         DropDecisionState.Plain => "the agent accepted the drag without a transfer, so the drop goes out and the files are read through drive redirection",
         DropDecisionState.Refused => "the agent refused the drag, so the drop is not sent",
+        DropDecisionState.TimedOut when ProvisionalAnswer => $"only a provisional dragAck within {(long)MaxWait.TotalMilliseconds} ms, so the drop goes out without a transfer and the files are read through drive redirection",
         DropDecisionState.TimedOut => $"no dragAck within {(long)MaxWait.TotalMilliseconds} ms, so the drop goes out without a transfer and the files are read through drive redirection",
         DropDecisionState.Abandoned => "the drop was given up before the agent answered",
         _ => "the answer of the agent is still awaited",
