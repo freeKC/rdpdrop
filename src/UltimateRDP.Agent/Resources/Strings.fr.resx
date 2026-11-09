@@ -73,6 +73,9 @@ Rien n'a été modifié.</value>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>l'agent s'arrête</value>
   </data>
+  <data name="CancelDeferred" xml:space="preserve">
+    <value>le dépôt attend le transfert des fichiers</value>
+  </data>
   <data name="CancelDropTimeout" xml:space="preserve">
     <value>le dépôt n'a pas atteint la cible à temps</value>
   </data>
@@ -249,11 +252,53 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   <data name="TooManyArguments" xml:space="preserve">
     <value>Trop d'arguments.</value>
   </data>
+  <data name="TransferBadName" xml:space="preserve">
+    <value>Le nom {0} ne peut pas être utilisé dans la session.</value>
+  </data>
+  <data name="TransferCancelled" xml:space="preserve">
+    <value>Le transfert a été annulé.</value>
+  </data>
+  <data name="TransferChecksum" xml:space="preserve">
+    <value>{0} est arrivé endommagé : sa taille ou sa somme de contrôle ne correspond pas. Réessayez.</value>
+  </data>
+  <data name="TransferDataLost" xml:space="preserve">
+    <value>Des données ont été perdues ou endommagées en chemin. Réessayez.</value>
+  </data>
+  <data name="TransferIdle" xml:space="preserve">
+    <value>Rien n'est arrivé pendant {0} secondes, le transfert a donc été arrêté.</value>
+  </data>
+  <data name="TransferIncomplete" xml:space="preserve">
+    <value>Tous les fichiers ne sont pas arrivés : {0} manque.</value>
+  </data>
+  <data name="TransferNoSpace" xml:space="preserve">
+    <value>L'espace libre dans la session est insuffisant : {0:N0} Mo nécessaires, {1:N0} Mo libres.</value>
+  </data>
+  <data name="TransferReplaced" xml:space="preserve">
+    <value>Un nouveau glisser a remplacé le transfert.</value>
+  </data>
+  <data name="TransferUnknown" xml:space="preserve">
+    <value>Aucun transfert en cours avec cet identifiant.</value>
+  </data>
+  <data name="TransferWriteFailed" xml:space="preserve">
+    <value>{0} n'a pas pu être écrit dans la session. {1}</value>
+  </data>
   <data name="TrayAbout" xml:space="preserve">
     <value>À propos</value>
   </data>
   <data name="TrayExit" xml:space="preserve">
     <value>Quitter</value>
+  </data>
+  <data name="TrayFastTransfer" xml:space="preserve">
+    <value>Transfert rapide des gros fichiers</value>
+  </data>
+  <data name="TrayFastTransferAlways" xml:space="preserve">
+    <value>Toujours</value>
+  </data>
+  <data name="TrayFastTransferAuto" xml:space="preserve">
+    <value>Automatique</value>
+  </data>
+  <data name="TrayFastTransferNever" xml:space="preserve">
+    <value>Jamais</value>
   </data>
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Ouvrir le dossier des journaux</value>

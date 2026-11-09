@@ -73,6 +73,9 @@ Non è stato modificato nulla.</value>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>l'agente si sta arrestando</value>
   </data>
+  <data name="CancelDeferred" xml:space="preserve">
+    <value>il rilascio attende il trasferimento dei file</value>
+  </data>
   <data name="CancelDropTimeout" xml:space="preserve">
     <value>il rilascio non ha raggiunto la destinazione in tempo</value>
   </data>
@@ -249,11 +252,53 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   <data name="TooManyArguments" xml:space="preserve">
     <value>Troppi argomenti.</value>
   </data>
+  <data name="TransferBadName" xml:space="preserve">
+    <value>Il nome {0} non può essere usato nella sessione.</value>
+  </data>
+  <data name="TransferCancelled" xml:space="preserve">
+    <value>Il trasferimento è stato annullato.</value>
+  </data>
+  <data name="TransferChecksum" xml:space="preserve">
+    <value>{0} è arrivato danneggiato: la dimensione o il checksum non corrisponde. Riprovare.</value>
+  </data>
+  <data name="TransferDataLost" xml:space="preserve">
+    <value>Alcuni dati sono andati persi o danneggiati lungo il percorso. Riprovare.</value>
+  </data>
+  <data name="TransferIdle" xml:space="preserve">
+    <value>Non è arrivato nulla per {0} secondi, quindi il trasferimento è stato interrotto.</value>
+  </data>
+  <data name="TransferIncomplete" xml:space="preserve">
+    <value>Non tutti i file sono arrivati: manca {0}.</value>
+  </data>
+  <data name="TransferNoSpace" xml:space="preserve">
+    <value>Non c'è abbastanza spazio libero nella sessione: servono {0:N0} MB, liberi {1:N0} MB.</value>
+  </data>
+  <data name="TransferReplaced" xml:space="preserve">
+    <value>Un nuovo trascinamento ha sostituito il trasferimento.</value>
+  </data>
+  <data name="TransferUnknown" xml:space="preserve">
+    <value>Nessun trasferimento in corso con questo identificativo.</value>
+  </data>
+  <data name="TransferWriteFailed" xml:space="preserve">
+    <value>Impossibile scrivere {0} nella sessione. {1}</value>
+  </data>
   <data name="TrayAbout" xml:space="preserve">
     <value>Informazioni</value>
   </data>
   <data name="TrayExit" xml:space="preserve">
     <value>Esci</value>
+  </data>
+  <data name="TrayFastTransfer" xml:space="preserve">
+    <value>Trasferimento rapido dei file di grandi dimensioni</value>
+  </data>
+  <data name="TrayFastTransferAlways" xml:space="preserve">
+    <value>Sempre</value>
+  </data>
+  <data name="TrayFastTransferAuto" xml:space="preserve">
+    <value>Automatico</value>
+  </data>
+  <data name="TrayFastTransferNever" xml:space="preserve">
+    <value>Mai</value>
   </data>
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Apri la cartella dei log</value>

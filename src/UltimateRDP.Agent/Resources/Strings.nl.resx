@@ -73,6 +73,9 @@ Er is niets gewijzigd.</value>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>de agent wordt gestopt</value>
   </data>
+  <data name="CancelDeferred" xml:space="preserve">
+    <value>het neerzetten wacht op de overdracht van de bestanden</value>
+  </data>
   <data name="CancelDropTimeout" xml:space="preserve">
     <value>het neerzetten heeft het doel niet op tijd bereikt</value>
   </data>
@@ -249,11 +252,53 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   <data name="TooManyArguments" xml:space="preserve">
     <value>Te veel argumenten.</value>
   </data>
+  <data name="TransferBadName" xml:space="preserve">
+    <value>De naam {0} kan in de sessie niet worden gebruikt.</value>
+  </data>
+  <data name="TransferCancelled" xml:space="preserve">
+    <value>De overdracht is geannuleerd.</value>
+  </data>
+  <data name="TransferChecksum" xml:space="preserve">
+    <value>{0} is beschadigd aangekomen: de grootte of de controlesom klopt niet. Probeer het opnieuw.</value>
+  </data>
+  <data name="TransferDataLost" xml:space="preserve">
+    <value>Er zijn onderweg gegevens verloren gegaan of beschadigd. Probeer het opnieuw.</value>
+  </data>
+  <data name="TransferIdle" xml:space="preserve">
+    <value>Er kwam {0} seconden niets binnen, daarom is de overdracht gestopt.</value>
+  </data>
+  <data name="TransferIncomplete" xml:space="preserve">
+    <value>Niet alle bestanden zijn aangekomen: {0} ontbreekt.</value>
+  </data>
+  <data name="TransferNoSpace" xml:space="preserve">
+    <value>Er is niet genoeg vrije ruimte in de sessie: {0:N0} MB nodig, {1:N0} MB vrij.</value>
+  </data>
+  <data name="TransferReplaced" xml:space="preserve">
+    <value>Een nieuwe sleepbewerking heeft de overdracht vervangen.</value>
+  </data>
+  <data name="TransferUnknown" xml:space="preserve">
+    <value>Geen overdracht bezig met deze id.</value>
+  </data>
+  <data name="TransferWriteFailed" xml:space="preserve">
+    <value>{0} kon niet in de sessie worden geschreven. {1}</value>
+  </data>
   <data name="TrayAbout" xml:space="preserve">
     <value>Info</value>
   </data>
   <data name="TrayExit" xml:space="preserve">
     <value>Afsluiten</value>
+  </data>
+  <data name="TrayFastTransfer" xml:space="preserve">
+    <value>Snelle overdracht van grote bestanden</value>
+  </data>
+  <data name="TrayFastTransferAlways" xml:space="preserve">
+    <value>Altijd</value>
+  </data>
+  <data name="TrayFastTransferAuto" xml:space="preserve">
+    <value>Automatisch</value>
+  </data>
+  <data name="TrayFastTransferNever" xml:space="preserve">
+    <value>Nooit</value>
   </data>
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Logboekmap openen</value>

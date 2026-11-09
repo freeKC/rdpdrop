@@ -78,6 +78,10 @@ Nothing was changed.</value>
     <value>the agent is stopping</value>
     <comment>Lower case: used as {0} in DragCancelledReason.</comment>
   </data>
+  <data name="CancelDeferred" xml:space="preserve">
+    <value>the drop waits for the transfer of the files</value>
+    <comment>Lower case: used as {0} in DragCancelledReason.</comment>
+  </data>
   <data name="CancelDropTimeout" xml:space="preserve">
     <value>the drop did not reach the target in time</value>
     <comment>Lower case: used as {0} in DragCancelledReason.</comment>
@@ -287,11 +291,59 @@ Keep the executable in a folder that every user can read, such as Program Files.
   <data name="TooManyArguments" xml:space="preserve">
     <value>Too many arguments.</value>
   </data>
+  <data name="TransferBadName" xml:space="preserve">
+    <value>The name {0} cannot be used in the session.</value>
+    <comment>{0} is a relative path of a file.</comment>
+  </data>
+  <data name="TransferCancelled" xml:space="preserve">
+    <value>The transfer was cancelled.</value>
+  </data>
+  <data name="TransferChecksum" xml:space="preserve">
+    <value>{0} arrived damaged: its size or checksum does not match. Try again.</value>
+    <comment>{0} is a relative path of a file.</comment>
+  </data>
+  <data name="TransferDataLost" xml:space="preserve">
+    <value>Data was lost or damaged on the way. Try again.</value>
+  </data>
+  <data name="TransferIdle" xml:space="preserve">
+    <value>Nothing arrived for {0} seconds, so the transfer was stopped.</value>
+    <comment>{0} is a number of seconds.</comment>
+  </data>
+  <data name="TransferIncomplete" xml:space="preserve">
+    <value>Not every file arrived: {0} is missing.</value>
+    <comment>{0} is the name of a dropped file.</comment>
+  </data>
+  <data name="TransferNoSpace" xml:space="preserve">
+    <value>There is not enough free space in the session: {0:N0} MB needed, {1:N0} MB free.</value>
+    <comment>{0} and {1} are numbers of megabytes.</comment>
+  </data>
+  <data name="TransferReplaced" xml:space="preserve">
+    <value>A new drag replaced the transfer.</value>
+  </data>
+  <data name="TransferUnknown" xml:space="preserve">
+    <value>No transfer in progress with this id.</value>
+  </data>
+  <data name="TransferWriteFailed" xml:space="preserve">
+    <value>{0} could not be written in the session. {1}</value>
+    <comment>{0} is a relative path of a file, {1} an error text from Windows.</comment>
+  </data>
   <data name="TrayAbout" xml:space="preserve">
     <value>About</value>
   </data>
   <data name="TrayExit" xml:space="preserve">
     <value>Exit</value>
+  </data>
+  <data name="TrayFastTransfer" xml:space="preserve">
+    <value>Fast transfer of large files</value>
+  </data>
+  <data name="TrayFastTransferAlways" xml:space="preserve">
+    <value>Always</value>
+  </data>
+  <data name="TrayFastTransferAuto" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="TrayFastTransferNever" xml:space="preserve">
+    <value>Never</value>
   </data>
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Open log folder</value>

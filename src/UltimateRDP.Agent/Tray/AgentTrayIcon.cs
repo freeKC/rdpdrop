@@ -3,6 +3,7 @@ using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
 using UltimateRDP.Agent.Settings;
+using UltimateRDP.Core.Agent;
 
 namespace UltimateRDP.Agent.Tray;
 
@@ -20,6 +21,8 @@ internal sealed class AgentTrayIcon : IDisposable
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu;
     private readonly ToolStripMenuItem _stageItem;
+    private readonly ToolStripMenuItem _fastTransferItem;
+    private readonly (ToolStripMenuItem Item, FastTransferMode Mode)[] _fastTransferModes;
 
     /// <param name="logger">The log.</param>
     /// <param name="settings">The settings changed from the menu.</param>
@@ -30,10 +33,24 @@ internal sealed class AgentTrayIcon : IDisposable
         _settings = settings;
 
         _stageItem = new ToolStripMenuItem(Strings.TrayStageFiles, null, (_, _) => ToggleStageFiles());
+        _fastTransferModes =
+        [
+            (new ToolStripMenuItem(Strings.TrayFastTransferAuto), FastTransferMode.Auto),
+            (new ToolStripMenuItem(Strings.TrayFastTransferAlways), FastTransferMode.Always),
+            (new ToolStripMenuItem(Strings.TrayFastTransferNever), FastTransferMode.Never),
+        ];
+        _fastTransferItem = new ToolStripMenuItem(Strings.TrayFastTransfer);
+        foreach (var (item, mode) in _fastTransferModes)
+        {
+            item.Click += (_, _) => SetFastTransfer(mode);
+            _fastTransferItem.DropDownItems.Add(item);
+        }
+
         _menu = new ContextMenuStrip();
         _menu.Items.AddRange(
         [
             _stageItem,
+            _fastTransferItem,
             new ToolStripSeparator(),
             new ToolStripMenuItem(Strings.TrayOpenLogFolder, null, (_, _) => OpenLogFolder()),
             new ToolStripMenuItem(Strings.TrayAbout, null, (_, _) => ShowAbout()),
@@ -70,6 +87,17 @@ internal sealed class AgentTrayIcon : IDisposable
     private void UpdateChecks()
     {
         _stageItem.Checked = _settings.StageFiles;
+        foreach (var (item, mode) in _fastTransferModes)
+        {
+            item.Checked = _settings.FastTransfer == mode;
+        }
+    }
+
+    private void SetFastTransfer(FastTransferMode mode)
+    {
+        _settings.SetFastTransfer(mode);
+        _logger.Info($"Fast transfer of large files: {FastTransferPolicy.ToSetting(mode)}.");
+        UpdateChecks();
     }
 
     private void ToggleStageFiles()

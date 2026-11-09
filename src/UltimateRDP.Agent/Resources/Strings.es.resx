@@ -73,6 +73,9 @@ No se ha cambiado nada.</value>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>el agente se está deteniendo</value>
   </data>
+  <data name="CancelDeferred" xml:space="preserve">
+    <value>la colocación espera la transferencia de los archivos</value>
+  </data>
   <data name="CancelDropTimeout" xml:space="preserve">
     <value>la colocación no llegó al destino a tiempo</value>
   </data>
@@ -249,11 +252,53 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   <data name="TooManyArguments" xml:space="preserve">
     <value>Demasiados argumentos.</value>
   </data>
+  <data name="TransferBadName" xml:space="preserve">
+    <value>El nombre {0} no se puede usar en la sesión.</value>
+  </data>
+  <data name="TransferCancelled" xml:space="preserve">
+    <value>La transferencia se canceló.</value>
+  </data>
+  <data name="TransferChecksum" xml:space="preserve">
+    <value>{0} llegó dañado: su tamaño o su suma de comprobación no coincide. Vuelva a intentarlo.</value>
+  </data>
+  <data name="TransferDataLost" xml:space="preserve">
+    <value>Se perdieron o dañaron datos por el camino. Vuelva a intentarlo.</value>
+  </data>
+  <data name="TransferIdle" xml:space="preserve">
+    <value>No llegó nada durante {0} segundos, así que la transferencia se detuvo.</value>
+  </data>
+  <data name="TransferIncomplete" xml:space="preserve">
+    <value>No llegaron todos los archivos: falta {0}.</value>
+  </data>
+  <data name="TransferNoSpace" xml:space="preserve">
+    <value>No hay suficiente espacio libre en la sesión: se necesitan {0:N0} MB y hay {1:N0} MB libres.</value>
+  </data>
+  <data name="TransferReplaced" xml:space="preserve">
+    <value>Un nuevo arrastre reemplazó la transferencia.</value>
+  </data>
+  <data name="TransferUnknown" xml:space="preserve">
+    <value>No hay ninguna transferencia en curso con este identificador.</value>
+  </data>
+  <data name="TransferWriteFailed" xml:space="preserve">
+    <value>No se pudo escribir {0} en la sesión. {1}</value>
+  </data>
   <data name="TrayAbout" xml:space="preserve">
     <value>Acerca de</value>
   </data>
   <data name="TrayExit" xml:space="preserve">
     <value>Salir</value>
+  </data>
+  <data name="TrayFastTransfer" xml:space="preserve">
+    <value>Transferencia rápida de archivos grandes</value>
+  </data>
+  <data name="TrayFastTransferAlways" xml:space="preserve">
+    <value>Siempre</value>
+  </data>
+  <data name="TrayFastTransferAuto" xml:space="preserve">
+    <value>Automático</value>
+  </data>
+  <data name="TrayFastTransferNever" xml:space="preserve">
+    <value>Nunca</value>
   </data>
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Abrir la carpeta de registros</value>

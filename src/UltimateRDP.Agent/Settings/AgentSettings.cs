@@ -18,14 +18,17 @@ internal sealed class AgentSettings
     private readonly FileLogger _logger;
     private readonly Lock _saveGate = new();
     private volatile bool _stageFiles;
+    private volatile FastTransferMode _fastTransfer;
 
-    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon)
+    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes)
     {
         _path = path;
         _logger = logger;
         LogLevel = logLevel;
         _stageFiles = stageFiles;
         TrayIcon = trayIcon;
+        _fastTransfer = fastTransfer;
+        FastTransferMinBytes = fastTransferMinBytes;
     }
 
     /// <summary>
@@ -33,6 +36,18 @@ internal sealed class AgentSettings
     /// local copies instead of the redirected drive paths. Off by default.
     /// </summary>
     public bool StageFiles => _stageFiles;
+
+    /// <summary>
+    /// "Fast transfer of large files": when the dropped files are sent through the channel
+    /// before the drop instead of being read through drive redirection. Auto by default.
+    /// </summary>
+    public FastTransferMode FastTransfer => _fastTransfer;
+
+    /// <summary>
+    /// Threshold of <see cref="FastTransferMode.Auto"/>, in bytes. 10 MiB by default. Only
+    /// editable in the file.
+    /// </summary>
+    public long FastTransferMinBytes { get; }
 
     /// <summary>Lowest level written to the log. Only editable in the file.</summary>
     public LogLevel LogLevel { get; }
@@ -62,6 +77,8 @@ internal sealed class AgentSettings
         var logLevel = LogLevel.Info;
         var stageFiles = false;
         var trayIcon = TrayIconMode.Auto;
+        var fastTransfer = FastTransferMode.Auto;
+        var fastTransferMinBytes = FastTransferPolicy.DefaultMinBytes;
         try
         {
             if (FileExists(path))
@@ -77,6 +94,24 @@ internal sealed class AgentSettings
                     {
                         logger.Warn($"The trayIcon setting \"{data.TrayIcon}\" is unknown; using \"auto\". Use \"auto\", \"always\" or \"never\".");
                     }
+
+                    fastTransfer = FastTransferPolicy.Parse(data.FastTransfer, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The fastTransfer setting \"{data.FastTransfer}\" is unknown; using \"auto\". Use \"auto\", \"always\" or \"never\".");
+                    }
+
+                    if (data.FastTransferMinBytes is { } minBytes)
+                    {
+                        if (minBytes >= 0)
+                        {
+                            fastTransferMinBytes = minBytes;
+                        }
+                        else
+                        {
+                            logger.Warn($"The fastTransferMinBytes setting {minBytes} is negative; using {FastTransferPolicy.DefaultMinBytes}.");
+                        }
+                    }
                 }
             }
         }
@@ -85,7 +120,7 @@ internal sealed class AgentSettings
             logger.Warn($"Could not read the settings file {path}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon);
+        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes);
     }
 
     /// <summary>
@@ -98,9 +133,19 @@ internal sealed class AgentSettings
         return Save();
     }
 
+    /// <summary>
+    /// Changes <see cref="FastTransfer"/> and saves the file. Returns false when the file
+    /// could not be written; the new value is used anyway until the agent exits.
+    /// </summary>
+    public bool SetFastTransfer(FastTransferMode value)
+    {
+        _fastTransfer = value;
+        return Save();
+    }
+
     /// <summary>Readable summary for the log.</summary>
     public override string ToString() =>
-        $"stage files {StageFiles}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}";
+        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}";
 
     private bool Save()
     {
@@ -109,6 +154,8 @@ internal sealed class AgentSettings
             LogLevel = LogLevel == LogLevel.Info ? null : LogLevel,
             StageFiles = StageFiles,
             TrayIcon = TrayIcon == TrayIconMode.Auto ? null : TrayIconModes.ToSetting(TrayIcon),
+            FastTransfer = FastTransfer == FastTransferMode.Auto ? null : FastTransferPolicy.ToSetting(FastTransfer),
+            FastTransferMinBytes = FastTransferMinBytes == FastTransferPolicy.DefaultMinBytes ? null : FastTransferMinBytes,
         };
 
         lock (_saveGate)
@@ -168,5 +215,11 @@ internal sealed class AgentSettings
         /// value only resets this setting and not the whole file.
         /// </summary>
         public string? TrayIcon { get; set; }
+
+        /// <summary>"auto", "always" or "never". Auto when absent. Read as text, like <see cref="TrayIcon"/>.</summary>
+        public string? FastTransfer { get; set; }
+
+        /// <summary>Threshold of the auto mode, in bytes. 10485760 when absent.</summary>
+        public long? FastTransferMinBytes { get; set; }
     }
 }

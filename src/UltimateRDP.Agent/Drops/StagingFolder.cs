@@ -1,6 +1,7 @@
 using Timer = System.Threading.Timer;
 using System.Security;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Core.Transfer;
 
 namespace UltimateRDP.Agent.Drops;
 
@@ -128,6 +129,44 @@ internal sealed class StagingFolder : IDisposable
     /// <summary>Deletes the folder of drag <paramref name="id"/> after <see cref="KeepFor"/>.</summary>
     public void ScheduleDelete(string id) => ScheduleDelete(id, KeepFor);
 
+    /// <summary>The folder of drag or transfer <paramref name="id"/>.</summary>
+    public string FolderOf(string id) => Path.Combine(_root, SafeName(id));
+
+    /// <summary>
+    /// Free bytes on the volume of the staging folder, or null when they cannot be read.
+    /// </summary>
+    public long? FreeSpace()
+    {
+        try
+        {
+            if (!Path.IsPathFullyQualified(_root) || Path.GetPathRoot(_root) is not { Length: > 0 } volume)
+            {
+                return null;
+            }
+
+            return new DriveInfo(volume).AvailableFreeSpace;
+        }
+        catch (Exception ex) when (IsFileError(ex))
+        {
+            _logger.Warn($"Cannot read the free space of the staging folder {_root}. {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Where a transfer writes its files: the folder of <paramref name="transferId"/>,
+    /// created at the first write. Nothing can be written outside of it.
+    /// </summary>
+    public ITransferStorage CreateTransferStorage(string transferId)
+    {
+        if (!Path.IsPathFullyQualified(_root))
+        {
+            throw new IOException("The folder of the user profile is unknown, so there is no staging folder.");
+        }
+
+        return new TransferStorage(this, FolderOf(transferId));
+    }
+
     /// <summary>Deletes the folder of drag <paramref name="id"/> after <paramref name="delay"/>.</summary>
     private void ScheduleDelete(string id, TimeSpan delay)
     {
@@ -217,4 +256,43 @@ internal sealed class StagingFolder : IDisposable
 
     private static bool IsFileError(Exception ex) =>
         ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or SecurityException;
+
+    /// <summary>The files of one transfer, below its folder.</summary>
+    private sealed class TransferStorage(StagingFolder owner, string folder) : ITransferStorage
+    {
+        private readonly string _prefix = Path.GetFullPath(folder).TrimEnd('\\') + "\\";
+
+        public void CreateDirectory(string relativePath) => Directory.CreateDirectory(FullPath(relativePath));
+
+        public Stream CreateFile(string relativePath)
+        {
+            var path = FullPath(relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            // The receiver writes whole chunks, so the stream needs no buffer of its own.
+            return new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read, bufferSize: 0);
+        }
+
+        public void CompleteFile(string relativePath, DateTime? modified)
+        {
+            if (modified is { } time)
+            {
+                File.SetLastWriteTimeUtc(FullPath(relativePath), DateTime.SpecifyKind(time, DateTimeKind.Utc));
+            }
+        }
+
+        public void DeleteAll() => owner.Delete(folder, "after a transfer that did not end");
+
+        /// <summary>The checked relative path below the folder; anything else is refused.</summary>
+        private string FullPath(string relativePath)
+        {
+            var path = Path.GetFullPath(Path.Combine(folder, relativePath));
+            if (!path.StartsWith(_prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new IOException($"The path {relativePath} leaves the folder of the transfer.");
+            }
+
+            return path;
+        }
+    }
 }

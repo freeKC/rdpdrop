@@ -73,6 +73,9 @@ Es wurde nichts geändert.</value>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>der Agent wird beendet</value>
   </data>
+  <data name="CancelDeferred" xml:space="preserve">
+    <value>das Ablegen wartet auf die Übertragung der Dateien</value>
+  </data>
   <data name="CancelDropTimeout" xml:space="preserve">
     <value>das Ablegen hat das Ziel nicht rechtzeitig erreicht</value>
   </data>
@@ -249,11 +252,53 @@ Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lese
   <data name="TooManyArguments" xml:space="preserve">
     <value>Zu viele Argumente.</value>
   </data>
+  <data name="TransferBadName" xml:space="preserve">
+    <value>Der Name {0} kann in der Sitzung nicht verwendet werden.</value>
+  </data>
+  <data name="TransferCancelled" xml:space="preserve">
+    <value>Die Übertragung wurde abgebrochen.</value>
+  </data>
+  <data name="TransferChecksum" xml:space="preserve">
+    <value>{0} ist beschädigt angekommen: Größe oder Prüfsumme stimmen nicht. Versuchen Sie es erneut.</value>
+  </data>
+  <data name="TransferDataLost" xml:space="preserve">
+    <value>Daten gingen unterwegs verloren oder wurden beschädigt. Versuchen Sie es erneut.</value>
+  </data>
+  <data name="TransferIdle" xml:space="preserve">
+    <value>{0} Sekunden lang kam nichts an, daher wurde die Übertragung beendet.</value>
+  </data>
+  <data name="TransferIncomplete" xml:space="preserve">
+    <value>Nicht alle Dateien sind angekommen: {0} fehlt.</value>
+  </data>
+  <data name="TransferNoSpace" xml:space="preserve">
+    <value>In der Sitzung ist nicht genug Speicherplatz frei: {0:N0} MB benötigt, {1:N0} MB frei.</value>
+  </data>
+  <data name="TransferReplaced" xml:space="preserve">
+    <value>Ein neuer Ziehvorgang hat die Übertragung ersetzt.</value>
+  </data>
+  <data name="TransferUnknown" xml:space="preserve">
+    <value>Keine laufende Übertragung mit dieser Kennung.</value>
+  </data>
+  <data name="TransferWriteFailed" xml:space="preserve">
+    <value>{0} konnte in der Sitzung nicht geschrieben werden. {1}</value>
+  </data>
   <data name="TrayAbout" xml:space="preserve">
     <value>Info</value>
   </data>
   <data name="TrayExit" xml:space="preserve">
     <value>Beenden</value>
+  </data>
+  <data name="TrayFastTransfer" xml:space="preserve">
+    <value>Schnelle Übertragung großer Dateien</value>
+  </data>
+  <data name="TrayFastTransferAlways" xml:space="preserve">
+    <value>Immer</value>
+  </data>
+  <data name="TrayFastTransferAuto" xml:space="preserve">
+    <value>Automatisch</value>
+  </data>
+  <data name="TrayFastTransferNever" xml:space="preserve">
+    <value>Nie</value>
   </data>
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Protokollordner öffnen</value>

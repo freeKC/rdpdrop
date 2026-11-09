@@ -15,6 +15,8 @@ namespace UltimateRDP.Agent.Channel;
 /// </summary>
 internal sealed class AgentProtocolHandler
 {
+    private static readonly byte[] ChunkPrefix = "{\"type\":\"fileChunk\""u8.ToArray();
+
     private readonly FileLogger _logger;
     private readonly Func<Message, bool> _send;
     private readonly DriveRedirectionProbe _probe;
@@ -41,6 +43,14 @@ internal sealed class AgentProtocolHandler
     /// <summary>Handles one line, given as its ASCII bytes.</summary>
     public void Handle(byte[] payload)
     {
+        // Chunks are most of the traffic of a transfer and carry no version: they skip the
+        // envelope, which would parse each one a second time.
+        if (payload.AsSpan().StartsWith(ChunkPrefix) && MessageSerializer.Deserialize(payload) is FileChunkMessage fastChunk)
+        {
+            _native.OnTransferMessage(fastChunk, fastChunk.TransferId);
+            return;
+        }
+
         var envelope = MessageEnvelope.TryRead(payload);
         if (envelope is null)
         {
@@ -79,6 +89,26 @@ internal sealed class AgentProtocolHandler
 
             case LogoffMessage logoff:
                 _logoff.OnLogoff(logoff);
+                break;
+
+            case TransferBeginMessage begin:
+                _native.OnTransferMessage(begin, begin.TransferId);
+                break;
+
+            case FileBeginMessage file:
+                _native.OnTransferMessage(file, file.TransferId);
+                break;
+
+            case FileChunkMessage chunk:
+                _native.OnTransferMessage(chunk, chunk.TransferId);
+                break;
+
+            case FileEndMessage end:
+                _native.OnTransferMessage(end, end.TransferId);
+                break;
+
+            case TransferCancelMessage cancel:
+                _native.OnTransferMessage(cancel, cancel.TransferId);
                 break;
 
             case null:
