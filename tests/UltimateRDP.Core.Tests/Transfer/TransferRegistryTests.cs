@@ -119,13 +119,13 @@ public class TransferRegistryTests
         registry.Offer("t1");
         var line = Chunk(0, new byte[TransferSender.MaxChunkSize]);
         var routes = new List<TransferRoute>();
-        for (var i = 0; i < 64 && (routes.Count == 0 || routes[^1] == TransferRoute.Queued); i++)
+        for (var i = 0; i < 512 && (routes.Count == 0 || routes[^1] == TransferRoute.Queued); i++)
         {
             routes.Add(registry.Route(line, "t1", out _));
         }
 
         Assert.Equal(TransferRoute.Overflow, routes[^1]);
-        Assert.True(routes.Count - 1 >= 2 * TransferSender.WindowBytes / TransferSender.MaxChunkSize, "A client that keeps to its window must never overflow.");
+        Assert.True(routes.Count - 1 >= 2 * TransferSender.MaxWindowBytes / TransferSender.MaxChunkSize, "A client that keeps to its window must never overflow.");
         Assert.Equal(TransferRoute.Late, registry.Route(line, "t1", out _));
     }
 

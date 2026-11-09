@@ -213,11 +213,11 @@ internal sealed class SimulatedChannel
 /// <summary>Drives a whole transfer through a <see cref="SimulatedChannel"/>.</summary>
 internal sealed class SimulatedTransfer
 {
-    public SimulatedTransfer(ChannelByteModel model, IReadOnlyList<TransferItem> items, IReadOnlyList<(TransferFile File, byte[] Data)> files, ITransferStorage storage, int chunkSize = TransferSender.DefaultChunkSize)
+    public SimulatedTransfer(ChannelByteModel model, IReadOnlyList<TransferItem> items, IReadOnlyList<(TransferFile File, byte[] Data)> files, ITransferStorage storage, int chunkSize = TransferSender.DefaultChunkSize, long windowBytes = TransferSender.DefaultWindowBytes)
     {
         Files = files;
         Channel = new SimulatedChannel(model);
-        Sender = new TransferSender("t1", [.. files.Select(file => file.File)], chunkSize);
+        Sender = new TransferSender("t1", [.. files.Select(file => file.File)], chunkSize, windowBytes);
         Receiver = new TransferReceiver("t1", items, storage, () => Environment.TickCount64);
         Channel.Agent = message =>
         {

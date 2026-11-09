@@ -42,7 +42,7 @@ public class TransferSenderTests
         }
 
         Assert.Equal(16, sent);
-        Assert.Equal(TransferSender.WindowBytes, sender.InFlightBytes);
+        Assert.Equal(TransferSender.DefaultWindowBytes, sender.InFlightBytes);
 
         Assert.True(sender.OnAck(new FileAckMessage("t1", 0, 2L * 1024 * 1024)));
 
@@ -67,7 +67,7 @@ public class TransferSenderTests
         Assert.Equal(TransferSender.DefaultChunkSize, sender.ChunkSize);
         Assert.Equal(128, sent);
         Assert.Equal(128, sender.ChunkLines);
-        Assert.Equal(TransferSender.WindowBytes, sender.InFlightBytes);
+        Assert.Equal(TransferSender.DefaultWindowBytes, sender.InFlightBytes);
     }
 
     [Theory]
@@ -195,5 +195,52 @@ public class TransferSenderTests
     public void Negative_sizes_are_refused()
     {
         Assert.Throws<ArgumentException>(() => new TransferSender("t1", [new TransferFile("a", -1)]));
+    }
+
+    [Fact]
+    public void A_larger_window_holds_more_chunks()
+    {
+        using var sender = new TransferSender("t1", [new TransferFile("a.bin", 64L * 1024 * 1024)], TransferSender.DefaultChunkSize, 16L * 1024 * 1024);
+        sender.Begin();
+        sender.BeginFile();
+        var chunk = new byte[TransferSender.DefaultChunkSize];
+        var sent = 0;
+        while (sender.CanSend(chunk.Length))
+        {
+            sender.EncodeChunk(chunk);
+            sent++;
+        }
+
+        Assert.Equal(16L * 1024 * 1024, sender.WindowBytes);
+        Assert.Equal(512, sent);
+    }
+
+    [Theory]
+    [InlineData(1024 * 1024, TransferSender.DefaultChunkSize, (2 * 1024 * 1024) + TransferSender.DefaultChunkSize)]
+    [InlineData(2 * 1024 * 1024, TransferSender.MaxChunkSize, (2 * 1024 * 1024) + TransferSender.MaxChunkSize)]
+    [InlineData(4 * 1024 * 1024, TransferSender.DefaultChunkSize, 4 * 1024 * 1024)]
+    [InlineData(32 * 1024 * 1024, TransferSender.MaxChunkSize, 32 * 1024 * 1024)]
+    public void A_window_below_the_acknowledgement_interval_is_raised(long requested, int chunkSize, long expected)
+    {
+        Assert.Equal(expected, TransferSender.EffectiveWindow(requested, chunkSize));
+        using var sender = new TransferSender("t1", [new TransferFile("a.bin", 1)], chunkSize, requested);
+        Assert.Equal(expected, sender.WindowBytes);
+    }
+
+    [Theory]
+    [InlineData(0, TransferSender.MinWindowBytes)]
+    [InlineData(1024 * 1024, 1024 * 1024)]
+    [InlineData(10_000_000, 10_000_000)]
+    [InlineData(64L * 1024 * 1024, TransferSender.MaxWindowBytes)]
+    public void Window_settings_are_brought_within_bounds(long setting, long expected)
+    {
+        Assert.Equal(expected, TransferSender.ClampWindowBytes(setting));
+    }
+
+    [Fact]
+    public void A_window_out_of_bounds_is_refused()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new TransferSender("t1", [new TransferFile("a", 1)], TransferSender.DefaultChunkSize, TransferSender.MinWindowBytes - 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new TransferSender("t1", [new TransferFile("a", 1)], TransferSender.DefaultChunkSize, TransferSender.MaxWindowBytes + 1));
     }
 }

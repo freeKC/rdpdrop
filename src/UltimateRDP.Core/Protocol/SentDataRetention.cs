@@ -50,6 +50,15 @@ public sealed class SentDataRetention<T>
     /// <summary>Most bytes kept.</summary>
     public long MaxRetainedBytes { get; }
 
+    /// <summary>
+    /// The limit for a transfer window of <paramref name="windowBytes"/>: four times the
+    /// window, at least <see cref="DefaultMaxRetainedBytes"/>. A byte of a file takes about
+    /// 2.7 bytes once in base64 in a string of two bytes per character, so the limit holds
+    /// the window and half as much again, and the default window of 4 MiB keeps the
+    /// default limit.
+    /// </summary>
+    public static long LimitForWindow(long windowBytes) => Math.Max(DefaultMaxRetainedBytes, 4 * Math.Max(0, windowBytes));
+
     /// <summary>Number of sends kept.</summary>
     public int Count => _entries.Count;
 

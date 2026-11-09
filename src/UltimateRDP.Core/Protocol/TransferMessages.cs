@@ -76,7 +76,7 @@ public sealed record TransferCancelMessage(string TransferId, string? Reason = n
 /// Sent by the agent while it receives a file: after the first chunk of each file, at
 /// least every <see cref="TransferReceiver.AckInterval"/> bytes and at the end of each file. The
 /// client keeps at most <see cref="TransferSender.WindowBytes"/> bytes sent and not yet
-/// acknowledged.
+/// acknowledged, 4 MiB by default.
 /// </summary>
 /// <param name="TransferId">Identifier of the transfer.</param>
 /// <param name="FileIndex">Position of the file in the transfer.</param>

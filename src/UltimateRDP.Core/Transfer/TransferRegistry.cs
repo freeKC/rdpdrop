@@ -45,10 +45,10 @@ public sealed class TransferRegistry<TTarget>
     public const int RememberedTransfers = 16;
 
     /// <summary>
-    /// Most characters of chunk data that may wait for a receiver: twice the window of the
-    /// client in base64. A client that keeps to its window never reaches it.
+    /// Most characters of chunk data that may wait for a receiver: twice the upper bound of
+    /// the window of the client in base64. A client that keeps to its window never reaches it.
     /// </summary>
-    public const long MaxQueuedCharacters = 2 * ((TransferSender.WindowBytes + TransferSender.MaxChunkSize + 2) / 3 * 4);
+    public const long MaxQueuedCharacters = 2 * ((TransferSender.MaxWindowBytes + TransferSender.MaxChunkSize + 2) / 3 * 4);
 
     private readonly Dictionary<string, Entry> _active = new(StringComparer.Ordinal);
     private readonly Queue<string> _ended = new();

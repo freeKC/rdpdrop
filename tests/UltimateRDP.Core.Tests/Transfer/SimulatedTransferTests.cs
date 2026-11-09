@@ -61,11 +61,26 @@ public class SimulatedTransferTests(ITestOutputHelper output)
 
         Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
         Assert.True(transfer.WindowWaits > 0, "The client never had to wait for an acknowledgement.");
-        Assert.True(transfer.MostInFlight <= TransferSender.WindowBytes);
-        Assert.Equal(TransferSender.WindowBytes, transfer.MostInFlight);
+        Assert.True(transfer.MostInFlight <= TransferSender.DefaultWindowBytes);
+        Assert.Equal(TransferSender.DefaultWindowBytes, transfer.MostInFlight);
 
         // One acknowledgement after the first chunk, then one per 2 MiB, and one at the end of the file.
         Assert.Equal(1 + 5 + 1, transfer.Acks);
+    }
+
+    [Theory]
+    [InlineData(1L * 1024 * 1024)]
+    [InlineData(16L * 1024 * 1024)]
+    public void Other_windows_complete_the_transfer(long window)
+    {
+        var files = new List<(TransferFile File, byte[] Data)> { SimulatedTransfer.MakeFile("big.bin", 20 * 1024 * 1024, 6) };
+        var transfer = new SimulatedTransfer(ChannelByteModel.OneBytePerChar, [new TransferItem("big.bin", false)], files, new MemoryTransferStorage(), windowBytes: window);
+
+        transfer.Run();
+
+        Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
+        Assert.Equal(transfer.Sender.WindowBytes, transfer.MostInFlight);
+        Assert.Equal(TransferSender.EffectiveWindow(window, TransferSender.DefaultChunkSize), transfer.Sender.WindowBytes);
     }
 
     [Theory]

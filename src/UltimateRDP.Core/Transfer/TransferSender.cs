@@ -40,8 +40,14 @@ public sealed class TransferSender : IDisposable
     /// </summary>
     public const int MaxChunkSize = 256 * 1024;
 
-    /// <summary>Most bytes sent and not yet acknowledged.</summary>
-    public const long WindowBytes = 4L * 1024 * 1024;
+    /// <summary>Most bytes sent and not yet acknowledged, by default: 4 MiB.</summary>
+    public const long DefaultWindowBytes = 4L * 1024 * 1024;
+
+    /// <summary>Lower bound of the window in the settings of the client: 1 MiB.</summary>
+    public const long MinWindowBytes = 1L * 1024 * 1024;
+
+    /// <summary>Upper bound of the window in the settings of the client: 32 MiB.</summary>
+    public const long MaxWindowBytes = 32L * 1024 * 1024;
 
     private readonly long[] _fileStarts;
     private IncrementalHash? _hash;
@@ -53,17 +59,24 @@ public sealed class TransferSender : IDisposable
     /// <param name="transferId">Identifier given by the agent.</param>
     /// <param name="files">The files, in the order they are sent.</param>
     /// <param name="chunkSize">Raw bytes per chunk, from <see cref="MinChunkSize"/> to <see cref="MaxChunkSize"/>.</param>
+    /// <param name="windowBytes">
+    /// Most bytes sent and not yet acknowledged, from <see cref="MinWindowBytes"/> to
+    /// <see cref="MaxWindowBytes"/>; see <see cref="EffectiveWindow"/> for the window used.
+    /// </param>
     /// <exception cref="ArgumentException">A size is negative, or the total does not fit.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">The chunk size is out of its bounds.</exception>
-    public TransferSender(string transferId, IReadOnlyList<TransferFile> files, int chunkSize = DefaultChunkSize)
+    /// <exception cref="ArgumentOutOfRangeException">The chunk size or the window is out of its bounds.</exception>
+    public TransferSender(string transferId, IReadOnlyList<TransferFile> files, int chunkSize = DefaultChunkSize, long windowBytes = DefaultWindowBytes)
     {
         ArgumentException.ThrowIfNullOrEmpty(transferId);
         ArgumentNullException.ThrowIfNull(files);
         ArgumentOutOfRangeException.ThrowIfLessThan(chunkSize, MinChunkSize);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(chunkSize, MaxChunkSize);
+        ArgumentOutOfRangeException.ThrowIfLessThan(windowBytes, MinWindowBytes);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBytes, MaxWindowBytes);
         TransferId = transferId;
         Files = files;
         ChunkSize = chunkSize;
+        WindowBytes = EffectiveWindow(windowBytes, chunkSize);
         _fileStarts = new long[files.Count + 1];
         for (var i = 0; i < files.Count; i++)
         {
@@ -84,6 +97,9 @@ public sealed class TransferSender : IDisposable
 
     /// <summary>Most raw bytes in one <c>fileChunk</c>.</summary>
     public int ChunkSize { get; }
+
+    /// <summary>Most bytes sent and not yet acknowledged, as <see cref="EffectiveWindow"/> gives it.</summary>
+    public long WindowBytes { get; }
 
     /// <summary>Number of <c>fileChunk</c> lines built so far.</summary>
     public int ChunkLines { get; private set; }
@@ -186,6 +202,22 @@ public sealed class TransferSender : IDisposable
     /// <see cref="MaxChunkSize"/>.
     /// </summary>
     public static int ClampChunkSize(int bytes) => Math.Clamp(bytes, MinChunkSize, MaxChunkSize);
+
+    /// <summary>
+    /// A window from the settings, brought within <see cref="MinWindowBytes"/> and
+    /// <see cref="MaxWindowBytes"/>.
+    /// </summary>
+    public static long ClampWindowBytes(long bytes) => Math.Clamp(bytes, MinWindowBytes, MaxWindowBytes);
+
+    /// <summary>
+    /// The window used for <paramref name="requestedBytes"/> and chunks of
+    /// <paramref name="chunkSize"/> bytes: the request, raised to
+    /// <see cref="TransferReceiver.AckInterval"/> plus one chunk when it is smaller. The
+    /// agent acknowledges every <see cref="TransferReceiver.AckInterval"/> bytes; a smaller
+    /// window would wait for an acknowledgement that never comes.
+    /// </summary>
+    public static long EffectiveWindow(long requestedBytes, int chunkSize) =>
+        Math.Max(requestedBytes, TransferReceiver.AckInterval + Math.Max(0, chunkSize));
 
     /// <summary>Ends the open file, with its checksum.</summary>
     /// <exception cref="InvalidOperationException">No file is open, or fewer bytes than announced were sent.</exception>

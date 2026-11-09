@@ -96,4 +96,13 @@ public class SentDataRetentionTests
         Assert.Equal(0, retention.Count);
         Assert.Equal(0, retention.RetainedBytes);
     }
+
+    [Theory]
+    [InlineData(4L * 1024 * 1024, SentDataRetention<int>.DefaultMaxRetainedBytes)]
+    [InlineData(1L * 1024 * 1024, SentDataRetention<int>.DefaultMaxRetainedBytes)]
+    [InlineData(32L * 1024 * 1024, 128L * 1024 * 1024)]
+    public void The_limit_follows_the_window(long window, long expected)
+    {
+        Assert.Equal(expected, SentDataRetention<int>.LimitForWindow(window));
+    }
 }
