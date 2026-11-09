@@ -202,6 +202,51 @@ public class SimulatedTransferTests(ITestOutputHelper output)
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(60), $"100 MB took {watch.Elapsed.TotalSeconds:0.0} s.");
     }
 
+    /// <summary>
+    /// The first failure seen in production, replayed through the whole codec path: the
+    /// agent handles the deferred drop, and creates the receiver, only after transferBegin,
+    /// fileBegin and the first chunks arrived. They wait in the registry and the transfer
+    /// succeeds.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Models))]
+    public void Messages_that_arrive_before_the_deferred_drop_is_handled_are_not_lost(ChannelByteModel model)
+    {
+        var storage = new MemoryTransferStorage();
+        var files = new List<(TransferFile File, byte[] Data)> { SimulatedTransfer.MakeFile("a.psd", (5 * 1024 * 1024) + 3, 11) };
+        var transfer = new SimulatedTransfer(model, [new TransferItem("a.psd", false)], files, storage);
+        var deliver = transfer.Channel.Agent!;
+        var registry = new TransferRegistry<TransferReceiver>();
+        registry.Offer("t1");
+        var queuedAtAttach = 0;
+        transfer.Channel.Agent = message =>
+        {
+            var route = registry.Route(message, "t1", out var receiver);
+            if (route == TransferRoute.Deliver)
+            {
+                Assert.Same(transfer.Receiver, receiver);
+                return deliver(message);
+            }
+
+            Assert.Equal(TransferRoute.Queued, route);
+            if (registry.QueuedCount("t1") < 5)
+            {
+                return [];
+            }
+
+            // The deferred drop is handled now.
+            var waiting = registry.Attach("t1", transfer.Receiver);
+            queuedAtAttach = waiting.Count;
+            return [.. waiting.SelectMany(deliver)];
+        };
+
+        transfer.Run();
+
+        Assert.Equal(5, queuedAtAttach);
+        Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
+        Assert.Equal(files[0].Data, storage.Content("a.psd"));
+    }
+
     [Fact]
     public void The_checksum_is_the_sha256_of_the_file()
     {

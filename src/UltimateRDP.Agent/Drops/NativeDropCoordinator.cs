@@ -23,7 +23,9 @@ namespace UltimateRDP.Agent.Drops;
 /// transfer the files through the channel. The live drag then runs as usual over the
 /// redirected paths; the deferred <c>drop</c> cancels it and remembers the point, a
 /// <see cref="StagedTransfer"/> receives the files, and once they all arrived a short
-/// drag drops the copies at that point and the usual <c>dropResult</c> follows.
+/// drag drops the copies at that point and the usual <c>dropResult</c> follows. The
+/// transfer is registered before the <c>dragAck</c> that offers it goes out: its messages
+/// that arrive before the deferred drop wait for it instead of being lost.
 /// </remarks>
 internal sealed class NativeDropCoordinator : IDisposable
 {
@@ -47,7 +49,7 @@ internal sealed class NativeDropCoordinator : IDisposable
     private readonly Lock _gate = new();
     private readonly Queue<string> _endedOrder = new();
     private readonly Dictionary<string, LocalText> _ended = [];
-    private readonly Queue<string> _endedTransfers = new();
+    private readonly TransferRegistry<StagedTransfer> _transfers = new();
     private NativeDrag? _current;
 
     public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging, ClientLanguage language)
@@ -221,30 +223,40 @@ internal sealed class NativeDropCoordinator : IDisposable
     /// </summary>
     public void OnTransferMessage(Message message, string transferId)
     {
+        TransferRoute route;
         StagedTransfer? transfer;
-        bool known;
+        int queued;
         lock (_gate)
         {
-            transfer = _current?.Transfer is { } current && current.TransferId == transferId ? current : null;
-            known = _endedTransfers.Contains(transferId);
-            if (transfer is null && !known)
-            {
-                RememberTransfer(transferId);
-            }
+            route = _transfers.Route(message, transferId, out transfer);
+            queued = route == TransferRoute.Queued ? _transfers.QueuedCount(transferId) : 0;
         }
 
-        if (transfer is not null)
+        switch (route)
         {
-            transfer.Handle(message);
-            return;
-        }
+            case TransferRoute.Deliver:
+                transfer!.Handle(message);
+                break;
 
-        // The chunks still on their way after the end of a transfer are dropped quietly;
-        // a transfer that this agent never started gets one answer.
-        if (!known)
-        {
-            _logger.Warn($"Transfer {transferId}: {message.Type} ignored, no such transfer.");
-            _send(new TransferResultMessage(transferId, DropStatus.Error, ForClient(LocalText.Of(nameof(Strings.TransferUnknown)))));
+            case TransferRoute.Queued when queued == 1:
+                _logger.Info($"Transfer {transferId}: {message.Type} arrived before the deferred drop was handled; the messages of the transfer wait for it.");
+                break;
+
+            case TransferRoute.Queued:
+            case TransferRoute.Late:
+                // The chunks still on their way after the end of a transfer are dropped quietly.
+                break;
+
+            case TransferRoute.Overflow:
+                _logger.Warn($"Transfer {transferId}: more than {TransferRegistry<StagedTransfer>.MaxQueuedCharacters} characters arrived before the deferred drop; the transfer stops.");
+                _send(new TransferResultMessage(transferId, DropStatus.Error, ForClient(LocalText.Of(nameof(Strings.TransferDataLost)))));
+                break;
+
+            default:
+                // A transfer that this agent never offered gets one answer.
+                _logger.Warn($"Transfer {transferId}: {message.Type} ignored, no such transfer.");
+                _send(new TransferResultMessage(transferId, DropStatus.Error, ForClient(LocalText.Of(nameof(Strings.TransferUnknown)))));
+                break;
         }
     }
 
@@ -548,11 +560,18 @@ internal sealed class NativeDropCoordinator : IDisposable
     /// <summary>A text for the client, in its language; null stays null.</summary>
     private string? ForClient(LocalText? text) => text?.In(_language.Culture);
 
-    /// <summary>Clears the drag if it is the current one and remembers why it ended, for a late drop.</summary>
+    /// <summary>
+    /// Clears the drag if it is the current one and remembers why it ended, for a late drop.
+    /// A transfer it offered and never received is withdrawn; if the client had already
+    /// started it, the client is told that it stopped.
+    /// </summary>
     private void Forget(NativeDrag drag, LocalText reason)
     {
+        var withdrawn = false;
+        string? transferId;
         lock (_gate)
         {
+            transferId = drag.TransferId;
             if (_current == drag)
             {
                 _current = null;
@@ -566,6 +585,19 @@ internal sealed class NativeDropCoordinator : IDisposable
                     _ended.Remove(_endedOrder.Dequeue());
                 }
             }
+
+            if (transferId is not null && drag.Transfer is null && _transfers.Withdraw(transferId))
+            {
+                // The result below answers the client; its later messages are dropped quietly.
+                _transfers.End(transferId);
+                withdrawn = true;
+            }
+        }
+
+        if (withdrawn)
+        {
+            _logger.Info($"Transfer {transferId}: the drag ended before the deferred drop ({reason}); the messages that arrived for it are dropped.");
+            _send(new TransferResultMessage(transferId!, DropStatus.Error, ForClient(reason)));
         }
     }
 
@@ -599,9 +631,16 @@ internal sealed class NativeDropCoordinator : IDisposable
             return LocalText.Of(nameof(Strings.TransferNoSpace), StagedTransfer.Megabytes(required), StagedTransfer.Megabytes(available));
         }
 
-        // The items first: whoever sees the id sees the items too.
+        // The items first: whoever sees the id sees the items too. The transfer is
+        // registered before any dragAck can offer it, so that none of its messages is lost.
         drag.TransferItems = transferItems;
-        drag.TransferId = Guid.NewGuid().ToString("N");
+        var transferId = Guid.NewGuid().ToString("N");
+        lock (_gate)
+        {
+            _transfers.Offer(transferId);
+            drag.TransferId = transferId;
+        }
+
         _logger.Info($"Drag {drag.Id}: {total} bytes in {items.Count} item(s), fast transfer {FastTransferPolicy.ToSetting(_settings.FastTransfer)} from {_settings.FastTransferMinBytes} bytes: the files come through the channel as transfer {drag.TransferId}.");
         return null;
     }
@@ -635,7 +674,7 @@ internal sealed class NativeDropCoordinator : IDisposable
             var reason = LocalText.Of(nameof(Strings.UnexpectedError), ex.Message);
             lock (_gate)
             {
-                RememberTransfer(transferId);
+                _transfers.End(transferId);
             }
 
             drag.Session?.Cancel(reason);
@@ -655,6 +694,34 @@ internal sealed class NativeDropCoordinator : IDisposable
         }
 
         session?.Cancel(LocalText.Of(nameof(Strings.CancelDeferred)));
+
+        // The messages of the transfer that came before this drop now go to the receiver, in
+        // their order, before any later one: both run on the channel thread.
+        IReadOnlyList<Message>? waiting = null;
+        lock (_gate)
+        {
+            if (_transfers.IsOffered(transferId))
+            {
+                waiting = _transfers.Attach(transferId, transfer);
+            }
+        }
+
+        if (waiting is null)
+        {
+            _logger.Warn($"Drag {drag.Id}: transfer {transferId} was withdrawn before the deferred drop.");
+            transfer.Cancel(LocalText.Of(nameof(Strings.DragCancelled)));
+            return;
+        }
+
+        if (waiting.Count > 0)
+        {
+            _logger.Info($"Transfer {transferId}: handing over {waiting.Count} message(s) that arrived before the deferred drop.");
+        }
+
+        foreach (var message in waiting)
+        {
+            transfer.Handle(message);
+        }
     }
 
     /// <summary>
@@ -666,7 +733,7 @@ internal sealed class NativeDropCoordinator : IDisposable
     {
         lock (_gate)
         {
-            RememberTransfer(transfer.TransferId);
+            _transfers.End(transfer.TransferId);
         }
 
         if (!succeeded)
@@ -734,21 +801,6 @@ internal sealed class NativeDropCoordinator : IDisposable
         _staging.ScheduleDelete(transfer.TransferId);
         Forget(drag, reason);
         _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: ForClient(reason), Effect: DropEffect.None));
-    }
-
-    /// <summary>Remembers a transfer that ended, so that its late messages are dropped quietly. Under the lock.</summary>
-    private void RememberTransfer(string transferId)
-    {
-        if (_endedTransfers.Contains(transferId))
-        {
-            return;
-        }
-
-        _endedTransfers.Enqueue(transferId);
-        while (_endedTransfers.Count > RememberedDrags)
-        {
-            _endedTransfers.Dequeue();
-        }
     }
 
     /// <summary>State of one drag, shared by the channel, preparation and drag threads.</summary>
