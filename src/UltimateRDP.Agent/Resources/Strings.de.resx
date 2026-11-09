@@ -55,6 +55,9 @@
 
 {0}</value>
   </data>
+  <data name="AgentNotRunning" xml:space="preserve">
+    <value>In dieser Sitzung lief kein Agent.</value>
+  </data>
   <data name="AgentStillRunning" xml:space="preserve">
     <value>Der Agent läuft noch; beenden Sie ihn über sein Menü im Infobereich.</value>
   </data>

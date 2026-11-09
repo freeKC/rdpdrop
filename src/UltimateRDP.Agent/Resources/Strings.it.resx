@@ -55,6 +55,9 @@
 
 {0}</value>
   </data>
+  <data name="AgentNotRunning" xml:space="preserve">
+    <value>Nessun agente era in esecuzione in questa sessione.</value>
+  </data>
   <data name="AgentStillRunning" xml:space="preserve">
     <value>L'agente è ancora in esecuzione; chiudilo dal suo menu nell'area di notifica.</value>
   </data>

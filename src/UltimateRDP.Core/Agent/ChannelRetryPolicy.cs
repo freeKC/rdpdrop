@@ -7,7 +7,10 @@ namespace UltimateRDP.Core.Agent;
 /// <param name="IsRemoteSession">True when the session is a Remote Desktop session (SM_REMOTESESSION).</param>
 /// <param name="IsSessionDisconnected">True when the session has no client at the moment.</param>
 /// <param name="OpenError">Win32 error of the failed open, or zero when the channel was open and closed.</param>
-/// <param name="ConsecutiveFailures">Failed opens in a row, this one included; zero after a closed channel.</param>
+/// <param name="ConsecutiveFailures">
+/// Failed opens in a row, this one included. After a closed channel, zero when a client
+/// spoke on it, otherwise the number of channels in a row that closed before a client spoke.
+/// </param>
 /// <param name="SinceConnect">
 /// Time since the agent started or since the session was last connected or logged on.
 /// </param>

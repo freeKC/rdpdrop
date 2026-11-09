@@ -81,6 +81,25 @@ public class ChannelRetryPolicyTests
         Assert.Equal(ChannelRetryPolicy.ShortDelay, ChannelRetryPolicy.NextDelay(Attempt(error: 0, failures: 0)));
     }
 
+    [Theory]
+    [InlineData(1, 2)]
+    [InlineData(2, 2)]
+    [InlineData(3, 10)]
+    public void Channels_that_close_before_a_client_spoke_wait_long_when_they_repeat(int silentChannels, int expectedSeconds)
+    {
+        var attempt = Attempt(error: 0, failures: silentChannels);
+
+        Assert.Equal(TimeSpan.FromSeconds(expectedSeconds), ChannelRetryPolicy.NextDelay(attempt));
+    }
+
+    [Fact]
+    public void Channels_that_close_before_a_client_spoke_wait_short_just_after_a_connection()
+    {
+        var attempt = Attempt(error: 0, failures: 5, sinceConnect: TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ChannelRetryPolicy.ShortDelay, ChannelRetryPolicy.NextDelay(attempt));
+    }
+
     [Fact]
     public void No_attempt_ever_waits_less_than_two_seconds()
     {

@@ -58,6 +58,9 @@
 {0}</value>
     <comment>{0} is the project address.</comment>
   </data>
+  <data name="AgentNotRunning" xml:space="preserve">
+    <value>No agent was running in this session.</value>
+  </data>
   <data name="AgentStillRunning" xml:space="preserve">
     <value>The agent is still running; exit it from its tray menu.</value>
   </data>

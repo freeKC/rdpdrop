@@ -181,6 +181,7 @@ internal static class Program
 
         logger.Info($"Installed for the current user: {StartupRegistration.Command}.");
         CommandLineOutput.Info(Strings.InstalledForUser, showBoxWithoutConsole: false);
+        CommandLineOutput.DetachFromParentConsole();
         return Run(logger);
     }
 
@@ -308,7 +309,18 @@ internal static class Program
             }
         }
 
-        messages.Add(StopRunningInstance() ? LocalText.Of(nameof(Strings.AgentStopped)) : LocalText.Of(nameof(Strings.AgentStillRunning)));
+        var stop = StopRunningInstance();
+        if (stop == StopResult.StillRunning)
+        {
+            exitCode = 1;
+        }
+
+        messages.Add(stop switch
+        {
+            StopResult.NotRunning => LocalText.Of(nameof(Strings.AgentNotRunning)),
+            StopResult.Stopped => LocalText.Of(nameof(Strings.AgentStopped)),
+            _ => LocalText.Of(nameof(Strings.AgentStillRunning)),
+        });
         logger.Info("Uninstall: " + string.Join(" ", messages));
 
         var text = string.Join("\n", messages.Select(message => message.ForUser()));
@@ -327,14 +339,22 @@ internal static class Program
     private static string RunKey(string root) => root + "\\" + AgentInfo.RunKeyPath;
 
     /// <summary>
-    /// Asks the agent running in this session to exit and waits for it. Returns true
-    /// when no agent runs any more.
+    /// Asks the agent running in this session to exit and waits for it.
     /// </summary>
-    private static bool StopRunningInstance()
+    private static StopResult StopRunningInstance()
     {
-        if (!Mutex.TryOpenExisting(AgentInfo.InstanceMutexName, out var mutex))
+        Mutex? mutex;
+        try
         {
-            return true;
+            if (!Mutex.TryOpenExisting(AgentInfo.InstanceMutexName, out mutex))
+            {
+                return StopResult.NotRunning;
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // It exists, but belongs to someone else.
+            return StopResult.StillRunning;
         }
 
         using (mutex)
@@ -351,7 +371,7 @@ internal static class Program
             {
                 if (!mutex.WaitOne(StopTimeout))
                 {
-                    return false;
+                    return StopResult.StillRunning;
                 }
             }
             catch (AbandonedMutexException)
@@ -360,7 +380,14 @@ internal static class Program
             }
 
             mutex.ReleaseMutex();
-            return true;
+            return StopResult.Stopped;
         }
+    }
+
+    private enum StopResult
+    {
+        NotRunning,
+        Stopped,
+        StillRunning,
     }
 }

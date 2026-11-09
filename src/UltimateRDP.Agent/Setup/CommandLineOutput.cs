@@ -10,10 +10,25 @@ namespace UltimateRDP.Agent.Setup;
 internal static class CommandLineOutput
 {
     private static bool? _hasConsole;
+    private static bool _attachedToParent;
 
     public static void Info(string text, bool showBoxWithoutConsole = true) => Show(text, isError: false, showBoxWithoutConsole);
 
     public static void Error(string text) => Show(text, isError: true, showBoxWithoutConsole: true);
+
+    /// <summary>
+    /// Leaves the console of the parent process, when the output was written there. The
+    /// agent that keeps running after --install must not end when that console is closed
+    /// or receives Ctrl+C.
+    /// </summary>
+    public static void DetachFromParentConsole()
+    {
+        if (_attachedToParent)
+        {
+            _attachedToParent = false;
+            Kernel32.FreeConsole();
+        }
+    }
 
     private static void Show(string text, bool isError, bool showBoxWithoutConsole)
     {
@@ -43,6 +58,7 @@ internal static class CommandLineOutput
         if (!hasOutput && Kernel32.AttachConsole(Kernel32.AttachParentProcess))
         {
             hasOutput = true;
+            _attachedToParent = true;
 
             // The prompt of the parent shell is already printed; start on a new line.
             Console.WriteLine();

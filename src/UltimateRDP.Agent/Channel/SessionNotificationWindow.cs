@@ -100,11 +100,26 @@ internal sealed class SessionNotificationWindow : NativeWindow, IDisposable
         base.WndProc(ref m);
     }
 
+    /// <summary>
+    /// An error in the window procedure. NativeWindow catches it and calls this method,
+    /// which does nothing by default, so without this override the error would be lost.
+    /// </summary>
+    protected override void OnThreadException(Exception e) =>
+        _logger.Error("Unexpected error in the session window; the agent goes on.", e);
+
+    /// <summary>Runs the posted actions. An error in one is logged and the others still run.</summary>
     private void RunPosted()
     {
         while (_posted.TryDequeue(out var action))
         {
-            action();
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Unexpected error in an action of the UI thread; the agent goes on.", ex);
+            }
         }
     }
 

@@ -19,6 +19,11 @@ internal static partial class Kernel32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool AttachConsole(int dwProcessId);
 
+    /// <summary>Detaches the process from its console. Returns false when it has none.</summary>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool FreeConsole();
+
     /// <summary>Returns a standard handle; zero or -1 when the process has none.</summary>
     [LibraryImport("kernel32.dll", SetLastError = true)]
     public static partial IntPtr GetStdHandle(int nStdHandle);

@@ -49,6 +49,11 @@ internal sealed class ChannelLoop : IDisposable
     private VirtualChannel? _channel;
     private long _connectedAtTicks = Environment.TickCount64;
     private int _consecutiveFailures;
+
+    // Channels in a row that opened and closed before a client spoke on them. They count
+    // as failures for the wait, and their open and close lines go to the debug level once
+    // they repeat, so that a channel that opens but never works cannot fill the log.
+    private int _silentChannels;
     private bool _exitRaised;
     private bool _clientPresent;
     private volatile bool _stopping;
@@ -223,7 +228,7 @@ internal sealed class ChannelLoop : IDisposable
         {
             if (!_stopping)
             {
-                _logger.Info($"The {ProtocolConstants.ChannelName} virtual channel closed. {ex.Message}.");
+                _logger.Write(ChannelLineLevel(), $"The {ProtocolConstants.ChannelName} virtual channel closed. {ex.Message}.");
             }
         }
         catch (Exception ex)
@@ -237,8 +242,19 @@ internal sealed class ChannelLoop : IDisposable
             SetClientPresent(false);
         }
 
-        return ChannelRetryPolicy.NextDelay(attempt with { OpenError = 0, ConsecutiveFailures = 0 });
+        if (_model != ChannelByteModel.Unknown)
+        {
+            _silentChannels = 0;
+            return ChannelRetryPolicy.NextDelay(attempt with { OpenError = 0, ConsecutiveFailures = 0 });
+        }
+
+        _silentChannels++;
+        return ChannelRetryPolicy.NextDelay(attempt with { OpenError = 0, ConsecutiveFailures = _silentChannels });
     }
+
+    /// <summary>Level of the open and close lines: debug once silent channels repeat.</summary>
+    private LogLevel ChannelLineLevel() =>
+        _silentChannels >= ChannelRetryPolicy.FailuresBeforeLongDelay ? LogLevel.Debug : LogLevel.Info;
 
     /// <summary>Waits for the delay, a wake up, or the exit event.</summary>
     private void Wait(TimeSpan delay)
@@ -278,7 +294,7 @@ internal sealed class ChannelLoop : IDisposable
         _lineReader.Reset();
         _model = ChannelByteModel.Unknown;
         Volatile.Write(ref _channel, channel);
-        _logger.Info($"The {ProtocolConstants.ChannelName} virtual channel is open.");
+        _logger.Write(ChannelLineLevel(), $"The {ProtocolConstants.ChannelName} virtual channel is open.");
         return channel;
     }
 
@@ -366,6 +382,7 @@ internal sealed class ChannelLoop : IDisposable
             if (_model == ChannelByteModel.Unknown && _decoder.Model != ChannelByteModel.Unknown)
             {
                 _model = _decoder.Model;
+                _silentChannels = 0;
                 _logger.Info($"Channel byte model: {_model}.");
                 SetClientPresent(true);
             }
