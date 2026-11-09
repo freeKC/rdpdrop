@@ -456,7 +456,8 @@ the fallback for anything missing.
   redirected, removable drive unplugged): the agent refuses the drag and names
   the item.
 * No `dragAck` within a second: the client shows "The agent did not
-  acknowledge the drag", sends `dragLeave` and refuses the drop.
+  acknowledge the drag", sends `dragLeave` and refuses the drop. Since
+  0.4.1 it also starts a new agent discovery, see "Version 0.4.1".
 * No message from the client for five seconds during a drag: the agent
   cancels the drag in the session. The watchdog stops once the client
   dropped.
@@ -759,14 +760,22 @@ Flow:
    the items through drive redirection and starts the live drag over the
    `\\tsclient` paths. Its accepted `dragAck` carries `transfer: true` and a
    new `transferId`. When a provisional `dragAck` went out before the
-   decision, the agent sends a second accepted one that carries them.
+   decision, the agent sends a second accepted one that carries them. The
+   agent registers the transfer as offered before any `dragAck` carries the
+   id (`TransferRegistry` in Core): from then on, a message of the transfer
+   that arrives before the deferred drop was handled waits in a queue instead
+   of being lost, whatever the timing.
 2. The drag over the session goes on as today: live cursor, feedback from the
    target.
 3. On the local drop the client sends `drop` with the point and
    `deferred: true`. The agent cancels the live drag (the button is released,
    nothing is dropped), keeps the point and creates the receiver of the
-   transfer. A client that drops before the `dragAck` arrived sends a normal
-   `drop`, and the files are dropped through drive redirection as before.
+   transfer, which first handles the queued messages, in their order. A
+   client that drops before the `dragAck` arrived sends a normal `drop`, and
+   the files are dropped through drive redirection as before. When the drag
+   ends without a deferred drop, the offer is withdrawn; if messages of the
+   transfer were already waiting, the agent answers with an `error`
+   `transferResult` that gives the reason the drag ended.
 4. The client sends the files into
    `%LOCALAPPDATA%\UltimateRDP\staging\<transferId>\` on the agent, with the
    messages below.
@@ -793,10 +802,15 @@ Messages, client to agent:
   files follow with their paths in the folder. `modified` is the last write
   time in UTC, which the copy keeps.
 * `fileChunk` : `{ "type": "fileChunk", "transferId": "<guid>",
-  "fileIndex": 0, "offset": 262144, "data": "<base64>" }`, at most 256 KiB of
-  raw bytes, about 350 000 characters of base64, within the line limit of
-  1 MiB. The base64 stays inside the JSON string, so the ASCII line protocol
-  is unchanged.
+  "fileIndex": 0, "offset": 32768, "data": "<base64>" }`. The client sends
+  32 KiB of raw bytes per chunk by default, about 44 000 characters of
+  base64, so that one line stays small on the wire in both byte models
+  (about 88 KB in the UTF-16 model). Its setting `transferChunkBytes` in
+  `client.json` changes the size, from 4 KiB to 256 KiB; a value outside
+  these bounds is brought back within them. The agent accepts any chunk up
+  to 256 KiB, about 350 000 characters, within the line limit of 1 MiB. The
+  base64 stays inside the JSON string, so the ASCII line protocol is
+  unchanged.
 * `fileEnd` : `{ "type": "fileEnd", "transferId": "<guid>", "fileIndex": 0,
   "sha256": "<64 hexadecimal digits in lower case>" }`.
 * `transferCancel` : `{ "type": "transferCancel", "transferId": "<guid>",
@@ -807,7 +821,8 @@ Messages, agent to client:
 
 * `fileAck` : `{ "type": "fileAck", "transferId": "<guid>", "fileIndex": 0,
   "received": 2097152 }`, the bytes of the file received and written so far,
-  sent every time 2 MiB more arrived and at the end of each file.
+  sent after the first chunk of each file, every time 2 MiB more arrived,
+  and at the end of each file.
 * `transferResult` : `{ "type": "transferResult", "transferId": "<guid>",
   "status": "ok" | "error" | "cancelled", "message": "text", "bytes": 157286400,
   "seconds": 16.2 }`, with the time measured by the agent from
@@ -829,8 +844,10 @@ Flow control and checks:
   `dragEnter` cancels the transfer in progress, as it cancels a drag. When
   the agent exits, it cancels the transfer.
 * After the end of a transfer, the chunks still on their way are dropped
-  without an answer. A message for a transfer the agent never started gets
-  one `error` result.
+  without an answer. A message for a transfer the agent never offered gets
+  one `error` result. The queue of an offered transfer holds at most twice
+  the window of the client in base64; beyond that the transfer stops with an
+  `error` result, which a client that keeps to its window never meets.
 
 Client:
 
@@ -850,9 +867,17 @@ Client:
 * Session, Cancel the transfer is enabled during a transfer. It stops the
   thread, sends `transferCancel` and shows "Transfer cancelled.". A file that
   cannot be read, a file whose length changed since it was listed ("changed
-  while it was being sent. Try again."), a send that the control refuses, or
-  no acknowledgement for 60 seconds while the window is full or after the
-  last file also send `transferCancel`, with the reason in the status bar.
+  while it was being sent. Try again."), a send that the control refuses, no
+  acknowledgement 10 seconds after the first chunk of the transfer went out
+  ("The agent did not acknowledge the first data of the transfer."), or no
+  acknowledgement for 60 seconds while the window is full or after the last
+  file ("The agent stopped answering during the transfer.") also send
+  `transferCancel`, with the reason in the status bar. The rules are
+  `TransferAckWatch` in Core. After a missing acknowledgement the client
+  logs the byte model detected on the data it receives, the chunk size, the
+  length of the longest chunk line, the number of chunk lines sent and the
+  bytes in flight, then looks for the agent again with a hello, which tells
+  whether short messages still get through.
 * One transfer at a time: while one runs, a new drag over the session is
   refused with "A transfer is in progress. Wait for its end, or cancel it
   from the Session menu."
@@ -860,8 +885,11 @@ Client:
   disconnected." The agent deletes what it received after 60 seconds without
   data.
 * The log of each side gets one line at the start and a summary at the end
-  (files, bytes, seconds, MB/s), and nothing per chunk. The client no longer
-  logs the strings it receives when they only hold acknowledgements.
+  (files, bytes, seconds, MB/s). Beyond that, the client logs the length of
+  the first chunk line it sends, and the agent logs the first chunk it
+  receives of each file, with its size; nothing else per chunk. The client
+  no longer logs the strings it receives when they only hold
+  acknowledgements.
 
 Limits:
 
@@ -879,11 +907,65 @@ Limits:
 
 Measured without a server, in the tests: 100 MB go through the whole codec
 path (chunk lines, channel bytes in blocks of 1600, model detection, line
-reader, JSON, base64, checksums on both sides) in under a second in
-each byte model, so the codec is far from limiting the transfer.
+reader, JSON, base64, checksums on both sides) in about two seconds in
+each byte model on a development computer, with chunks of 32 KiB as with
+chunks of 256 KiB, so the codec is far from limiting the transfer.
 
 The client and the agent must both run 0.4.0 for the fast transfer. A 0.3.0
 client sends no sizes and never defers its drops, and a 0.3.0 agent never
 asks for a transfer: in both cases the files are read through drive
 redirection as before.
 
+
+## Version 0.4.1
+
+Two defects of the fast transfer, seen on 2026-11-09 in the first test of
+0.4.0 against a real server, with a file of 496 MB. In that session the agent
+received the data of the client in the UTF-16 model.
+
+* First attempt: the client sent `drop`, `transferBegin`, `fileBegin` and the
+  first chunks at once. The agent created the receiver of the transfer when
+  it handled the deferred drop, and the receiver then got `fileBegin`
+  without `transferBegin`: the transfer failed at once with "came out of
+  order". The channel thread of the agent handles the lines in their order,
+  so the exact path by which `transferBegin` missed the receiver is not
+  known from the logs. The fix removes the dependency on that timing: the
+  transfer is registered when the agent decides to offer it, before the
+  `dragAck`, and its messages wait in a queue until the deferred drop
+  creates the receiver (`TransferRegistry` in Core, see steps 1 and 3 of the
+  flow above).
+* Second attempt: `transferBegin` arrived, and no chunk ever did. The control
+  raised no error on `SendOnVirtualChannel`, and the client gave up after 60
+  seconds with 4 MiB in flight. A chunk line of 256 KiB was about 350 000
+  characters, about 700 KB on the wire in the UTF-16 model, in one call. The
+  control is taken as unable to deliver strings that large: the default
+  chunk is now 32 KiB, about 44 000 characters, and the client setting
+  `transferChunkBytes` tunes it without a release. The window stays at
+  4 MiB, which now holds 128 chunks.
+
+Early failure detection: the agent acknowledges the first chunk of every
+file, and the client fails a transfer whose first chunk got no
+acknowledgement within 10 seconds, with the diagnostics described under
+"Client" above. The first chunk is logged on both sides.
+
+Agent restart: the control does not report that the agent exited or
+restarted in the session, so the client stayed on "Agent ready". A
+restarted agent still works, since it detects the byte model from the next
+message, but it writes its texts in English until it gets a hello; a dead
+agent only showed as "The agent did not acknowledge the drag" at each drag.
+Now a missing `dragAck`, or a transfer that fails for a missing
+acknowledgement, starts one new discovery period: the agent label goes to
+"Agent: waiting", a hello goes out every two seconds, and the label comes
+back to "Agent ready" when the agent answers, or goes to "No agent on the
+remote computer" after sixty seconds. The hello also gives a restarted agent
+the language again.
+
+The fallback of version 0.3 stays available: `fastTransfer` set to `never`
+in the agent settings, or Never in its tray menu, reads every file through
+drive redirection. A transfer that fails does not switch to drive
+redirection by itself.
+
+The client and the agent must both run 0.4.1. A 0.4.0 agent works with a
+0.4.1 client, but without the queue and the first acknowledgement, so the
+client fails after 10 seconds when the data gets through slowly; a 0.4.0
+client sends chunks of 256 KiB.

@@ -102,7 +102,7 @@ To really end the session, use File, Log off the remote session. The entry is av
 ### Dragging into the session
 
 1. Start the client. It connects with the settings of the .rdp file. Log on as usual.
-2. Watch the status bar at the bottom of the window. The agent label goes from "Agent: waiting" to "Agent ready (v0.4.0)".
+2. Watch the status bar at the bottom of the window. The agent label goes from "Agent: waiting" to "Agent ready (v0.4.1)".
 3. Drag files or folders from Explorer onto the session. A blue banner at the top of the session says "Drop here to send the files into the session".
 4. Move over the remote application you want. It shows its own drop feedback, for example a highlighted folder or an attachment area.
 5. Release the button on the target. The remote application receives the files as a normal drop.
@@ -133,7 +133,15 @@ Things to know:
 - Drive redirection must still be on: the drag over the session uses it.
 - If you release the button very quickly, before the agent answered the start of the drag, the files go through drive redirection as before.
 - Empty folders inside a dropped folder are not created in the session.
-- The client and the agent must both run version 0.4.0. With an older client or agent, every drop goes through drive redirection.
+- The client and the agent must both run version 0.4.1. With an older client or agent, every drop goes through drive redirection.
+
+The client sends the files in chunks of 32 KiB. The setting `transferChunkBytes` in `%LOCALAPPDATA%\UltimateRDP\client.json` changes that size, from 4096 (4 KiB) to 262144 (256 KiB). A value outside these bounds is brought back within them. The setting is only editable in the file, and applies once the client restarts. Leave it alone unless a transfer fails at its start.
+
+```json
+{
+  "transferChunkBytes": 32768
+}
+```
 
 ### Status bar messages
 
@@ -281,7 +289,7 @@ Messages are JSON objects sent as ASCII lines, and each side detects at run time
 ## Troubleshooting
 
 - **The agent never becomes ready.** Run `UltimateRDP.Agent.exe --status` in the session: it says whether the agent runs there and where it is set to start from. The tray icon only appears once the client is connected, so its absence before that is normal. A server policy may also block virtual channels: the agent log then has a warning that it cannot open the channel.
-- **"The agent did not acknowledge the drag".** The agent did not answer the start of the drag within a second. A slow connection or a busy agent can cause it. When the status bar says "The session does not accept simulated input", the session may be locked, or a policy may block simulated input. Please report it with both logs.
+- **"The agent did not acknowledge the drag".** The agent did not answer the start of the drag within a second. A slow connection or a busy agent can cause it, and so can an agent that exited or restarted in the session, which the client cannot see otherwise. The client then looks for the agent again: the agent label goes to "Agent: waiting", and back to "Agent ready" when the agent answers. When the status bar says "The session does not accept simulated input", the session may be locked, or a policy may block simulated input. Please report it with both logs.
 - **The target shows no drop feedback, or the status bar says "Nothing under the cursor accepted the files."** The application under the cursor may not accept files at that place. Some applications also refuse network paths such as `\\tsclient\C\...`. For those, turn on "Stage files in the session before the drop" in the agent tray menu.
 - **The first drop on Explorer takes several seconds.** Explorer reads the redirected drive the first time, which can be slow. Later drops are usually faster.
 - **Ctrl+W or Ctrl+O does nothing.** When the session has the keyboard, these keys go to the remote computer, like every other key. Use the File menu instead.
@@ -289,7 +297,7 @@ Messages are JSON objects sent as ASCII lines, and each side detects at run time
 - **The texts are in the wrong language.** Choose the language in View, Language. A message from the agent follows the language the client announced at connection time; after a language change, the next message uses the new one.
 - **Drops are refused because of the drives.** Turn on drive redirection in the .rdp file, under Local Resources, More, Drives. On the server, check the policy "Do not allow drive redirection".
 - **The drop lands on the wrong window.** Coordinate scaling after a window resize, or full screen over several monitors, can be the cause. Please report it with both logs.
-- **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s. To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
+- **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s. The client log also gives the length of the first chunk line it sent, and the agent log has a line for the first chunk of each file it received. When the status bar says "The agent did not acknowledge the first data of the transfer.", the data did not get through: the client log then gives the byte model, the chunk size, the length of the lines and the number of lines sent. A smaller `transferChunkBytes` may help, see "Large files". To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
 - **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
 
 ## Build from source
@@ -322,7 +330,7 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 
 ## Status
 
-Version 0.4.0 is a test release.
+Version 0.4.1 is a test release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -330,7 +338,7 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 - The transfer through drive redirection to the remote desktop.
 - The live drag into a remote application.
 
-The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0 and not yet verified against a real server.
+The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there and is not yet verified.
 
 Feedback that helps:
 
