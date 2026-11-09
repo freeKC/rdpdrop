@@ -784,8 +784,10 @@ Flow:
    `deferred: true`. The agent cancels the live drag (the button is released,
    nothing is dropped), keeps the point and creates the receiver of the
    transfer, which first handles the queued messages, in their order. A
-   client that drops before the `dragAck` arrived sends a normal `drop`, and
-   the files are dropped through drive redirection as before. When the drag
+   drop that happens before the `dragAck` arrived waits for it on the client,
+   for at most 1.5 seconds, and then goes out as if it had happened after
+   the `dragAck` (see "Version 0.4.5"); clients 0.4.0 to 0.4.4 sent a normal
+   `drop` at once, and the files went through drive redirection. When the drag
    ends without a deferred drop, the offer is withdrawn; if messages of the
    transfer were already waiting, the agent answers with an `error`
    `transferResult` that gives the reason the drag ended.
@@ -1462,3 +1464,120 @@ monitor it was taken to. A change of DPI does not reconnect a session: the
 next connection takes the scale factor that Auto gives on the new monitor, and
 the status bar says so when the session uses Auto. Drop points stay in
 physical pixels on every monitor.
+
+
+## Version 0.4.5
+
+Seen in production with 0.4.4 on 2026-11-09, in the log of the client: the
+drag entered the session, the user released the button 282 ms later after 4
+moves, and the `dragAck` that offered a transfer arrived 53 ms after the
+release. The client had sent a normal `drop` at once, as step 3 of the flow
+of version 0.4 then said, so the remote Explorer copied the file of 700 MB
+through `\\tsclient` at 3.7 MB/s with its own copy dialog, while the progress
+window said "Dropping into the session...". The fast transfer never ran, and
+the client logged no transfer summary. A quick release must not lose the
+transfer.
+
+Decision: the client holds a drop that happens while the `dragAck` of its
+drag is pending. Only the client changes; the protocol and the agent do not.
+
+### The held drop
+
+`DropDecision` in Core takes the decision and `SessionView` applies it:
+
+* On the local drop, when the `dragAck` of the drag has not arrived, the
+  client keeps the point, the keys and the items, and sends nothing yet. The
+  progress window opens in its preparing stage ("Preparing...", a bar without
+  a value), and the status bar says "Dragging 1 item(s) into the
+  session...".
+* The wait lasts at most 1.5 seconds (`DropDecision.MaxWait`). The timer of
+  one second from `dragEnter`, which refuses a drag that gets no answer, is
+  stopped at the drop: the wait takes over. The agent sends a provisional
+  accepted `dragAck` after 700 ms when the drag is slow to start, so a
+  running agent answers within the wait.
+* The `dragAck` arrives accepted with `transfer: true` and a `transferId`:
+  the client goes on exactly as if the drop had happened after it, with
+  `drop` and `deferred: true`, then the transfer; the same window moves on to
+  the transfer.
+* The `dragAck` arrives accepted without a transfer: the client sends the
+  normal `drop`, and the window shows "Dropping into the session...".
+* The `dragAck` arrives refused: no drop goes out. The client sends
+  `dragLeave`, as for a drop after a refusal, and shows the reason of the
+  agent in the status bar and in red in the window.
+* No `dragAck` within the wait: the client sends the normal `drop`, as 0.4.4
+  did at once, and starts a new discovery of the agent with a hello, as after
+  a missing `dragAck` during a drag.
+* The first answer decides. A later `dragAck` of the same drag is handled as
+  for any drop that went out.
+
+During the wait:
+
+* The moves go on. A move to the drop point leaves within a thirtieth of a
+  second, then one move every second while nothing else is sent, so the
+  watchdog of the agent, which cancels a live drag after five seconds without
+  a message, does not end the live drag while the client waits.
+* A new drag over the session is refused with the text used during a
+  transfer, "A transfer is in progress. Wait for its end, or cancel it from
+  the Session menu.", and the window says "Wait for this transfer before
+  dropping more files." for five seconds. No text was added.
+* The Cancel button of the window and Session, Cancel the transfer give the
+  drop up: the client sends `dragLeave` and shows "Drop cancelled.". Closing
+  the tab does the same. A disconnection gives the drop up without a message
+  to the agent and shows "The drop stopped: the session was disconnected."
+
+### The agent
+
+The agent does not change. A deferred `drop` that arrives right after the
+`dragAck` takes the path it always took: the transfer was registered when
+the agent decided it, before any `dragAck` offered it, so transfer messages
+that come before the drop wait in the queue of `TransferRegistry`. When a
+provisional `dragAck` offered the transfer before the live drag existed, the
+preparation sees the deferred drop and cancels the live drag as soon as it
+creates it.
+
+When the live drag ended before the deferred drop arrived (the watchdog,
+Escape in the session, a failure of the drag), the agent forgets the drag at
+that moment: it withdraws the transfer, sends an `error` `transferResult`
+with the reason the drag ended, and a refused `dragAck`. The deferred drop
+that follows gets an `error` `dropResult` with the same reason, and the
+transfer messages already sent are ignored as late. The client shows the
+reason in the status bar and in red in the window. Accepting the transfer in
+that case was considered and not done: it changes the state machine of the
+drop on the agent for a case that the moves of the wait make rare.
+
+### Logs
+
+The client logs the drop when it is held ("Drop after 4 move(s), held until
+the agent answers the drag", with the usual details), then one info line
+when the wait ends, with its outcome:
+
+```
+Drop <id> held 53 ms for the agent answer: the agent offered transfer <id>, so the drop goes out deferred and the files follow through the channel.
+```
+
+The other outcomes read "the agent accepted the drag without a transfer, so
+the drop goes out and the files are read through drive redirection", "the
+agent refused the drag, so the drop is not sent", "no dragAck within 1500 ms,
+so the drop goes out without a transfer and the files are read through drive
+redirection", and "the drop was given up before the agent answered", followed
+by the cause.
+
+### Limits
+
+* A provisional accepted `dragAck` decides like a final one. When the agent
+  sends it before it decided the transfer, because the check of the items
+  through drive redirection took more than 700 ms, a drop held at that
+  moment, or a drop after it, goes through drive redirection as in 0.4.4;
+  the later `dragAck` that offers the transfer is then ignored. Telling a
+  provisional answer from a final one needs a field in `dragAck`.
+* The client gives the copy effect back to the local source as soon as the
+  drop is held, even when the agent refuses the drag afterwards. A source
+  does nothing with a copy effect.
+* With an agent that does not answer, the drop goes out 1.5 seconds later
+  than with 0.4.4.
+
+### Versions
+
+Only the client changes. The agent can stay at 0.4.4; its 0.4.5 build is
+the same with another version number. A 0.4.5 client works with agents
+0.4.1 to 0.4.4.

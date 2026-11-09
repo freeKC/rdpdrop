@@ -135,7 +135,7 @@ Things to know:
 
 - One transfer at a time. While one runs, a new drag over the session is refused, and the progress window says "Wait for this transfer before dropping more files." for five seconds.
 - Drive redirection must still be on: the drag over the session uses it.
-- If you release the button very quickly, before the agent answered the start of the drag, the files go through drive redirection as before.
+- If you release the button very quickly, before the agent answered the start of the drag, the client waits for that answer, for at most a second and a half, with "Preparing..." in the progress window, so that large files still go through the UltimateRDP channel. A new drag is refused during that wait, as during a transfer.
 - Empty folders inside a dropped folder are not created in the session.
 - The agent must run version 0.4.1 or later, and the client too. The progress window is new in client 0.4.2 and works with an agent 0.4.1. With an older client or agent, every drop goes through drive redirection.
 
