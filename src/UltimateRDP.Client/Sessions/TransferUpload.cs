@@ -13,8 +13,8 @@ namespace UltimateRDP.Client.Sessions;
 /// Sends the files of one drop to the agent through the channel. A background thread lists
 /// the files, reads them with a large buffer, computes their checksums and builds the
 /// lines with a <see cref="TransferSender"/>; every send is handed to the UI thread, where
-/// the control lives, in order. At most <see cref="TransferSender.WindowBytes"/> are in
-/// flight: the thread waits for the acknowledgements of the agent, which the UI thread
+/// the control lives, in order. At most <see cref="TransferSender.WindowBytes"/>, 4 MiB by
+/// default, are in flight: the thread waits for the acknowledgements of the agent, which the UI thread
 /// passes to <see cref="OnAck"/>.
 /// </summary>
 /// <remarks>
@@ -47,6 +47,7 @@ internal sealed class TransferUpload
     private readonly Func<string, int, long, bool> _sendLine;
     private readonly IReadOnlyList<DropItem> _items;
     private readonly int _chunkSize;
+    private readonly long _windowBytes;
     private readonly ChannelByteModel _model;
     private readonly object _gate = new();
     private TransferSender? _sender;
@@ -60,19 +61,21 @@ internal sealed class TransferUpload
     /// <param name="transferId">The id the agent gave in its dragAck.</param>
     /// <param name="items">The dropped items, in the order of the dragEnter.</param>
     /// <param name="chunkSize">Raw bytes per chunk, within the bounds of <see cref="TransferSender"/>.</param>
+    /// <param name="windowBytes">Most bytes in flight asked for, within the bounds of <see cref="TransferSender"/>.</param>
     /// <param name="model">Byte model detected on the data received from the agent, for the log.</param>
     /// <param name="sendMessage">Sends a message on the UI thread; false when it failed.</param>
     /// <param name="sendLine">
     /// Sends a ready chunk line on the UI thread, with its file and the bytes of the transfer
     /// sent once it is counted; false when it failed.
     /// </param>
-    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, ChannelByteModel model, Func<Message, bool> sendMessage, Func<string, int, long, bool> sendLine)
+    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, long windowBytes, ChannelByteModel model, Func<Message, bool> sendMessage, Func<string, int, long, bool> sendLine)
     {
         _owner = owner;
         DragId = dragId;
         TransferId = transferId;
         _items = items;
         _chunkSize = TransferSender.ClampChunkSize(chunkSize);
+        _windowBytes = TransferSender.ClampWindowBytes(windowBytes);
         _model = model;
         _sendMessage = sendMessage;
         _sendLine = sendLine;
@@ -211,7 +214,7 @@ internal sealed class TransferUpload
             TransferBeginMessage begin;
             lock (_gate)
             {
-                _sender = new TransferSender(TransferId, planned, _chunkSize);
+                _sender = new TransferSender(TransferId, planned, _chunkSize, _windowBytes);
                 begin = _sender.Begin();
                 _watch = new TransferAckWatch(Environment.TickCount64);
             }

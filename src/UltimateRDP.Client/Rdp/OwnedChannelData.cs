@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -40,15 +41,18 @@ internal sealed class OwnedChannelData : IDisposable
     private static System.Threading.Timer? _orphanTimer;
 
     private readonly RdpControl _control;
-    private readonly SentDataRetention<IntPtr> _retained = new();
+    private readonly SentDataRetention<IntPtr> _retained;
     private readonly System.Windows.Forms.Timer _releaseTimer = new() { Interval = ReleaseIntervalMilliseconds };
     private IMsTscAxOwnedData? _owned;
     private bool _resolved;
     private bool _disposed;
 
-    public OwnedChannelData(RdpControl control)
+    /// <param name="control">The Remote Desktop control.</param>
+    /// <param name="maxRetainedBytes">Most bytes of strings kept, see <see cref="SentDataRetention{T}.LimitForWindow"/>.</param>
+    public OwnedChannelData(RdpControl control, long maxRetainedBytes = SentDataRetention<IntPtr>.DefaultMaxRetainedBytes)
     {
         _control = control;
+        _retained = new SentDataRetention<IntPtr>(maxRetainedBytes: maxRetainedBytes);
         _releaseTimer.Tick += (_, _) => ReleaseExpired();
     }
 
@@ -63,16 +67,18 @@ internal sealed class OwnedChannelData : IDisposable
 
     /// <summary>
     /// Sends <paramref name="text"/> on <paramref name="channelName"/>. <paramref name="firstChunk"/>
-    /// is the first chunk line of the text, or null. Throws what the control throws.
+    /// is the first chunk line of the text, or null. Returns the time spent inside the call
+    /// of the control, in ticks of <see cref="Stopwatch"/>. Throws what the control throws.
     /// </summary>
-    public void Send(string channelName, string text, QueuedLine? firstChunk)
+    public long Send(string channelName, string text, QueuedLine? firstChunk)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var owned = Resolve();
         if (owned is null)
         {
+            var started = Stopwatch.GetTimestamp();
             _control.SendOnVirtualChannel(channelName, text);
-            return;
+            return Stopwatch.GetTimestamp() - started;
         }
 
         var bstr = Marshal.StringToBSTR(text);
@@ -86,7 +92,9 @@ internal sealed class OwnedChannelData : IDisposable
         }
 
         _releaseTimer.Start();
+        var start = Stopwatch.GetTimestamp();
         owned.SendOnVirtualChannel(channelName, bstr);
+        return Stopwatch.GetTimestamp() - start;
     }
 
     /// <summary>Finds out, once, whether the hand written interface can be used, and logs it.</summary>

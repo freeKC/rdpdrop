@@ -61,6 +61,13 @@ internal sealed class ClientSettings
     public int TransferBatchCharacters { get; set; } = SendQueue.DefaultMaxBatchCharacters;
 
     /// <summary>
+    /// Most bytes of a transfer sent and not yet acknowledged, from 1 MiB to 32 MiB, 4 MiB
+    /// by default. A window below the acknowledgement interval of the agent, 2 MiB, plus one
+    /// chunk is raised to that. Only editable in the file.
+    /// </summary>
+    public long TransferWindowBytes { get; set; } = TransferSender.DefaultWindowBytes;
+
+    /// <summary>
     /// <c>info</c> by default, or <c>debug</c> to also log every message sent to the agent
     /// and every call of the control. Only editable in the file.
     /// </summary>
@@ -111,7 +118,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, channel call up to {TransferBatchCharacters} characters, log level {LogLevel}";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, log level {LogLevel}";
 
     private ClientSettings Normalized()
     {
@@ -133,6 +140,7 @@ internal sealed class ClientSettings
         Language = UiLanguages.NormalizeChoice(Language);
         TransferChunkBytes = TransferSender.ClampChunkSize(TransferChunkBytes);
         TransferBatchCharacters = SendQueue.ClampBatchLimit(TransferBatchCharacters);
+        TransferWindowBytes = TransferSender.ClampWindowBytes(TransferWindowBytes);
         LogLevel = string.Equals(LogLevel?.Trim(), DebugLevel, StringComparison.OrdinalIgnoreCase) ? DebugLevel : InfoLevel;
         RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;

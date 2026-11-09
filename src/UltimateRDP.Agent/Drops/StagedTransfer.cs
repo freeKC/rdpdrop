@@ -1,5 +1,6 @@
 using System.Globalization;
 using Timer = System.Threading.Timer;
+using UltimateRDP.Agent.Channel;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
@@ -38,6 +39,8 @@ internal sealed class StagedTransfer
     private readonly TransferReceiver _receiver;
     private readonly Lock _gate = new();
     private readonly Timer _idleTimer;
+    private readonly ChannelMeter? _meter;
+    private readonly ChannelMark _mark;
     private long _lastMessageTicks = Environment.TickCount64;
     private int _ignoredAfterEnd;
     private bool _resultSent;
@@ -45,9 +48,11 @@ internal sealed class StagedTransfer
     private LocalText? _stopReason;
     private DropStatus _stopStatus;
 
-    public StagedTransfer(FileLogger logger, StagingFolder staging, string dragId, string transferId, IReadOnlyList<TransferItem> items, Func<Message, bool> send, ClientLanguage language)
+    public StagedTransfer(FileLogger logger, StagingFolder staging, string dragId, string transferId, IReadOnlyList<TransferItem> items, Func<Message, bool> send, ClientLanguage language, ChannelMeter? meter = null)
     {
         _logger = logger;
+        _meter = meter;
+        _mark = meter?.Mark() ?? default;
         _staging = staging;
         _send = send;
         _language = language;
@@ -199,6 +204,28 @@ internal sealed class StagedTransfer
             CultureInfo.InvariantCulture,
             $"Transfer {TransferId} of drag {DragId}: {status}, {_receiver.ReceivedFiles} of {_receiver.ExpectedFiles} file(s), {_receiver.ReceivedBytes} of {_receiver.ExpectedBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s{(outcome is null ? string.Empty : ". " + outcome)}"));
         _send(new TransferResultMessage(TransferId, status, text?.In(_language.Culture), _receiver.ReceivedBytes, Math.Round(seconds, 3)));
+        LogChannelSummary();
+    }
+
+    /// <summary>What the channel did during the transfer: the reads of the agent and the counters of the session.</summary>
+    private void LogChannelSummary()
+    {
+        if (_meter is null)
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var line in _meter.Summary(TransferId, _mark))
+            {
+                _logger.Info(line);
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.Warn($"Transfer {TransferId}: the channel summary could not be written. {ex.Message}");
+        }
     }
 
     private (DropStatus Status, LocalText? Text) Describe()

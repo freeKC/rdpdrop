@@ -20,7 +20,7 @@ internal sealed class AgentSettings
     private volatile bool _stageFiles;
     private volatile FastTransferMode _fastTransfer;
 
-    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes)
+    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead)
     {
         _path = path;
         _logger = logger;
@@ -29,6 +29,7 @@ internal sealed class AgentSettings
         TrayIcon = trayIcon;
         _fastTransfer = fastTransfer;
         FastTransferMinBytes = fastTransferMinBytes;
+        ChannelRead = channelRead;
     }
 
     /// <summary>
@@ -55,6 +56,12 @@ internal sealed class AgentSettings
     /// <summary>When the tray icon is shown. Auto by default. Only editable in the file.</summary>
     public TrayIconMode TrayIcon { get; }
 
+    /// <summary>
+    /// How the channel is read: with WTSVirtualChannelRead (wts, the default) or through its
+    /// file handle (file, an experiment). Only editable in the file; read at startup.
+    /// </summary>
+    public ChannelReadMode ChannelRead { get; }
+
     /// <summary>True when the settings file exists. False without a usable path.</summary>
     public static bool FileExists(string path)
     {
@@ -79,6 +86,7 @@ internal sealed class AgentSettings
         var trayIcon = TrayIconMode.Auto;
         var fastTransfer = FastTransferMode.Auto;
         var fastTransferMinBytes = FastTransferPolicy.DefaultMinBytes;
+        var channelRead = ChannelReadMode.Wts;
         try
         {
             if (FileExists(path))
@@ -101,6 +109,12 @@ internal sealed class AgentSettings
                         logger.Warn($"The fastTransfer setting \"{data.FastTransfer}\" is unknown; using \"auto\". Use \"auto\", \"always\" or \"never\".");
                     }
 
+                    channelRead = ChannelReadModes.Parse(data.ChannelRead, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The channelRead setting \"{data.ChannelRead}\" is unknown; using \"wts\". Use \"wts\" or \"file\".");
+                    }
+
                     if (data.FastTransferMinBytes is { } minBytes)
                     {
                         if (minBytes >= 0)
@@ -120,7 +134,7 @@ internal sealed class AgentSettings
             logger.Warn($"Could not read the settings file {path}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes);
+        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead);
     }
 
     /// <summary>
@@ -145,7 +159,7 @@ internal sealed class AgentSettings
 
     /// <summary>Readable summary for the log.</summary>
     public override string ToString() =>
-        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}";
+        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}";
 
     private bool Save()
     {
@@ -156,6 +170,7 @@ internal sealed class AgentSettings
             TrayIcon = TrayIcon == TrayIconMode.Auto ? null : TrayIconModes.ToSetting(TrayIcon),
             FastTransfer = FastTransfer == FastTransferMode.Auto ? null : FastTransferPolicy.ToSetting(FastTransfer),
             FastTransferMinBytes = FastTransferMinBytes == FastTransferPolicy.DefaultMinBytes ? null : FastTransferMinBytes,
+            ChannelRead = ChannelRead == ChannelReadMode.Wts ? null : ChannelReadModes.ToSetting(ChannelRead),
         };
 
         lock (_saveGate)
@@ -221,5 +236,8 @@ internal sealed class AgentSettings
 
         /// <summary>Threshold of the auto mode, in bytes. 10485760 when absent.</summary>
         public long? FastTransferMinBytes { get; set; }
+
+        /// <summary>"wts" or "file". Wts when absent. Read as text, like <see cref="TrayIcon"/>.</summary>
+        public string? ChannelRead { get; set; }
     }
 }

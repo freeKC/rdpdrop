@@ -48,9 +48,10 @@ internal sealed partial class SessionView : UserControl
         RdpFile = file;
         Host = RdpAddress.Split(file.FullAddress ?? string.Empty).Host;
         _childTargets = new ChildDropTargets(_rdp);
-        _agent = new AgentLink(_rdp, settings.TransferBatchCharacters);
+        _agent = new AgentLink(_rdp, settings.TransferBatchCharacters, settings.TransferWindowBytes);
         _display = new DisplayController(_rdp, this, settings.DisplayMode);
         _transferChunkBytes = settings.TransferChunkBytes;
+        _transferWindowBytes = settings.TransferWindowBytes;
         InitializeViewChoices(settings);
 
         Dock = DockStyle.Fill;

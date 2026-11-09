@@ -79,6 +79,22 @@ internal sealed unsafe class VirtualChannel : IDisposable
         throw new ChannelException("Reading from the channel failed", error);
     }
 
+    /// <summary>
+    /// A reader of the file handle of this channel, or null with the reason. Writes still go
+    /// through <see cref="Write"/>; the reader must be disposed before the channel.
+    /// </summary>
+    public ChannelFileReader? OpenFileReader(out string? error)
+    {
+        var handle = _handle;
+        if (handle == IntPtr.Zero)
+        {
+            error = "the channel is closed";
+            return null;
+        }
+
+        return ChannelFileReader.TryOpen(handle, out error);
+    }
+
     /// <summary>Writes every byte of <paramref name="data"/>.</summary>
     /// <exception cref="ChannelException">The channel is broken or closed.</exception>
     public void Write(ReadOnlySpan<byte> data)

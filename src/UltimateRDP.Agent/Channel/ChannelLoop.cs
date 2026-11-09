@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text;
 using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Logging;
@@ -21,6 +22,15 @@ namespace UltimateRDP.Agent.Channel;
 /// and a warning only for a failure that a session without client does not explain.
 /// The same thread watches the exit event of <c>--uninstall</c>, so that the agent needs
 /// no other thread while it waits.
+/// <para>
+/// Every read is counted in <see cref="ReadStats"/>: its size, the time blocked in the
+/// call and the time spent on its data, so that each transfer can log what the channel
+/// did. The <c>channelRead</c> setting chooses how the channel is read: with
+/// WTSVirtualChannelRead, or through its file handle (<see cref="ChannelFileReader"/>),
+/// whose blocks <see cref="ChannelPduFraming"/> frees from any channel header. At the
+/// first inconsistency of the file handle, the connection goes back to
+/// WTSVirtualChannelRead.
+/// </para>
 /// </remarks>
 internal sealed class ChannelLoop : IDisposable
 {
@@ -37,6 +47,7 @@ internal sealed class ChannelLoop : IDisposable
 
     private readonly FileLogger _logger;
     private readonly WaitHandle? _exitSignal;
+    private readonly ChannelReadMode _readMode;
     private readonly AutoResetEvent _wake = new(false);
     private readonly IncomingTextDecoder _decoder = new();
     private readonly LineReader _lineReader = new();
@@ -46,6 +57,7 @@ internal sealed class ChannelLoop : IDisposable
     private Action<byte[]>? _payloadHandler;
     private Thread? _thread;
     private byte[]? _buffer;
+    private byte[]? _payload;
     private VirtualChannel? _channel;
     private long _connectedAtTicks = Environment.TickCount64;
     private int _consecutiveFailures;
@@ -64,10 +76,12 @@ internal sealed class ChannelLoop : IDisposable
 
     /// <param name="logger">The log.</param>
     /// <param name="exitSignal">Event that asks the agent to exit, or null.</param>
-    public ChannelLoop(FileLogger logger, WaitHandle? exitSignal)
+    /// <param name="readMode">How the channel is read, from the <c>channelRead</c> setting.</param>
+    public ChannelLoop(FileLogger logger, WaitHandle? exitSignal, ChannelReadMode readMode = ChannelReadMode.Wts)
     {
         _logger = logger;
         _exitSignal = exitSignal;
+        _readMode = readMode;
         _lineReader.ProtocolError += (_, _) =>
             _logger.Warn($"Protocol error: a line is longer than {LineFraming.MaxLineLength} characters. Buffered data dropped; the channel stays open.");
     }
@@ -80,6 +94,9 @@ internal sealed class ChannelLoop : IDisposable
 
     /// <summary>Raised once on the channel thread when the exit event is set.</summary>
     public event Action? ExitRequested;
+
+    /// <summary>The counters of the reads, for the summaries of the transfers.</summary>
+    public ChannelReadStats ReadStats { get; } = new();
 
     /// <summary>
     /// Starts the background thread. <paramref name="payloadHandler"/> runs on that thread
@@ -343,6 +360,44 @@ internal sealed class ChannelLoop : IDisposable
 
     private void Pump(VirtualChannel channel, byte[] buffer)
     {
+        var reader = OpenFileReader(channel);
+        var framing = reader is null ? null : new ChannelPduFraming();
+        try
+        {
+            Pump(channel, buffer, ref reader, framing);
+        }
+        finally
+        {
+            reader?.Dispose();
+        }
+    }
+
+    /// <summary>The reader of the file handle when the setting asks for it and it can be opened, otherwise null.</summary>
+    private ChannelFileReader? OpenFileReader(VirtualChannel channel)
+    {
+        ReadStats.ReadMode = "wts";
+        if (_readMode != ChannelReadMode.File)
+        {
+            return null;
+        }
+
+        var reader = channel.OpenFileReader(out var error);
+        if (reader is null)
+        {
+            ReadStats.ReadMode = "wts, the file handle could not be used";
+            _logger.Warn($"channelRead is \"file\" but the file handle of the channel cannot be used: {error}. Reading with WTSVirtualChannelRead.");
+            return null;
+        }
+
+        ReadStats.ReadMode = "file, layout not known yet";
+        _logger.Info($"Reading the channel through its file handle (channelRead \"file\"), up to {ChannelFileReader.BufferSize} bytes per read.");
+        return reader;
+    }
+
+    private void Pump(VirtualChannel channel, byte[] buffer, ref ChannelFileReader? reader, ChannelPduFraming? framing)
+    {
+        var payload = _payload ??= new byte[ReadBufferSize];
+        var layoutLogged = false;
         var instantEmptyReads = 0;
         while (!_stopping)
         {
@@ -359,9 +414,29 @@ internal sealed class ChannelLoop : IDisposable
             }
 
             var started = Environment.TickCount64;
-            var count = channel.Read(buffer, ReadTimeoutMilliseconds);
+            var readStart = Stopwatch.GetTimestamp();
+            int count;
+            if (reader is not null)
+            {
+                try
+                {
+                    count = reader.Read(buffer, ReadTimeoutMilliseconds);
+                }
+                catch (ChannelException ex)
+                {
+                    FallBack(ref reader, ex.Message);
+                    continue;
+                }
+            }
+            else
+            {
+                count = channel.Read(buffer, ReadTimeoutMilliseconds);
+            }
+
+            var readEnd = Stopwatch.GetTimestamp();
             if (count == 0)
             {
+                ReadStats.RecordRead(0, readEnd - readStart);
                 instantEmptyReads = Environment.TickCount64 - started < InstantReadMilliseconds ? instantEmptyReads + 1 : 0;
                 if (instantEmptyReads >= MaxInstantEmptyReads)
                 {
@@ -372,43 +447,84 @@ internal sealed class ChannelLoop : IDisposable
             }
 
             instantEmptyReads = 0;
-            var text = _decoder.Decode(buffer.AsSpan(0, count), out var rejected);
-            if (rejected)
+            ReadOnlySpan<byte> data = buffer.AsSpan(0, count);
+            var headers = 0;
+            if (reader is not null && framing is not null)
             {
-                _logger.Warn($"Protocol error: the data at the start of the connection does not start with \"{{\". Dropped.");
-                continue;
-            }
-
-            if (_model == ChannelByteModel.Unknown && _decoder.Model != ChannelByteModel.Unknown)
-            {
-                _model = _decoder.Model;
-                _silentChannels = 0;
-                _logger.Info($"Channel byte model: {_model}.");
-                SetClientPresent(true);
-            }
-
-            _lineReader.Append(text);
-            while (_lineReader.TryReadLine(out var line))
-            {
-                // A control that ends each string with its NUL terminator would put a NUL
-                // in front of the next line. More than that means data was replaced or
-                // lost on the way, and a whole message may be missing: it is logged, so
-                // that no line disappears without a trace.
-                var trimmed = line.Trim(['\0', ' ']);
-                if (trimmed.Length == 0)
+                if (!framing.TryUnwrap(data, payload, out var written, out headers))
                 {
-                    _logger.Warn($"Protocol error: a line of {line.Length} characters held only NUL characters and spaces. Ignored.");
+                    ReadStats.RecordRead(0, readEnd - readStart);
+                    FallBack(ref reader, $"{framing.Error}; the {count} bytes of this read are dropped");
                     continue;
                 }
 
-                var padding = line.Length - line.AsSpan().TrimStart(['\0', ' ']).Length;
-                if (padding > 1)
+                if (!layoutLogged && framing.Layout != ChannelPduLayout.Unknown)
                 {
-                    _logger.Warn($"Protocol error: {padding} NUL characters or spaces came before the line that starts with {Head(trimmed)}. They were dropped; a message may be missing before this line.");
+                    layoutLogged = true;
+                    ReadStats.ReadMode = framing.Layout == ChannelPduLayout.Headers ? "file with channel headers" : "file without headers";
+                    _logger.Info(framing.Layout == ChannelPduLayout.Headers
+                        ? $"The file handle of the channel gives a CHANNEL_PDU_HEADER of {ChannelPduFraming.HeaderLength} bytes before each chunk; the headers are taken out."
+                        : "The file handle of the channel gives the data without headers.");
                 }
 
-                Dispatch(Encoding.ASCII.GetBytes(trimmed));
+                data = payload.AsSpan(0, written);
             }
+
+            ReadStats.RecordRead(data.Length, readEnd - readStart, headers);
+            Process(data);
+            ReadStats.RecordProcessing(Stopwatch.GetTimestamp() - readEnd);
+        }
+    }
+
+    /// <summary>Stops reading the file handle for the rest of the connection.</summary>
+    private void FallBack(ref ChannelFileReader? reader, string reason)
+    {
+        _logger.Warn($"Reading the channel through its file handle failed: {reason}. The channel is read with WTSVirtualChannelRead until it closes.");
+        reader?.Dispose();
+        reader = null;
+        ReadStats.ReadMode = "wts after a failure of the file handle";
+    }
+
+    /// <summary>Decodes the data of one read and handles the lines it completes.</summary>
+    private void Process(ReadOnlySpan<byte> data)
+    {
+        var text = _decoder.Decode(data, out var rejected);
+        if (rejected)
+        {
+            _logger.Warn($"Protocol error: the data at the start of the connection does not start with \"{{\". Dropped.");
+            return;
+        }
+
+        if (_model == ChannelByteModel.Unknown && _decoder.Model != ChannelByteModel.Unknown)
+        {
+            _model = _decoder.Model;
+            _silentChannels = 0;
+            _logger.Info($"Channel byte model: {_model}.");
+            _logger.Info($"Session connection: {SessionTraffic.Describe()}");
+            SetClientPresent(true);
+        }
+
+        _lineReader.Append(text);
+        while (_lineReader.TryReadLine(out var line))
+        {
+            // A control that ends each string with its NUL terminator would put a NUL
+            // in front of the next line. More than that means data was replaced or
+            // lost on the way, and a whole message may be missing: it is logged, so
+            // that no line disappears without a trace.
+            var trimmed = line.Trim(['\0', ' ']);
+            if (trimmed.Length == 0)
+            {
+                _logger.Warn($"Protocol error: a line of {line.Length} characters held only NUL characters and spaces. Ignored.");
+                continue;
+            }
+
+            var padding = line.Length - line.AsSpan().TrimStart(['\0', ' ']).Length;
+            if (padding > 1)
+            {
+                _logger.Warn($"Protocol error: {padding} NUL characters or spaces came before the line that starts with {Head(trimmed)}. They were dropped; a message may be missing before this line.");
+            }
+
+            Dispatch(Encoding.ASCII.GetBytes(trimmed));
         }
     }
 
@@ -421,6 +537,7 @@ internal sealed class ChannelLoop : IDisposable
 
     private void Dispatch(byte[] payload)
     {
+        var started = Stopwatch.GetTimestamp();
         try
         {
             _payloadHandler?.Invoke(payload);
@@ -429,6 +546,10 @@ internal sealed class ChannelLoop : IDisposable
         {
             // A bug in one message must not take the channel down.
             _logger.Error("Unexpected error while handling a message.", ex);
+        }
+        finally
+        {
+            ReadStats.RecordHandling(Stopwatch.GetTimestamp() - started);
         }
     }
 

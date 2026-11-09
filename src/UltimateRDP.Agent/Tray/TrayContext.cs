@@ -40,7 +40,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         _logger = logger;
         _settings = settings;
-        _loop = new ChannelLoop(logger, exitEvent);
+        _loop = new ChannelLoop(logger, exitEvent, settings.ChannelRead);
         _window = new SessionNotificationWindow(_loop, logger, OnSessionEnding);
         _loop.ClientPresenceChanged += present => _window.Post(() => OnClientPresence(present));
         _loop.ExitRequested += () => _window.Post(() => Exit("a request from --uninstall"));
@@ -123,7 +123,7 @@ internal sealed class TrayContext : ApplicationContext
                 return;
             }
 
-            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend);
+            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop.ReadStats));
         }
 
         services.Handle(payload);

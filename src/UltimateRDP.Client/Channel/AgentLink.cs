@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -6,6 +7,7 @@ using UltimateRDP.Client.Localization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Client.Rdp;
 using UltimateRDP.Core.Protocol;
+using UltimateRDP.Core.Transfer;
 using Message = UltimateRDP.Core.Protocol.Message;
 
 namespace UltimateRDP.Client.Channel;
@@ -41,6 +43,13 @@ namespace UltimateRDP.Client.Channel;
 /// before a large one, the case where the control lost lines in production. A call that
 /// fails empties the queue and raises <see cref="SendFailed"/> with the lines lost.
 /// </para>
+/// <para>
+/// Every call of the control is timed. During a transfer, between
+/// <see cref="BeginTransferMeasure"/> and <see cref="EndTransferMeasure"/>, the calls are
+/// summed up (<see cref="ChannelCallStats"/>) and each acknowledgement is matched with the
+/// call that carried its last byte (<see cref="AckRoundTrips"/>); the end logs both
+/// summaries.
+/// </para>
 /// </remarks>
 internal sealed class AgentLink : IDisposable
 {
@@ -59,14 +68,16 @@ internal sealed class AgentLink : IDisposable
     private bool _connected;
     private bool _flushPosted;
     private long _channelCalls;
+    private TransferMeasure? _measure;
 
     /// <param name="control">The Remote Desktop control.</param>
     /// <param name="batchCharacters">Most characters in one call of the control, see <see cref="SendQueue.ClampBatchLimit"/>.</param>
-    public AgentLink(RdpControl control, int batchCharacters)
+    /// <param name="windowBytes">The window of the transfers, which sets how many sent strings may be kept.</param>
+    public AgentLink(RdpControl control, int batchCharacters, long windowBytes = TransferSender.DefaultWindowBytes)
     {
         _control = control;
         _queue = new SendQueue(SendQueue.ClampBatchLimit(batchCharacters));
-        _data = new OwnedChannelData(control);
+        _data = new OwnedChannelData(control, SentDataRetention<IntPtr>.LimitForWindow(windowBytes));
         _control.OnChannelReceivedData += OnChannelReceivedData;
         _timer.Tick += (_, _) => OnTimer();
     }
@@ -245,7 +256,40 @@ internal sealed class AgentLink : IDisposable
     /// The agent acknowledged the first <paramref name="acknowledgedBytes"/> of a transfer:
     /// the strings of the calls that it surely received in full are freed.
     /// </summary>
-    public void OnTransferAcknowledged(string transferId, long acknowledgedBytes) => _data.OnAcknowledged(transferId, acknowledgedBytes);
+    public void OnTransferAcknowledged(string transferId, long acknowledgedBytes)
+    {
+        _data.OnAcknowledged(transferId, acknowledgedBytes);
+        if (_measure is not { } measure || measure.TransferId != transferId)
+        {
+            return;
+        }
+
+        if (measure.Acks.OnAck(acknowledgedBytes, Stopwatch.GetTimestamp()) is { } sample && ClientLog.DebugEnabled)
+        {
+            ClientLog.Debug(Invariant($"Transfer {transferId}: acknowledgement of {sample.AcknowledgedBytes} bytes, {Milliseconds(sample.RoundTripTicks):0} ms after the call that carried them returned, {sample.InFlightBytes} bytes handed to the control and not acknowledged."));
+        }
+    }
+
+    /// <summary>
+    /// Starts measuring the calls of the control and the acknowledgements for the transfer
+    /// <paramref name="transferId"/>, whose window is <paramref name="windowBytes"/>.
+    /// </summary>
+    public void BeginTransferMeasure(string transferId, long windowBytes) =>
+        _measure = new TransferMeasure(transferId, windowBytes, Stopwatch.GetTimestamp());
+
+    /// <summary>Logs the summaries of the calls and of the acknowledgements of the transfer, and stops measuring.</summary>
+    public void EndTransferMeasure(string transferId)
+    {
+        if (_measure is not { } measure || measure.TransferId != transferId)
+        {
+            return;
+        }
+
+        _measure = null;
+        var elapsed = Stopwatch.GetElapsedTime(measure.StartTicks).TotalMilliseconds;
+        ClientLog.Info(measure.Calls.Describe(transferId, Stopwatch.Frequency, elapsed));
+        ClientLog.Info(measure.Acks.Describe(transferId, Stopwatch.Frequency, measure.WindowBytes));
+    }
 
     /// <summary>
     /// Sends a hello with the current user interface language, after the user changed it,
@@ -389,11 +433,24 @@ internal sealed class AgentLink : IDisposable
         var first = batch.Lines[0];
         try
         {
-            _data.Send(ProtocolConstants.ChannelName, batch.Text, batch.FirstChunk);
+            var ticks = _data.Send(ProtocolConstants.ChannelName, batch.Text, batch.FirstChunk);
+            var end = Stopwatch.GetTimestamp();
             _channelCalls++;
+            if (_measure is { } measure)
+            {
+                measure.Calls.Record(batch.Text.Length, end - ticks, end);
+                foreach (var line in batch.Lines)
+                {
+                    if (line.IsChunk && line.Subject == measure.TransferId)
+                    {
+                        measure.Acks.OnSent(line.TransferPosition, end);
+                    }
+                }
+            }
+
             if (ClientLog.DebugEnabled)
             {
-                ClientLog.Debug(Invariant($"Channel call {_channelCalls}: {batch.Lines.Count} line(s), {batch.Text.Length} characters, first {first.Type} {first.Subject}; {_data.RetainedCount} string(s) of {_data.RetainedBytes} bytes kept."));
+                ClientLog.Debug(Invariant($"Channel call {_channelCalls}: {batch.Lines.Count} line(s), {batch.Text.Length} characters, {Milliseconds(ticks):0.00} ms in the call, first {first.Type} {first.Subject}; {_data.RetainedCount} string(s) of {_data.RetainedBytes} bytes kept."));
             }
 
             return true;
@@ -536,4 +593,14 @@ internal sealed class AgentLink : IDisposable
     }
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
+
+    private static double Milliseconds(long ticks) => ticks * 1000.0 / Stopwatch.Frequency;
+
+    /// <summary>What is measured for one transfer.</summary>
+    private sealed record TransferMeasure(string TransferId, long WindowBytes, long StartTicks)
+    {
+        public ChannelCallStats Calls { get; } = new();
+
+        public AckRoundTrips Acks { get; } = new();
+    }
 }

@@ -41,6 +41,33 @@ internal static partial class WtsApi
     [return: MarshalAs(UnmanagedType.Bool)]
     public static unsafe partial bool WTSVirtualChannelWrite(IntPtr hChannelHandle, byte* buffer, uint length, out uint bytesWritten);
 
+    /// <summary>WTSVirtualFileHandle of WTS_VIRTUAL_CLASS: the file handle of a channel.</summary>
+    public const int VirtualFileHandle = 1;
+
+    /// <summary>WTSClientAddress of WTS_INFO_CLASS: a WTS_CLIENT_ADDRESS.</summary>
+    public const int ClientAddressInfo = 14;
+
+    /// <summary>WTSSessionInfoEx of WTS_INFO_CLASS: a WTSINFOEX.</summary>
+    public const int SessionInfoEx = 25;
+
+    /// <summary>
+    /// Gives information about a channel. With <see cref="VirtualFileHandle"/>, the buffer
+    /// holds the file handle of the channel, which belongs to the channel: duplicate it to
+    /// keep it. Free the buffer with <see cref="WTSFreeMemory"/>.
+    /// </summary>
+    [LibraryImport("wtsapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool WTSVirtualChannelQuery(IntPtr hChannelHandle, int virtualClass, out IntPtr buffer, out uint bytesReturned);
+
+    /// <summary>Gives information about a session. Free the buffer with <see cref="WTSFreeMemory"/>.</summary>
+    [LibraryImport("wtsapi32.dll", EntryPoint = "WTSQuerySessionInformationW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool WTSQuerySessionInformation(IntPtr hServer, int sessionId, int infoClass, out IntPtr buffer, out uint bytesReturned);
+
+    /// <summary>Frees a buffer given by the WTS functions.</summary>
+    [LibraryImport("wtsapi32.dll")]
+    public static partial void WTSFreeMemory(IntPtr memory);
+
     /// <summary>Closes a handle returned by WTSVirtualChannelOpen.</summary>
     [LibraryImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

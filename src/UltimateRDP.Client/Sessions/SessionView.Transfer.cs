@@ -24,6 +24,9 @@ internal sealed partial class SessionView
     /// <summary>Raw bytes per chunk, from the <c>transferChunkBytes</c> setting.</summary>
     private readonly int _transferChunkBytes;
 
+    /// <summary>Most bytes in flight, from the <c>transferWindowBytes</c> setting.</summary>
+    private readonly long _transferWindowBytes;
+
     private TransferUpload? _upload;
 
     /// <summary>The window of the current or last drop, until it is closed.</summary>
@@ -83,13 +86,16 @@ internal sealed partial class SessionView
             transferId,
             items,
             _transferChunkBytes,
+            _transferWindowBytes,
             _agent.Model,
             message => _agent.SendTransfer(message, transferId),
             (line, fileIndex, position) => _agent.SendTransferLine(line, transferId, fileIndex, position));
         upload.Planned += OnTransferPlanned;
         upload.Failed += OnUploadFailed;
         _upload = upload;
-        ClientLog.Info($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s).");
+        var window = TransferSender.EffectiveWindow(_transferWindowBytes, TransferSender.ClampChunkSize(_transferChunkBytes));
+        ClientLog.Info(Invariant($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s), chunks of {TransferSender.ClampChunkSize(_transferChunkBytes)} bytes, window of {window} bytes (setting {_transferWindowBytes})."));
+        _agent.BeginTransferMeasure(transferId, window);
         ShowDropStatus(LocalText.Of(nameof(Strings.TransferPreparing), items.Count));
         OpenProgressWindow(dragId, items, transfer: true);
         upload.Start();
@@ -232,6 +238,7 @@ internal sealed partial class SessionView
         }
 
         ClientLog.Info($"Transfer {upload.TransferId}: stopped by the disconnection.");
+        _agent.EndTransferMeasure(upload.TransferId);
         upload.Stop();
         _upload = null;
         ShowTransferFailure(upload, LocalText.Of(nameof(Strings.TransferInterrupted)));
@@ -259,6 +266,7 @@ internal sealed partial class SessionView
     /// </summary>
     private void EndTransfer(TransferUpload upload, string? cancelReason)
     {
+        _agent.EndTransferMeasure(upload.TransferId);
         upload.Stop();
         _upload = null;
         if (cancelReason is not null)

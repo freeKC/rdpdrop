@@ -1,4 +1,5 @@
 using Timer = System.Threading.Timer;
+using UltimateRDP.Agent.Channel;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
@@ -46,14 +47,16 @@ internal sealed class NativeDropCoordinator : IDisposable
     private readonly DriveRedirectionProbe _probe;
     private readonly StagingFolder _staging;
     private readonly ClientLanguage _language;
+    private readonly ChannelMeter? _meter;
     private readonly Lock _gate = new();
     private readonly Queue<string> _endedOrder = new();
     private readonly Dictionary<string, LocalText> _ended = [];
     private readonly TransferRegistry<StagedTransfer> _transfers = new();
     private NativeDrag? _current;
 
-    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging, ClientLanguage language)
+    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging, ClientLanguage language, ChannelMeter? meter = null)
     {
+        _meter = meter;
         _logger = logger;
         _send = send;
         _settings = settings;
@@ -674,7 +677,7 @@ internal sealed class NativeDropCoordinator : IDisposable
         StagedTransfer transfer;
         try
         {
-            transfer = new StagedTransfer(_logger, _staging, drag.Id, transferId, items, _send, _language);
+            transfer = new StagedTransfer(_logger, _staging, drag.Id, transferId, items, _send, _language, _meter);
         }
         catch (Exception ex) when (ItemMapper.IsFileError(ex))
         {

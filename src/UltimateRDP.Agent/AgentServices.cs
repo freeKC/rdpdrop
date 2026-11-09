@@ -19,12 +19,16 @@ internal sealed class AgentServices
     private readonly NativeDropCoordinator _native;
     private readonly StagingFolder _staging;
 
-    public AgentServices(FileLogger logger, AgentSettings settings, Func<Message, bool> send)
+    /// <param name="logger">The log.</param>
+    /// <param name="settings">The settings of the agent.</param>
+    /// <param name="send">Sends a message to the client.</param>
+    /// <param name="meter">Measures the channel during each transfer.</param>
+    public AgentServices(FileLogger logger, AgentSettings settings, Func<Message, bool> send, ChannelMeter meter)
     {
         _staging = new StagingFolder(logger, AgentInfo.StagingDirectory);
         var probe = new DriveRedirectionProbe(logger);
         var language = new ClientLanguage();
-        _native = new NativeDropCoordinator(logger, send, settings, probe, _staging, language);
+        _native = new NativeDropCoordinator(logger, send, settings, probe, _staging, language, meter);
         var logoff = new SessionLogoff(logger, send, language);
         _handler = new AgentProtocolHandler(logger, send, probe, _native, logoff, language);
     }
