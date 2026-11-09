@@ -86,6 +86,7 @@ internal sealed partial class SessionView
 
     private void StartTransfer(string dragId, string transferId, IReadOnlyList<DropItem> items)
     {
+        var encoding = ChunkEncodings.Choose(_agent.ClientToAgentModel);
         var upload = new TransferUpload(
             this,
             dragId,
@@ -94,19 +95,25 @@ internal sealed partial class SessionView
             _transferChunkBytes,
             _transferWindowBytes,
             _agent.Model,
+            encoding,
             message => _agent.SendTransfer(message, transferId),
             (line, fileIndex, position) => _agent.SendTransferLine(line, transferId, fileIndex, position));
         upload.Planned += OnTransferPlanned;
         upload.Failed += OnUploadFailed;
         _upload = upload;
         var window = TransferSender.EffectiveWindow(_transferWindowBytes, TransferSender.ClampChunkSize(_transferChunkBytes));
-        ClientLog.Info(Invariant($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s), chunks of {TransferSender.ClampChunkSize(_transferChunkBytes)} bytes, window of {window} bytes (setting {_transferWindowBytes})."));
+        ClientLog.Info(Invariant($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s), chunks of {TransferSender.ClampChunkSize(_transferChunkBytes)} bytes, window of {window} bytes (setting {_transferWindowBytes}), chunks in {encoding}, {WireCost(encoding, _agent.ClientToAgentModel)}."));
         _agent.BeginTransferMeasure(transferId, window);
         ShowDropStatus(LocalText.Of(nameof(Strings.TransferPreparing), items.Count));
         OpenProgressWindow(dragId, items, transfer: true);
         upload.Start();
         RaiseStateChanged();
     }
+
+    /// <summary>How the data of the client reaches the agent and what a file byte costs on the wire, for the log.</summary>
+    private static string WireCost(string encoding, ChannelByteModel clientToAgent) => clientToAgent == ChannelByteModel.Unknown
+        ? "the agent did not say how the data of the client reaches it"
+        : Invariant($"data of the client reaches the agent in the {clientToAgent} model, {ChunkEncodings.WireBytesPerFileByte(encoding, clientToAgent):0.###} wire bytes per file byte");
 
     private void OnTransferPlanned(TransferUpload upload)
     {

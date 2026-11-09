@@ -101,7 +101,7 @@ internal sealed class StagedTransfer
             {
                 if (message is TransferBeginMessage announced)
                 {
-                    _logger.Info($"Transfer {TransferId} of drag {DragId}: receiving {announced.Files} file(s), {announced.Bytes} bytes.");
+                    _logger.Info($"Transfer {TransferId} of drag {DragId}: receiving {announced.Files} file(s), {announced.Bytes} bytes, chunks in {ChunkEncodings.OrDefault(announced.ChunkEncoding)}.");
                 }
 
                 if (_receiver.Handle(message) is { } ack)
@@ -109,7 +109,7 @@ internal sealed class StagedTransfer
                     if (message is FileChunkMessage { Offset: 0 } first)
                     {
                         // One line per file: the first thing to look for when data does not get through.
-                        _logger.Info($"Transfer {TransferId}: first chunk of file {first.FileIndex} received, {ack.Received} bytes in {first.Data.Length} characters of base64.");
+                        _logger.Info($"Transfer {TransferId}: first chunk of file {first.FileIndex} received, {ack.Received} bytes in {first.Data.Length} characters of {ChunkEncodings.OrDefault(first.Enc)}.");
                     }
 
                     _send(ack);

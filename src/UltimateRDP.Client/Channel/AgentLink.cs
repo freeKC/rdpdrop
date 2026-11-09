@@ -31,7 +31,11 @@ namespace UltimateRDP.Client.Channel;
 /// </para>
 /// <para>
 /// The model detected on the reply of the agent only tells how to read what the control
-/// delivers; it is kept for the rest of the connection.
+/// delivers; it is kept for the rest of the connection. The hello of an agent 0.5.0 or
+/// later also says the model in which the data of the client reaches it
+/// (<see cref="ClientToAgentModel"/>): in the UTF-16 model the chunks of a transfer go out
+/// in the dense encoding <c>u15</c>, whose lines are not ASCII; every other line stays
+/// ASCII.
 /// </para>
 /// <para>
 /// Every line goes into a <see cref="SendQueue"/> first. The queue is sent at the end of
@@ -116,6 +120,13 @@ internal sealed class AgentLink : IDisposable
 
     /// <summary>Byte model of the strings received, locked when the agent answered, Unknown before.</summary>
     public ChannelByteModel Model => _receiver.LockedModel;
+
+    /// <summary>
+    /// Byte model in which the data of the client reaches the agent, as the hello of the
+    /// agent says; Unknown before it answers, and with an agent older than 0.5.0, which
+    /// does not say.
+    /// </summary>
+    public ChannelByteModel ClientToAgentModel { get; private set; }
 
     /// <summary>
     /// Finds out, once, how strings are handed to the control, and logs it. Called before
@@ -327,6 +338,7 @@ internal sealed class AgentLink : IDisposable
         _hellosSent = 0;
         AgentVersion = null;
         DriveRedirectionAvailable = null;
+        ClientToAgentModel = ChannelByteModel.Unknown;
     }
 
     private void OnTimer()
@@ -557,8 +569,9 @@ internal sealed class AgentLink : IDisposable
 
         AgentVersion = hello.AgentVersion;
         DriveRedirectionAvailable = hello.DriveRedirectionAvailable;
+        ClientToAgentModel = ChannelByteModelNames.FromName(hello.ClientToAgentModel);
         _timer.Stop();
-        ClientLog.Info($"Agent ready, version {hello.AgentVersion ?? "(unknown)"}, drive redirection available: {hello.DriveRedirectionAvailable?.ToString() ?? "(not said)"}.");
+        ClientLog.Info($"Agent ready, version {hello.AgentVersion ?? "(unknown)"}, drive redirection available: {hello.DriveRedirectionAvailable?.ToString() ?? "(not said)"}, data of the client reaches the agent in the {(hello.ClientToAgentModel is null ? "(not said)" : ClientToAgentModel)} model, so transfer chunks go in {ChunkEncodings.Choose(ClientToAgentModel)}.");
         State = AgentState.Ready;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

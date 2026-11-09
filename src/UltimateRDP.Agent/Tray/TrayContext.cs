@@ -113,7 +113,7 @@ internal sealed class TrayContext : ApplicationContext
     }
 
     /// <summary>Handles one line from the client, on the channel thread.</summary>
-    private void Handle(byte[] payload)
+    private void Handle(string line)
     {
         AgentServices services;
         lock (_servicesGate)
@@ -123,10 +123,10 @@ internal sealed class TrayContext : ApplicationContext
                 return;
             }
 
-            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop));
+            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop), () => _loop.Model);
         }
 
-        services.Handle(payload);
+        services.Handle(line);
     }
 
     private void OnClientPresence(bool present)

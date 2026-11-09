@@ -49,6 +49,7 @@ internal sealed class TransferUpload
     private readonly int _chunkSize;
     private readonly long _windowBytes;
     private readonly ChannelByteModel _model;
+    private readonly string _chunkEncoding;
     private readonly object _gate = new();
     private TransferSender? _sender;
     private TransferAckWatch? _watch;
@@ -63,12 +64,13 @@ internal sealed class TransferUpload
     /// <param name="chunkSize">Raw bytes per chunk, within the bounds of <see cref="TransferSender"/>.</param>
     /// <param name="windowBytes">Most bytes in flight asked for, within the bounds of <see cref="TransferSender"/>.</param>
     /// <param name="model">Byte model detected on the data received from the agent, for the log.</param>
+    /// <param name="chunkEncoding">How the chunks are written, one of <see cref="ChunkEncodings"/>.</param>
     /// <param name="sendMessage">Sends a message on the UI thread; false when it failed.</param>
     /// <param name="sendLine">
     /// Sends a ready chunk line on the UI thread, with its file and the bytes of the transfer
     /// sent once it is counted; false when it failed.
     /// </param>
-    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, long windowBytes, ChannelByteModel model, Func<Message, bool> sendMessage, Func<string, int, long, bool> sendLine)
+    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, long windowBytes, ChannelByteModel model, string chunkEncoding, Func<Message, bool> sendMessage, Func<string, int, long, bool> sendLine)
     {
         _owner = owner;
         DragId = dragId;
@@ -77,6 +79,7 @@ internal sealed class TransferUpload
         _chunkSize = TransferSender.ClampChunkSize(chunkSize);
         _windowBytes = TransferSender.ClampWindowBytes(windowBytes);
         _model = model;
+        _chunkEncoding = chunkEncoding;
         _sendMessage = sendMessage;
         _sendLine = sendLine;
     }
@@ -214,7 +217,7 @@ internal sealed class TransferUpload
             TransferBeginMessage begin;
             lock (_gate)
             {
-                _sender = new TransferSender(TransferId, planned, _chunkSize, _windowBytes);
+                _sender = new TransferSender(TransferId, planned, _chunkSize, _windowBytes, _chunkEncoding);
                 begin = _sender.Begin();
                 _watch = new TransferAckWatch(Environment.TickCount64);
             }
@@ -428,7 +431,7 @@ internal sealed class TransferUpload
             ? Invariant($"no acknowledgement {TransferAckWatch.FirstAckTimeout.TotalSeconds:0} s after the first chunk was sent")
             : Invariant($"no acknowledgement for {TransferAckWatch.AckTimeout.TotalSeconds:0} s");
         ClientLog.Warn(Invariant(
-            $"Transfer {TransferId}: {rule}, {when}. Byte model of the received data {_model}, chunk size {sender.ChunkSize} bytes, chunk lines of up to {sender.LongestChunkLine} characters, {Volatile.Read(ref _linesSent)} chunk line(s) sent, {sender.InFlightBytes} bytes in flight, {sender.AcknowledgedBytes} acknowledged."));
+            $"Transfer {TransferId}: {rule}, {when}. Byte model of the received data {_model}, chunk size {sender.ChunkSize} bytes in {sender.ChunkEncoding}, chunk lines of up to {sender.LongestChunkLine} characters, {Volatile.Read(ref _linesSent)} chunk line(s) sent, {sender.InFlightBytes} bytes in flight, {sender.AcknowledgedBytes} acknowledged."));
         _ackMissing = true;
         Fail(LocalText.Of(timeout == TransferAckTimeout.FirstData ? nameof(Strings.TransferFirstAckMissing) : nameof(Strings.TransferAgentSilent)));
         return true;
@@ -467,7 +470,7 @@ internal sealed class TransferUpload
 
         if (Interlocked.Increment(ref _linesSent) == 1)
         {
-            ClientLog.Info(Invariant($"Transfer {TransferId}: first chunk line sent, {line.Length} characters for chunks of {_chunkSize} bytes."));
+            ClientLog.Info(Invariant($"Transfer {TransferId}: first chunk line sent, {line.Length} characters for chunks of {_chunkSize} bytes in {_chunkEncoding}."));
         }
 
         lock (_gate)

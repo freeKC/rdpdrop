@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Text;
 using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Core.Agent;
@@ -12,7 +11,9 @@ namespace UltimateRDP.Agent.Channel;
 /// <summary>
 /// Keeps the ULTRDP channel open for as long as the agent runs. A dedicated background
 /// thread opens the channel, reads lines (see <see cref="IncomingTextDecoder"/> and
-/// <see cref="LineReader"/>) and hands each one, as ASCII bytes, to the handler. On any
+/// <see cref="LineReader"/>) and hands each one, as the string of its characters, to the
+/// handler: a chunk line in <c>u15</c> holds characters above 0x7F, which the handler reads
+/// before any conversion to ASCII. On any
 /// failure it closes the channel, waits as <see cref="ChannelRetryPolicy"/> says and
 /// tries again, forever. A connection or a logon of the session skips the wait.
 /// </summary>
@@ -59,7 +60,7 @@ internal sealed class ChannelLoop : IDisposable
     private readonly RepeatedFailureFilter _openFailures = new();
     private readonly RepeatedFailureFilter _loopFailures = new();
     private readonly IdleReport _idleReport = new(IdleReportInterval);
-    private Action<byte[]>? _payloadHandler;
+    private Action<string>? _payloadHandler;
     private Thread? _thread;
     private byte[]? _buffer;
     private byte[]? _payload;
@@ -106,6 +107,12 @@ internal sealed class ChannelLoop : IDisposable
     public string ReadMode => _readModeText;
 
     /// <summary>
+    /// The byte model detected on the data of the client on the current connection, or
+    /// Unknown before its first bytes. The hello of the agent tells it to the client.
+    /// </summary>
+    public ChannelByteModel Model => _model;
+
+    /// <summary>
     /// Starts counting the reads for a transfer and returns the new counters. Callable from
     /// any thread; a transfer that starts while another is counted replaces it.
     /// </summary>
@@ -123,7 +130,7 @@ internal sealed class ChannelLoop : IDisposable
     /// Starts the background thread. <paramref name="payloadHandler"/> runs on that thread
     /// for every complete line; it must return quickly.
     /// </summary>
-    public void Start(Action<byte[]> payloadHandler)
+    public void Start(Action<string> payloadHandler)
     {
         if (_thread is not null)
         {
@@ -547,7 +554,7 @@ internal sealed class ChannelLoop : IDisposable
                 _logger.Warn($"Protocol error: {padding} NUL characters or spaces came before the line that starts with {Head(trimmed)}. They were dropped; a message may be missing before this line.");
             }
 
-            Dispatch(Encoding.ASCII.GetBytes(trimmed));
+            Dispatch(trimmed);
         }
     }
 
@@ -558,13 +565,13 @@ internal sealed class ChannelLoop : IDisposable
         return string.Concat(head.Select(c => c is >= ' ' and <= '~' ? c : '?'));
     }
 
-    private void Dispatch(byte[] payload)
+    private void Dispatch(string line)
     {
         var stats = Volatile.Read(ref _readStats);
         var started = stats is null ? 0 : Stopwatch.GetTimestamp();
         try
         {
-            _payloadHandler?.Invoke(payload);
+            _payloadHandler?.Invoke(line);
         }
         catch (Exception ex)
         {

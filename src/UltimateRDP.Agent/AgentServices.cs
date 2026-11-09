@@ -23,18 +23,19 @@ internal sealed class AgentServices
     /// <param name="settings">The settings of the agent.</param>
     /// <param name="send">Sends a message to the client.</param>
     /// <param name="meter">Measures the channel during each transfer.</param>
-    public AgentServices(FileLogger logger, AgentSettings settings, Func<Message, bool> send, ChannelMeter meter)
+    /// <param name="clientModel">The byte model detected on the data of the client, for the hello of the agent.</param>
+    public AgentServices(FileLogger logger, AgentSettings settings, Func<Message, bool> send, ChannelMeter meter, Func<ChannelByteModel> clientModel)
     {
         _staging = new StagingFolder(logger, AgentInfo.StagingDirectory);
         var probe = new DriveRedirectionProbe(logger);
         var language = new ClientLanguage();
         _native = new NativeDropCoordinator(logger, send, settings, probe, _staging, language, meter);
         var logoff = new SessionLogoff(logger, send, language);
-        _handler = new AgentProtocolHandler(logger, send, probe, _native, logoff, language);
+        _handler = new AgentProtocolHandler(logger, send, probe, _native, logoff, language, clientModel);
     }
 
     /// <summary>Handles one line from the client. Runs on the channel thread.</summary>
-    public void Handle(byte[] payload) => _handler.Handle(payload);
+    public void Handle(string line) => _handler.Handle(line);
 
     /// <summary>
     /// Ends the drag in progress, waiting at most <paramref name="wait"/>, and stops the

@@ -2,7 +2,9 @@ using UltimateRDP.Agent.Drops;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
+using System.Text;
 using UltimateRDP.Core.Protocol;
+using UltimateRDP.Core.Transfer;
 using Message = UltimateRDP.Core.Protocol.Message;
 
 namespace UltimateRDP.Agent.Channel;
@@ -11,7 +13,8 @@ namespace UltimateRDP.Agent.Channel;
 /// Reacts to the messages sent by the client. Runs on the channel thread; the drag
 /// messages go to the <see cref="NativeDropCoordinator"/>, which does the slow work on its
 /// own threads, and the log off request to the <see cref="SessionLogoff"/>. The hello of
-/// the client sets the language of the texts sent back.
+/// the client sets the language of the texts sent back, and the hello of the agent tells
+/// the client the byte model of its data, from which it chooses the encoding of the chunks.
 /// </summary>
 internal sealed class AgentProtocolHandler
 {
@@ -23,6 +26,7 @@ internal sealed class AgentProtocolHandler
     private readonly NativeDropCoordinator _native;
     private readonly SessionLogoff _logoff;
     private readonly ClientLanguage _language;
+    private readonly Func<ChannelByteModel> _clientModel;
 
     public AgentProtocolHandler(
         FileLogger logger,
@@ -30,7 +34,8 @@ internal sealed class AgentProtocolHandler
         DriveRedirectionProbe probe,
         NativeDropCoordinator native,
         SessionLogoff logoff,
-        ClientLanguage language)
+        ClientLanguage language,
+        Func<ChannelByteModel> clientModel)
     {
         _logger = logger;
         _send = send;
@@ -38,10 +43,27 @@ internal sealed class AgentProtocolHandler
         _native = native;
         _logoff = logoff;
         _language = language;
+        _clientModel = clientModel;
+    }
+
+    /// <summary>
+    /// Handles one line, as the string of its characters. A chunk line in <c>u15</c> is read
+    /// by hand from the string, since its data is not ASCII; every other line goes to the
+    /// JSON reader as its ASCII bytes.
+    /// </summary>
+    public void Handle(string line)
+    {
+        if (TransferLines.TryParseChunk(line, out var denseChunk))
+        {
+            _native.OnTransferMessage(denseChunk, denseChunk.TransferId);
+            return;
+        }
+
+        Handle(Encoding.ASCII.GetBytes(line));
     }
 
     /// <summary>Handles one line, given as its ASCII bytes.</summary>
-    public void Handle(byte[] payload)
+    private void Handle(byte[] payload)
     {
         // Chunks are most of the traffic of a transfer and carry no version: they skip the
         // envelope, which would parse each one a second time.
@@ -132,8 +154,9 @@ internal sealed class AgentProtocolHandler
     {
         var language = _language.Set(hello.ClientLanguage);
         var available = _probe.IsAvailable();
-        _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}, language {hello.ClientLanguage ?? "(not said)"} (texts in {language}); drive redirection available: {available}.");
-        _send(HelloMessage.FromAgent(AgentInfo.Version, available));
+        var model = _clientModel();
+        _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}, language {hello.ClientLanguage ?? "(not said)"} (texts in {language}); drive redirection available: {available}; data of the client in the {model} model.");
+        _send(HelloMessage.FromAgent(AgentInfo.Version, available, model));
     }
 
     private void RejectNewerVersion(MessageEnvelope envelope)
