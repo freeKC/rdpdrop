@@ -6,7 +6,10 @@ public enum TimeLeftUnit
     /// <summary>Under a minute: <see cref="TimeLeft.Seconds"/>, rounded up to five seconds.</summary>
     Seconds,
 
-    /// <summary>Under an hour: <see cref="TimeLeft.Minutes"/>, rounded up.</summary>
+    /// <summary>
+    /// Under an hour: <see cref="TimeLeft.Minutes"/>, rounded up; with
+    /// <see cref="TimeLeft.Detailed"/>, also <see cref="TimeLeft.Seconds"/>.
+    /// </summary>
     Minutes,
 
     /// <summary><see cref="TimeLeft.Hours"/> and <see cref="TimeLeft.Minutes"/>, rounded up to the minute.</summary>
@@ -34,6 +37,24 @@ public readonly record struct TimeLeft(TimeLeftUnit Unit, int Hours, int Minutes
 
         var hours = (int)Math.Min(int.MaxValue, minutes / 60);
         return new TimeLeft(TimeLeftUnit.Hours, hours, (int)(minutes % 60), 0);
+    }
+
+    /// <summary>
+    /// Rounds <paramref name="remaining"/> up to five seconds under an hour, giving minutes
+    /// and seconds, for the progress window; from an hour on, as <see cref="From"/>.
+    /// </summary>
+    public static TimeLeft Detailed(TimeSpan remaining)
+    {
+        var seconds = (long)Math.Ceiling(Math.Clamp(remaining.TotalSeconds, 0, int.MaxValue));
+        var rounded = Math.Max(5, (seconds + 4) / 5 * 5);
+        if (rounded < 60)
+        {
+            return new TimeLeft(TimeLeftUnit.Seconds, 0, 0, (int)rounded);
+        }
+
+        return rounded < 3600
+            ? new TimeLeft(TimeLeftUnit.Minutes, 0, (int)(rounded / 60), (int)(rounded % 60))
+            : From(remaining);
     }
 }
 
@@ -92,6 +113,27 @@ public sealed class TransferProgress
         : null;
 
     private (long Time, long Bytes) LastSample { get; set; }
+
+    /// <summary>
+    /// Index of the file being transferred when <paramref name="doneBytes"/> of the files
+    /// of <paramref name="sizes"/>, sent in that order, are done: the first file that is not
+    /// complete, or the last file once all are. -1 without files.
+    /// </summary>
+    public static int CurrentFile(IReadOnlyList<long> sizes, long doneBytes)
+    {
+        ArgumentNullException.ThrowIfNull(sizes);
+        long end = 0;
+        for (var i = 0; i < sizes.Count; i++)
+        {
+            end += Math.Max(0, sizes[i]);
+            if (end > doneBytes)
+            {
+                return i;
+            }
+        }
+
+        return sizes.Count - 1;
+    }
 
     /// <summary>Records the bytes done at <paramref name="nowMilliseconds"/>.</summary>
     public void Report(long nowMilliseconds, long doneBytes)

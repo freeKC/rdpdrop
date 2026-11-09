@@ -169,6 +169,22 @@ Saved credentials: {0} never saves a password. Windows saves it when you tick "R
     <value>Dropped on {0} ({1})</value>
     <comment>{0} is a window title, {1} is the text of EffectCopy or EffectLink.</comment>
   </data>
+  <data name="DurationHoursMinutes" xml:space="preserve">
+    <value>{0} h {1} min</value>
+    <comment>A duration of an hour or more in the transfer window. {0} is hours, {1} minutes.</comment>
+  </data>
+  <data name="DurationMinutes" xml:space="preserve">
+    <value>{0} min</value>
+    <comment>A duration of whole minutes in the transfer window. {0} is minutes.</comment>
+  </data>
+  <data name="DurationMinutesSeconds" xml:space="preserve">
+    <value>{0} min {1} s</value>
+    <comment>A duration under an hour in the transfer window. {0} is minutes, {1} seconds.</comment>
+  </data>
+  <data name="DurationSeconds" xml:space="preserve">
+    <value>{0} s</value>
+    <comment>A duration under a minute in the transfer window. {0} is seconds.</comment>
+  </data>
   <data name="EffectCopy" xml:space="preserve">
     <value>copy</value>
     <comment>Shown inside DroppedOn.</comment>
@@ -468,6 +484,58 @@ Reconnect now?</value>
   <data name="TransferReadFailed" xml:space="preserve">
     <value>Cannot read {0}. {1}</value>
     <comment>{0} is a file path, {1} an error text from Windows.</comment>
+  </data>
+  <data name="TransferWindowBusy" xml:space="preserve">
+    <value>Wait for this transfer before dropping more files.</value>
+    <comment>Shown for five seconds in the transfer window when a new drag is refused during the transfer.</comment>
+  </data>
+  <data name="TransferWindowCancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>Button of the transfer window that cancels the transfer.</comment>
+  </data>
+  <data name="TransferWindowClose" xml:space="preserve">
+    <value>Close</value>
+    <comment>Button of the transfer window once the transfer ended.</comment>
+  </data>
+  <data name="TransferWindowDestination" xml:space="preserve">
+    <value>Destination: {0}</value>
+    <comment>{0} is the host name of the session.</comment>
+  </data>
+  <data name="TransferWindowDone" xml:space="preserve">
+    <value>Transferred {0} file(s) in {1} at {2:0.0} MB/s.</value>
+    <comment>{0} is a number of files, {1} a duration from DurationSeconds, DurationMinutes, DurationMinutesSeconds or DurationHoursMinutes, {2} a rate in megabytes per second. The result of the drop follows on the next line.</comment>
+  </data>
+  <data name="TransferWindowDropping" xml:space="preserve">
+    <value>Transferred {0} file(s) in {1} at {2:0.0} MB/s, dropping into the session...</value>
+    <comment>{0} is a number of files, {1} a duration from DurationSeconds, DurationMinutes, DurationMinutesSeconds or DurationHoursMinutes, {2} a rate in megabytes per second.</comment>
+  </data>
+  <data name="TransferWindowFileOf" xml:space="preserve">
+    <value>file {0} of {1}</value>
+    <comment>{0} is the number of the file being transferred, {1} the number of files. Shown next to the name of the file.</comment>
+  </data>
+  <data name="TransferWindowItemCount" xml:space="preserve">
+    <value>{0} item(s)</value>
+    <comment>{0} is the number of dropped items, shown while the files are listed.</comment>
+  </data>
+  <data name="TransferWindowPreparing" xml:space="preserve">
+    <value>Preparing...</value>
+    <comment>Shown in the transfer window while the files are listed.</comment>
+  </data>
+  <data name="TransferWindowProgress" xml:space="preserve">
+    <value>{0} %, {1:0.0} MB/s, {2}</value>
+    <comment>{0} is a percentage, {1} a rate in megabytes per second, {2} the text of TransferWindowTimeLeft.</comment>
+  </data>
+  <data name="TransferWindowProgressNoRate" xml:space="preserve">
+    <value>{0} %</value>
+    <comment>{0} is a percentage. Shown until the rate is known.</comment>
+  </data>
+  <data name="TransferWindowTimeLeft" xml:space="preserve">
+    <value>{0} left</value>
+    <comment>{0} is a duration from DurationSeconds, DurationMinutes, DurationMinutesSeconds or DurationHoursMinutes.</comment>
+  </data>
+  <data name="TransferWindowTitle" xml:space="preserve">
+    <value>Transfer to the session</value>
+    <comment>Title of the window that shows the progress of a transfer of large files.</comment>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>An unexpected error occurred.

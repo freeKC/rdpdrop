@@ -102,6 +102,7 @@ internal sealed partial class SessionView
     private void DisposeDrops()
     {
         _upload?.Stop();
+        CloseProgressWindow();
         StopDragTimers();
         _ackTimer.Dispose();
         _moveTimer.Dispose();
@@ -144,6 +145,7 @@ internal sealed partial class SessionView
             EndLiveDrag(sendLeave: true);
             HideBanner();
             e.Effect = DragDropEffects.None;
+            NoteBusyRefusal();
             ShowDropStatus(reason);
             return;
         }
@@ -199,6 +201,7 @@ internal sealed partial class SessionView
         if (reason is not null)
         {
             ClientLog.Info(Invariant($"Drop of {e.Files.Count} item(s) refused: {reason.ToEnglish()}"));
+            NoteBusyRefusal();
             EndLiveDrag(sendLeave: true);
             ShowDropStatus(reason);
             return;
@@ -218,6 +221,7 @@ internal sealed partial class SessionView
 
     private void StartLiveDrag(FileDragEventArgs e)
     {
+        CloseEndedProgressWindow();
         var id = Guid.NewGuid().ToString("N");
         var items = MapItems(e.Files, out var pathProblem);
         if (items is null)
@@ -501,9 +505,14 @@ internal sealed partial class SessionView
         if (_upload is { } upload && upload.DragId == result.Id)
         {
             // The agent ended the drag before it had the files, so the transfer cannot go on;
-            // the reason of the agent stays in the status bar.
+            // the reason of the agent stays in the status bar and in the window.
             ClientLog.Info($"Transfer {upload.TransferId}: the drag ended on the agent with {result.Status}; the transfer stops.");
             EndTransfer(upload, "The drag ended on the agent before the transfer.");
+            ProgressWindowOf(upload)?.ShowFailure(DescribeResult(result));
+        }
+        else
+        {
+            ShowDropResultInWindow(result.Id, DescribeResult(result));
         }
 
         if (_pendingDropId is not null && result.Id != _pendingDropId)

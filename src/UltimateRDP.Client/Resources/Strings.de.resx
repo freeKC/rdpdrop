@@ -153,6 +153,18 @@ Gespeicherte Anmeldedaten: {0} speichert nie ein Kennwort. Windows speichert es,
   <data name="DroppedOn" xml:space="preserve">
     <value>Abgelegt auf {0} ({1})</value>
   </data>
+  <data name="DurationHoursMinutes" xml:space="preserve">
+    <value>{0} h {1} min</value>
+  </data>
+  <data name="DurationMinutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="DurationMinutesSeconds" xml:space="preserve">
+    <value>{0} min {1} s</value>
+  </data>
+  <data name="DurationSeconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
   <data name="EffectCopy" xml:space="preserve">
     <value>Kopie</value>
   </data>
@@ -417,6 +429,45 @@ Jetzt neu verbinden?</value>
   </data>
   <data name="TransferReadFailed" xml:space="preserve">
     <value>{0} kann nicht gelesen werden. {1}</value>
+  </data>
+  <data name="TransferWindowBusy" xml:space="preserve">
+    <value>Warten Sie das Ende dieser Übertragung ab, bevor Sie weitere Dateien ablegen.</value>
+  </data>
+  <data name="TransferWindowCancel" xml:space="preserve">
+    <value>Abbrechen</value>
+  </data>
+  <data name="TransferWindowClose" xml:space="preserve">
+    <value>Schließen</value>
+  </data>
+  <data name="TransferWindowDestination" xml:space="preserve">
+    <value>Ziel: {0}</value>
+  </data>
+  <data name="TransferWindowDone" xml:space="preserve">
+    <value>{0} Datei(en) in {1} mit {2:0.0} MB/s übertragen.</value>
+  </data>
+  <data name="TransferWindowDropping" xml:space="preserve">
+    <value>{0} Datei(en) in {1} mit {2:0.0} MB/s übertragen, wird in der Sitzung abgelegt...</value>
+  </data>
+  <data name="TransferWindowFileOf" xml:space="preserve">
+    <value>Datei {0} von {1}</value>
+  </data>
+  <data name="TransferWindowItemCount" xml:space="preserve">
+    <value>{0} Element(e)</value>
+  </data>
+  <data name="TransferWindowPreparing" xml:space="preserve">
+    <value>Wird vorbereitet...</value>
+  </data>
+  <data name="TransferWindowProgress" xml:space="preserve">
+    <value>{0} %, {1:0.0} MB/s, {2}</value>
+  </data>
+  <data name="TransferWindowProgressNoRate" xml:space="preserve">
+    <value>{0} %</value>
+  </data>
+  <data name="TransferWindowTimeLeft" xml:space="preserve">
+    <value>noch {0}</value>
+  </data>
+  <data name="TransferWindowTitle" xml:space="preserve">
+    <value>Übertragung in die Sitzung</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Ein unerwarteter Fehler ist aufgetreten.

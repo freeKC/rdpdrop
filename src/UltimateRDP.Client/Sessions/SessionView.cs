@@ -214,6 +214,10 @@ internal sealed partial class SessionView : UserControl
         }
 
         _closeRequested = true;
+
+        // Before the disconnection, so that the agent can still be told.
+        CancelTransferForClose();
+
         if (State == SessionState.Disconnected)
         {
             ReportClosed();
@@ -246,6 +250,7 @@ internal sealed partial class SessionView : UserControl
         ConnectionTextChanged?.Invoke(this, EventArgs.Empty);
         AgentTextChanged?.Invoke(this, EventArgs.Empty);
         DropTextChanged?.Invoke(this, EventArgs.Empty);
+        _progressWindow?.ApplyTexts();
     }
 
     protected override void Dispose(bool disposing)

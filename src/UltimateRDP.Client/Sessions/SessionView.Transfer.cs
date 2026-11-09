@@ -10,27 +10,29 @@ namespace UltimateRDP.Client.Sessions;
 /// <summary>
 /// Transfer of the dropped files through the channel. When the dragAck of the agent asks
 /// for it, the drop is deferred: the agent ends the live drag and keeps the point, a
-/// <see cref="TransferUpload"/> sends the files, the status bar shows the progress, and
-/// once the agent has every file it drops the copies at that point and sends the usual
-/// dropResult.
+/// <see cref="TransferUpload"/> sends the files, the status bar and a
+/// <see cref="TransferProgressForm"/> show the progress, and once the agent has every
+/// file it drops the copies at that point and sends the usual dropResult.
 /// </summary>
 /// <remarks>
-/// One transfer at a time: while one runs, new drags are refused with a status text. The
-/// Session menu can cancel it.
+/// One transfer at a time: while one runs, new drags are refused with a status text and a
+/// notice in the progress window. The Session menu and the window can cancel it; closing
+/// the tab cancels it too.
 /// </remarks>
 internal sealed partial class SessionView
 {
-    private const double BytesPerMegabyte = 1_000_000;
-
     /// <summary>Raw bytes per chunk, from the <c>transferChunkBytes</c> setting.</summary>
     private readonly int _transferChunkBytes;
 
     private TransferUpload? _upload;
 
+    /// <summary>The window of the current or last transfer, until it is closed.</summary>
+    private TransferProgressForm? _progressWindow;
+
     /// <summary>True while files are being transferred to the agent.</summary>
     public bool CanCancelTransfer => _upload is not null;
 
-    /// <summary>Cancels the transfer in progress, from the menu.</summary>
+    /// <summary>Cancels the transfer in progress, from the menu or the progress window.</summary>
     public void CancelTransfer()
     {
         if (_upload is not { } upload)
@@ -40,7 +42,7 @@ internal sealed partial class SessionView
 
         ClientLog.Info($"Transfer {upload.TransferId}: cancelled by the user.");
         EndTransfer(upload, "The user cancelled the transfer.");
-        ShowDropStatus(LocalText.Of(nameof(Strings.TransferCancelledByUser)));
+        ShowTransferFailure(upload, LocalText.Of(nameof(Strings.TransferCancelledByUser)));
     }
 
     private void InitializeTransfer()
@@ -65,6 +67,7 @@ internal sealed partial class SessionView
         _upload = upload;
         ClientLog.Info($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s).");
         ShowDropStatus(LocalText.Of(nameof(Strings.TransferPreparing), items.Count));
+        OpenProgressWindow(dragId, items);
         upload.Start();
         RaiseStateChanged();
     }
@@ -95,8 +98,9 @@ internal sealed partial class SessionView
     }
 
     /// <summary>
-    /// "Transferring 3 file(s): 42 % (12.3 MB/s, 1 min left)". While a drag hovers over
-    /// the session, the text waits, so that the reason the drag is refused stays visible.
+    /// "Transferring 3 file(s): 42 % (12.3 MB/s, 1 min left)" in the status bar, and the
+    /// same progress in the window. While a drag hovers over the session, the status text
+    /// waits, so that the reason the drag is refused stays visible.
     /// </summary>
     private void ShowTransferProgress(TransferUpload upload)
     {
@@ -105,8 +109,17 @@ internal sealed partial class SessionView
             return;
         }
 
+        if (ProgressWindowOf(upload) is { } window)
+        {
+            var index = TransferProgress.CurrentFile(upload.FileSizes, progress.DoneBytes);
+            if (index >= 0)
+            {
+                window.ShowProgress(upload.Files[index].RelativePath, index + 1, upload.Files.Count, progress);
+            }
+        }
+
         var text = progress.BytesPerSecond is { } rate && progress.Remaining is { } remaining
-            ? LocalText.Of(nameof(Strings.TransferProgressRate), upload.FileCount, progress.Percent, rate / BytesPerMegabyte, TimeLeftText(remaining))
+            ? LocalText.Of(nameof(Strings.TransferProgressRate), upload.FileCount, progress.Percent, rate / TransferProgressText.BytesPerMegabyte, TimeLeftText(remaining))
             : LocalText.Of(nameof(Strings.TransferProgress), upload.FileCount, progress.Percent);
         if (_dropTextBeforeDrag is not null)
         {
@@ -143,19 +156,21 @@ internal sealed partial class SessionView
             case DropStatus.Ok:
                 // The drop of the copies follows; its dropResult replaces this text.
                 var seconds = result.Seconds > 0 ? result.Seconds : (Environment.TickCount64 - upload.StartTicks) / 1000.0;
-                ShowDropStatus(LocalText.Of(nameof(Strings.TransferDropping), upload.FileCount, seconds > 0 ? result.Bytes / BytesPerMegabyte / seconds : 0));
+                var rate = TransferProgressText.MegabytesPerSecond(result.Bytes, seconds);
+                ShowDropStatus(LocalText.Of(nameof(Strings.TransferDropping), upload.FileCount, rate));
+                ProgressWindowOf(upload)?.ShowDropping(upload.FileCount, TimeSpan.FromSeconds(seconds), rate);
                 break;
 
             case DropStatus.Cancelled:
                 _pendingDropId = null;
-                ShowDropStatus(string.IsNullOrWhiteSpace(result.Message)
+                ShowTransferFailure(upload, string.IsNullOrWhiteSpace(result.Message)
                     ? LocalText.Of(nameof(Strings.TransferCancelledByUser))
                     : LocalText.Of(nameof(Strings.CancelledReason), result.Message));
                 break;
 
             default:
                 _pendingDropId = null;
-                ShowDropStatus(string.IsNullOrWhiteSpace(result.Message)
+                ShowTransferFailure(upload, string.IsNullOrWhiteSpace(result.Message)
                     ? LocalText.Of(nameof(Strings.TransferFailedNoDetail))
                     : LocalText.Of(nameof(Strings.TransferFailedReason), result.Message));
                 break;
@@ -172,7 +187,7 @@ internal sealed partial class SessionView
 
         ClientLog.Warn($"Transfer {upload.TransferId}: stopped on the client, {reason.ToEnglish()}");
         EndTransfer(upload, reason.ToEnglish());
-        ShowDropStatus(reason);
+        ShowTransferFailure(upload, reason);
         if (upload.AckMissing)
         {
             // A hello tells whether short messages still get through, and finds a restarted agent.
@@ -191,8 +206,23 @@ internal sealed partial class SessionView
         ClientLog.Info($"Transfer {upload.TransferId}: stopped by the disconnection.");
         upload.Stop();
         _upload = null;
-        ShowDropStatus(LocalText.Of(nameof(Strings.TransferInterrupted)));
+        ShowTransferFailure(upload, LocalText.Of(nameof(Strings.TransferInterrupted)));
         RaiseStateChanged();
+    }
+
+    /// <summary>
+    /// The tab is closing: the transfer is cancelled while the agent can still be told, so
+    /// that it deletes what it received at once, and the window closes.
+    /// </summary>
+    private void CancelTransferForClose()
+    {
+        if (_upload is { } upload)
+        {
+            ClientLog.Info($"Transfer {upload.TransferId}: cancelled, the tab of the session is closing.");
+            EndTransfer(upload, "The tab of the session was closed.");
+        }
+
+        CloseProgressWindow();
     }
 
     /// <summary>
@@ -212,11 +242,89 @@ internal sealed partial class SessionView
         RaiseStateChanged();
     }
 
+    /// <summary>Shows why the transfer ended, in the status bar and in red in its window.</summary>
+    private void ShowTransferFailure(TransferUpload upload, LocalText reason)
+    {
+        ShowDropStatus(reason);
+        ProgressWindowOf(upload)?.ShowFailure(reason);
+    }
+
+    /// <summary>Opens the window of a new transfer, centered over the session, without taking the focus.</summary>
+    private void OpenProgressWindow(string dragId, IReadOnlyList<DropItem> items)
+    {
+        CloseProgressWindow();
+        var window = new TransferProgressForm(dragId, Host);
+        window.CancelRequested += (_, _) =>
+        {
+            if (_upload is { } upload && upload.DragId == window.DragId)
+            {
+                CancelTransfer();
+            }
+        };
+        window.FormClosed += (_, _) =>
+        {
+            if (_progressWindow == window)
+            {
+                _progressWindow = null;
+            }
+        };
+        _progressWindow = window;
+        window.ShowPreparing(items.Count > 0 ? TransferPaths.ItemName(items[0].ClientPath) : string.Empty, items.Count);
+        window.ShowOver(FindForm(), SessionScreenArea());
+    }
+
+    /// <summary>The window of <paramref name="upload"/>, when it is still open.</summary>
+    private TransferProgressForm? ProgressWindowOf(TransferUpload upload) =>
+        _progressWindow is { IsDisposed: false } window && window.DragId == upload.DragId ? window : null;
+
+    /// <summary>A new drag was refused because a transfer runs: the window says so too.</summary>
+    private void NoteBusyRefusal()
+    {
+        if (_upload is { } upload)
+        {
+            ProgressWindowOf(upload)?.ShowBusyNotice();
+        }
+    }
+
+    /// <summary>The drop that followed a transfer is over: its window shows the result, then closes.</summary>
+    private void ShowDropResultInWindow(string dragId, LocalText result)
+    {
+        if (_progressWindow is { IsDisposed: false } window && window.DragId == dragId)
+        {
+            window.ShowDropResult(result);
+        }
+    }
+
+    /// <summary>A new drag starts: the window of an ended transfer has nothing more to say.</summary>
+    private void CloseEndedProgressWindow()
+    {
+        if (_progressWindow is { IsRunning: false })
+        {
+            CloseProgressWindow();
+        }
+    }
+
+    private void CloseProgressWindow()
+    {
+        var window = _progressWindow;
+        _progressWindow = null;
+        if (window is { IsDisposed: false })
+        {
+            window.Close();
+        }
+    }
+
+    /// <summary>The screen area of the session, to center the window over it.</summary>
+    private Rectangle SessionScreenArea() =>
+        _rdp.IsHandleCreated
+            ? _rdp.FullScreenBounds ?? _rdp.RectangleToScreen(_rdp.ClientRectangle)
+            : RectangleToScreen(ClientRectangle);
+
     private static void LogSummary(TransferUpload upload, TransferResultMessage result)
     {
         var seconds = (Environment.TickCount64 - upload.StartTicks) / 1000.0;
-        var rate = seconds > 0 ? result.Bytes / BytesPerMegabyte / seconds : 0;
-        var agentRate = result.Seconds > 0 ? result.Bytes / BytesPerMegabyte / result.Seconds : 0;
+        var rate = TransferProgressText.MegabytesPerSecond(result.Bytes, seconds);
+        var agentRate = TransferProgressText.MegabytesPerSecond(result.Bytes, result.Seconds);
         ClientLog.Info(Invariant(
             $"Transfer {upload.TransferId} of drag {upload.DragId}: {result.Status}, {upload.FileCount} file(s), {result.Bytes} of {upload.TotalBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s from the drop; {result.Seconds:0.0} s and {agentRate:0.0} MB/s measured by the agent."));
     }

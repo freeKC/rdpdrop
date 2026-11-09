@@ -1,6 +1,7 @@
 using UltimateRDP.Client.Localization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Client.Resources;
+using UltimateRDP.Client.Sessions;
 using UltimateRDP.Client.Settings;
 
 namespace UltimateRDP.Client;
@@ -21,6 +22,15 @@ internal static class Program
         var settings = ClientSettings.Load(ClientSettings.DefaultPath);
         ClientLog.Info($"Settings: {settings}.");
         UiLanguage.Apply(settings.Language);
+
+        // Development aid: the transfer window with a simulated transfer, without a connection.
+        if (args is [TransferProgressDemo.Switch])
+        {
+            var demo = new MainForm(null, settings);
+            demo.Shown += (_, _) => TransferProgressDemo.Start(demo);
+            Application.Run(demo);
+            return 0;
+        }
 
         // Without an argument the open dialog comes first. When it is
         // cancelled the window opens empty, so that File, Recent is still at hand.

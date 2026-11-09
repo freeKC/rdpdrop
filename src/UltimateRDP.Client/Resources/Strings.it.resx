@@ -153,6 +153,18 @@ Credenziali salvate: {0} non salva mai una password. Windows la salva quando sel
   <data name="DroppedOn" xml:space="preserve">
     <value>Rilasciato su {0} ({1})</value>
   </data>
+  <data name="DurationHoursMinutes" xml:space="preserve">
+    <value>{0} h {1} min</value>
+  </data>
+  <data name="DurationMinutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="DurationMinutesSeconds" xml:space="preserve">
+    <value>{0} min {1} s</value>
+  </data>
+  <data name="DurationSeconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
   <data name="EffectCopy" xml:space="preserve">
     <value>copia</value>
   </data>
@@ -417,6 +429,45 @@ Riconnettere ora?</value>
   </data>
   <data name="TransferReadFailed" xml:space="preserve">
     <value>Impossibile leggere {0}. {1}</value>
+  </data>
+  <data name="TransferWindowBusy" xml:space="preserve">
+    <value>Attendere la fine di questo trasferimento prima di rilasciare altri file.</value>
+  </data>
+  <data name="TransferWindowCancel" xml:space="preserve">
+    <value>Annulla</value>
+  </data>
+  <data name="TransferWindowClose" xml:space="preserve">
+    <value>Chiudi</value>
+  </data>
+  <data name="TransferWindowDestination" xml:space="preserve">
+    <value>Destinazione: {0}</value>
+  </data>
+  <data name="TransferWindowDone" xml:space="preserve">
+    <value>{0} file trasferiti in {1} a {2:0.0} MB/s.</value>
+  </data>
+  <data name="TransferWindowDropping" xml:space="preserve">
+    <value>{0} file trasferiti in {1} a {2:0.0} MB/s, rilascio nella sessione...</value>
+  </data>
+  <data name="TransferWindowFileOf" xml:space="preserve">
+    <value>file {0} di {1}</value>
+  </data>
+  <data name="TransferWindowItemCount" xml:space="preserve">
+    <value>{0} elemento/i</value>
+  </data>
+  <data name="TransferWindowPreparing" xml:space="preserve">
+    <value>Preparazione...</value>
+  </data>
+  <data name="TransferWindowProgress" xml:space="preserve">
+    <value>{0} %, {1:0.0} MB/s, {2}</value>
+  </data>
+  <data name="TransferWindowProgressNoRate" xml:space="preserve">
+    <value>{0} %</value>
+  </data>
+  <data name="TransferWindowTimeLeft" xml:space="preserve">
+    <value>{0} rimanenti</value>
+  </data>
+  <data name="TransferWindowTitle" xml:space="preserve">
+    <value>Trasferimento nella sessione</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Si è verificato un errore imprevisto.

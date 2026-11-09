@@ -94,6 +94,12 @@ internal sealed class TransferUpload
     /// <summary>Progress shown in the status bar. UI thread only; null before <see cref="Planned"/>.</summary>
     public TransferProgress? Progress { get; private set; }
 
+    /// <summary>The files in the order they are sent. Empty before <see cref="Planned"/>.</summary>
+    public IReadOnlyList<TransferFile> Files { get; private set; } = [];
+
+    /// <summary>The sizes of <see cref="Files"/>, in the same order.</summary>
+    public IReadOnlyList<long> FileSizes { get; private set; } = [];
+
     /// <summary>True when the upload failed because the agent did not acknowledge the data in time.</summary>
     public bool AckMissing => _ackMissing;
 
@@ -191,10 +197,11 @@ internal sealed class TransferUpload
                 return;
             }
 
+            TransferFile[] planned = [.. files.Select(file => file.File)];
             TransferBeginMessage begin;
             lock (_gate)
             {
-                _sender = new TransferSender(TransferId, [.. files.Select(file => file.File)], _chunkSize);
+                _sender = new TransferSender(TransferId, planned, _chunkSize);
                 begin = _sender.Begin();
                 _watch = new TransferAckWatch(Environment.TickCount64);
             }
@@ -203,6 +210,8 @@ internal sealed class TransferUpload
             {
                 FileCount = begin.Files;
                 TotalBytes = begin.Bytes;
+                Files = planned;
+                FileSizes = [.. planned.Select(file => file.Size)];
                 Progress = new TransferProgress(begin.Bytes, Environment.TickCount64);
                 if (SendMessage(begin))
                 {

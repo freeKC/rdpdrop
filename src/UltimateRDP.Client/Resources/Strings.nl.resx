@@ -153,6 +153,18 @@ Opgeslagen referenties: {0} slaat nooit een wachtwoord op. Windows slaat het op 
   <data name="DroppedOn" xml:space="preserve">
     <value>Neergezet op {0} ({1})</value>
   </data>
+  <data name="DurationHoursMinutes" xml:space="preserve">
+    <value>{0} u {1} min</value>
+  </data>
+  <data name="DurationMinutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="DurationMinutesSeconds" xml:space="preserve">
+    <value>{0} min {1} s</value>
+  </data>
+  <data name="DurationSeconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
   <data name="EffectCopy" xml:space="preserve">
     <value>kopiëren</value>
   </data>
@@ -417,6 +429,45 @@ Nu opnieuw verbinden?</value>
   </data>
   <data name="TransferReadFailed" xml:space="preserve">
     <value>{0} kan niet worden gelezen. {1}</value>
+  </data>
+  <data name="TransferWindowBusy" xml:space="preserve">
+    <value>Wacht tot deze overdracht klaar is voordat u meer bestanden neerzet.</value>
+  </data>
+  <data name="TransferWindowCancel" xml:space="preserve">
+    <value>Annuleren</value>
+  </data>
+  <data name="TransferWindowClose" xml:space="preserve">
+    <value>Sluiten</value>
+  </data>
+  <data name="TransferWindowDestination" xml:space="preserve">
+    <value>Bestemming: {0}</value>
+  </data>
+  <data name="TransferWindowDone" xml:space="preserve">
+    <value>{0} bestand(en) overgedragen in {1} met {2:0.0} MB/s.</value>
+  </data>
+  <data name="TransferWindowDropping" xml:space="preserve">
+    <value>{0} bestand(en) overgedragen in {1} met {2:0.0} MB/s, neerzetten in de sessie...</value>
+  </data>
+  <data name="TransferWindowFileOf" xml:space="preserve">
+    <value>bestand {0} van {1}</value>
+  </data>
+  <data name="TransferWindowItemCount" xml:space="preserve">
+    <value>{0} item(s)</value>
+  </data>
+  <data name="TransferWindowPreparing" xml:space="preserve">
+    <value>Voorbereiden...</value>
+  </data>
+  <data name="TransferWindowProgress" xml:space="preserve">
+    <value>{0} %, {1:0.0} MB/s, {2}</value>
+  </data>
+  <data name="TransferWindowProgressNoRate" xml:space="preserve">
+    <value>{0} %</value>
+  </data>
+  <data name="TransferWindowTimeLeft" xml:space="preserve">
+    <value>nog {0}</value>
+  </data>
+  <data name="TransferWindowTitle" xml:space="preserve">
+    <value>Overdracht naar de sessie</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Er is een onverwachte fout opgetreden.
