@@ -332,7 +332,9 @@ internal sealed class NativeDropCoordinator : IDisposable
             }
 
             IReadOnlyList<string> paths = [.. items.Select(item => item.Path)];
-            if (DecideTransfer(drag) is { } refusal)
+            var refusal = DecideTransfer(drag);
+            drag.TransferDecided = true;
+            if (refusal is not null)
             {
                 Refuse(drag, refusal);
                 return;
@@ -406,6 +408,9 @@ internal sealed class NativeDropCoordinator : IDisposable
     /// <summary>
     /// Runs on a timer thread. Every dragAck of a drag is sent under its AckGate, so a
     /// provisional accept can never reach the client after the refusal that follows it.
+    /// Sent before the transfer is decided, the accept says <c>provisional: true</c>, and
+    /// the final dragAck follows once the drag starts, so that a drop the client holds
+    /// waits for the answer that may offer the transfer.
     /// </summary>
     private void SendProvisionalAck(NativeDrag drag)
     {
@@ -419,8 +424,15 @@ internal sealed class NativeDropCoordinator : IDisposable
             var text = drag.Staging
                 ? LocalText.Of(nameof(Strings.StagingProgress), drag.Enter.Items.Count)
                 : LocalText.Of(nameof(Strings.StartingDrag));
-            _logger.Info($"Drag {drag.Id}: provisional dragAck, {text}");
-            _send(AcceptedAck(drag, ForClient(text)));
+            var ack = AcceptedAck(drag, ForClient(text));
+            if (!drag.TransferDecided && ack.Transfer != true)
+            {
+                ack = ack with { Provisional = true };
+                drag.AwaitsFinalAck = true;
+            }
+
+            _logger.Info($"Drag {drag.Id}: provisional dragAck{(ack.Provisional == true ? " before the transfer decision" : string.Empty)}, {text}");
+            _send(ack);
         }
     }
 
@@ -438,9 +450,11 @@ internal sealed class NativeDropCoordinator : IDisposable
 
             if (started)
             {
-                // A provisional accept sent before the transfer was decided did not offer it.
-                if (drag.TryMarkAck() || (drag.TransferId is not null && !drag.TransferOffered))
+                // A provisional accept sent before the transfer was decided did not offer it,
+                // and the client holds a drop for the final answer.
+                if (drag.TryMarkAck() || (drag.TransferId is not null && !drag.TransferOffered) || drag.AwaitsFinalAck)
                 {
+                    drag.AwaitsFinalAck = false;
                     _logger.Info($"Drag {drag.Id}: dragAck accepted{(drag.TransferId is null ? string.Empty : ", transfer offered")}.");
                     _send(AcceptedAck(drag, null));
                 }
@@ -849,6 +863,12 @@ internal sealed class NativeDropCoordinator : IDisposable
 
         /// <summary>True once an accepted dragAck offered the transfer.</summary>
         public volatile bool TransferOffered;
+
+        /// <summary>True once the preparation decided whether the files are transferred.</summary>
+        public volatile bool TransferDecided;
+
+        /// <summary>True when a provisional dragAck went out and the final one has not.</summary>
+        public volatile bool AwaitsFinalAck;
 
         /// <summary>The transfer that receives the files, from the deferred drop on.</summary>
         public volatile StagedTransfer? Transfer;

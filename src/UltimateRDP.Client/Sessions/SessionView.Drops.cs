@@ -338,10 +338,10 @@ internal sealed partial class SessionView
         }
 
         var remote = ToRemote(e.ClientPoint);
-        if (live.State == AckState.Pending)
+        if (live.State == AckState.Pending || live.AwaitsFinalAck)
         {
             // Sent now, the drop would go through drive redirection even when the dragAck
-            // on its way offers a transfer.
+            // on its way offers a transfer. A provisional answer does not say yet.
             return HoldDrop(live, e, remote);
         }
 
@@ -388,11 +388,11 @@ internal sealed partial class SessionView
     /// </summary>
     private DragDropEffects HoldDrop(LiveDrag live, FileDragEventArgs e, Point remote)
     {
-        LogDrag(Invariant($"Drop after {live.Moves} move(s), held until the agent answers the drag"), live.Id, e, remote);
+        LogDrag(Invariant($"Drop after {live.Moves} move(s), held until the agent {(live.AwaitsFinalAck ? "gives its final answer to" : "answers")} the drag"), live.Id, e, remote);
         _ackTimer.Stop();
         _leaveTimer.Stop();
         _live = null;
-        _held = new HeldDrop(live, remote, e.KeyState, new DropDecision(live.Id, Environment.TickCount64));
+        _held = new HeldDrop(live, remote, e.KeyState, new DropDecision(live.Id, Environment.TickCount64, provisionalAnswer: live.AwaitsFinalAck));
         live.Queued = (remote, live.LastKeys);
         FlushMove(keepAlive: false);
         _moveTimer.Start();
@@ -424,8 +424,11 @@ internal sealed partial class SessionView
         ResolveHeldDrop(held);
 
         // As after a missing dragAck during a drag: an agent that exited or restarted in
-        // the session goes unnoticed otherwise.
-        _agent.Recheck("no dragAck for a held drop");
+        // the session goes unnoticed otherwise. An agent that sent a provisional answer is there.
+        if (!held.Decision.ProvisionalAnswer)
+        {
+            _agent.Recheck("no dragAck for a held drop");
+        }
     }
 
     /// <summary>The dragAck of a held drop arrived: the decision is taken at once.</summary>
@@ -437,6 +440,7 @@ internal sealed partial class SessionView
         }
 
         var live = held.Live;
+        live.AwaitsFinalAck = false;
         if (ack.Accepted)
         {
             live.State = AckState.Accepted;
@@ -527,6 +531,10 @@ internal sealed partial class SessionView
                     live.State = AckState.Accepted;
                     _ackTimer.Stop();
                 }
+
+                // A provisional answer comes before the agent decided the transfer; a drop
+                // until the final one is held.
+                live.AwaitsFinalAck = !DropDecision.IsFinal(ack);
 
                 if (ack.Transfer == true && ack.TransferId is { Length: > 0 } transferId)
                 {
@@ -767,6 +775,9 @@ internal sealed partial class SessionView
 
         /// <summary>Set when the agent asked for the files through the channel.</summary>
         public string? TransferId { get; set; }
+
+        /// <summary>True while the last accepted dragAck was provisional: the final one may still offer a transfer.</summary>
+        public bool AwaitsFinalAck { get; set; }
 
         public int Moves { get; set; }
     }
