@@ -473,7 +473,7 @@ Jetzt neu verbinden?</value>
     <value>noch {0}</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
-    <value>Übertragung in die Sitzung</value>
+    <value>Ablegen in der Sitzung</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Ein unerwarteter Fehler ist aufgetreten.

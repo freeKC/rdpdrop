@@ -473,7 +473,7 @@ Riconnettere ora?</value>
     <value>{0} rimanenti</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
-    <value>Trasferimento nella sessione</value>
+    <value>Rilascio nella sessione</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Si è verificato un errore imprevisto.

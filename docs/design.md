@@ -997,8 +997,9 @@ transfer must be obvious. The owner then asked for the same window at every
 drop, so that any drop gets a visible answer.
 
 Decision: a progress window appears at every drop. One small window,
-`DropProgressForm` in the client, opens as soon as the local drop went out to
-the agent, with or without a transfer, and shows the drop until its result.
+`DropProgressForm` in the client, titled "Drop into the session", opens as
+soon as the local drop went out to the agent, with or without a transfer, and
+shows the drop until its result.
 A drop that the client refuses before sending it opens no window; the status
 bar says why, as before. Only the client changes; the protocol does not.
 

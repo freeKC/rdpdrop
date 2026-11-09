@@ -542,7 +542,7 @@ Reconnect now?</value>
     <comment>{0} is a duration from DurationSeconds, DurationMinutes, DurationMinutesSeconds or DurationHoursMinutes.</comment>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
-    <value>Transfer to the session</value>
+    <value>Drop into the session</value>
     <comment>Title of the window shown at every drop into the session, with or without a transfer of large files.</comment>
   </data>
   <data name="UnexpectedError" xml:space="preserve">

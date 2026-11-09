@@ -473,7 +473,7 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
     <value>quedan {0}</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
-    <value>Transferencia a la sesión</value>
+    <value>Soltar en la sesión</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Se produjo un error inesperado.

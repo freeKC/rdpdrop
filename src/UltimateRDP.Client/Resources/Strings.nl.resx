@@ -473,7 +473,7 @@ Nu opnieuw verbinden?</value>
     <value>nog {0}</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
-    <value>Overdracht naar de sessie</value>
+    <value>Neerzetten in de sessie</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Er is een onverwachte fout opgetreden.

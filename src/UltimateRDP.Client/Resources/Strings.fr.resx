@@ -473,7 +473,7 @@ Se reconnecter maintenant ?</value>
     <value>{0} restantes</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
-    <value>Transfert vers la session</value>
+    <value>Dépôt dans la session</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Une erreur inattendue s'est produite.
