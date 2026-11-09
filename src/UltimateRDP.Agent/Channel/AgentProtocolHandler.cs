@@ -65,6 +65,13 @@ internal sealed class AgentProtocolHandler
         }
 
         var message = MessageSerializer.Deserialize(payload);
+
+        // Every message but the chunks and the moves, at the debug level: it shows which
+        // lines arrived.
+        if (envelope.Type != MessageTypes.DragMove)
+        {
+            _logger.Debug($"Received {envelope.Type ?? "(no type)"}{(envelope.Id is null ? string.Empty : " " + envelope.Id)}, {payload.Length} bytes.");
+        }
         switch (message)
         {
             case HelloMessage hello:

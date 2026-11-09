@@ -144,6 +144,19 @@ public class TransferRegistryTests
     }
 
     [Fact]
+    public void Late_messages_are_counted_so_that_each_one_can_be_logged()
+    {
+        var registry = new TransferRegistry<object>();
+        registry.End("t1");
+
+        registry.Route(Chunk(0, [1]), "t1", out _);
+        registry.Route(Chunk(1, [1]), "t1", out _);
+
+        Assert.Equal(2, registry.LateCount("t1"));
+        Assert.Equal(0, registry.LateCount("t2"));
+    }
+
+    [Fact]
     public void Only_the_latest_ended_transfers_are_remembered()
     {
         var registry = new TransferRegistry<object>();

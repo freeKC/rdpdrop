@@ -927,13 +927,29 @@ received the data of the client in the UTF-16 model.
   first chunks at once. The agent created the receiver of the transfer when
   it handled the deferred drop, and the receiver then got `fileBegin`
   without `transferBegin`: the transfer failed at once with "came out of
-  order". The channel thread of the agent handles the lines in their order,
-  so the exact path by which `transferBegin` missed the receiver is not
-  known from the logs. The fix removes the dependency on that timing: the
-  transfer is registered when the agent decides to offer it, before the
-  `dragAck`, and its messages wait in a queue until the deferred drop
-  creates the receiver (`TransferRegistry` in Core, see steps 1 and 3 of the
-  flow above).
+  order". The log of the agent has no trace of `transferBegin` at all:
+  neither accepted, nor refused as unknown, nor malformed. The channel
+  thread handles the lines one after the other, and the deferred drop
+  created the receiver before it returned, so a `transferBegin` line that
+  reached the line reader would have reached the receiver or been logged.
+  The line therefore never came out of the line reader as a message: it was
+  lost between the control of the client and the agent, or arrived as NUL
+  characters, which the agent trimmed from the front of the next line
+  without a word. Which of the two cannot be told from 0.4.0. Version 0.4.1
+  makes every such case visible and removes any dependency on timing:
+  * the transfer is registered when the agent decides to offer it, before
+    the `dragAck`, and its messages wait in a queue until the deferred drop
+    creates the receiver (`TransferRegistry` in Core, see steps 1 and 3 of
+    the flow above);
+  * a line made only of NUL characters and spaces, or preceded by more than
+    one of them, gives a warning in the agent log;
+  * at the debug level, the agent logs every message it receives except the
+    chunks and the moves;
+  * every transfer message that does not reach a receiver is logged: the
+    first one of each transfer and every message that is not a chunk at
+    the info level, the other chunks at the debug level;
+  * a file message before `transferBegin` fails with "came before
+    transferBegin: no transferBegin arrived for this transfer.".
 * Second attempt: `transferBegin` arrived, and no chunk ever did. The control
   raised no error on `SendOnVirtualChannel`, and the client gave up after 60
   seconds with 4 MiB in flight. A chunk line of 256 KiB was about 350 000

@@ -52,6 +52,7 @@ public sealed class TransferRegistry<TTarget>
 
     private readonly Dictionary<string, Entry> _active = new(StringComparer.Ordinal);
     private readonly Queue<string> _ended = new();
+    private readonly Dictionary<string, int> _late = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Registers a transfer offered to the client. From now on its messages are accepted,
@@ -74,6 +75,9 @@ public sealed class TransferRegistry<TTarget>
 
     /// <summary>The receiver of a running transfer, or null.</summary>
     public TTarget? Find(string transferId) => _active.TryGetValue(transferId, out var entry) ? entry.Target : null;
+
+    /// <summary>Number of messages of an ended transfer that <see cref="Route"/> found late so far.</summary>
+    public int LateCount(string transferId) => _late.GetValueOrDefault(transferId);
 
     /// <summary>Number of messages waiting for the receiver of an offered transfer.</summary>
     public int QueuedCount(string transferId) => _active.TryGetValue(transferId, out var entry) ? entry.Queue.Count : 0;
@@ -155,6 +159,7 @@ public sealed class TransferRegistry<TTarget>
 
         if (_ended.Contains(transferId))
         {
+            _late[transferId] = _late.GetValueOrDefault(transferId) + 1;
             return TransferRoute.Late;
         }
 
@@ -172,7 +177,7 @@ public sealed class TransferRegistry<TTarget>
         _ended.Enqueue(transferId);
         while (_ended.Count > RememberedTransfers)
         {
-            _ended.Dequeue();
+            _late.Remove(_ended.Dequeue());
         }
     }
 

@@ -225,26 +225,34 @@ internal sealed class NativeDropCoordinator : IDisposable
     {
         TransferRoute route;
         StagedTransfer? transfer;
-        int queued;
+        int count;
         lock (_gate)
         {
             route = _transfers.Route(message, transferId, out transfer);
-            queued = route == TransferRoute.Queued ? _transfers.QueuedCount(transferId) : 0;
+            count = route switch
+            {
+                TransferRoute.Queued => _transfers.QueuedCount(transferId),
+                TransferRoute.Late => _transfers.LateCount(transferId),
+                _ => 0,
+            };
         }
 
+        // Every message that does not reach a receiver leaves a line in the log: the first
+        // one of each transfer, and every one that is not a chunk, at the info level; the
+        // chunks that follow at the debug level, since thousands may follow.
+        var level = count == 1 || message is not FileChunkMessage ? LogLevel.Info : LogLevel.Debug;
         switch (route)
         {
             case TransferRoute.Deliver:
                 transfer!.Handle(message);
                 break;
 
-            case TransferRoute.Queued when queued == 1:
-                _logger.Info($"Transfer {transferId}: {message.Type} arrived before the deferred drop was handled; the messages of the transfer wait for it.");
+            case TransferRoute.Queued:
+                _logger.Write(level, $"Transfer {transferId}: {message.Type} arrived before the deferred drop was handled; it waits for it ({count} waiting).");
                 break;
 
-            case TransferRoute.Queued:
             case TransferRoute.Late:
-                // The chunks still on their way after the end of a transfer are dropped quietly.
+                _logger.Write(level, $"Transfer {transferId}: {message.Type} ignored, the transfer is over ({count} ignored since its end).");
                 break;
 
             case TransferRoute.Overflow:

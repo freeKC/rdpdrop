@@ -39,6 +39,7 @@ internal sealed class StagedTransfer
     private readonly Lock _gate = new();
     private readonly Timer _idleTimer;
     private long _lastMessageTicks = Environment.TickCount64;
+    private int _ignoredAfterEnd;
     private bool _resultSent;
     private bool _finishedRaised;
     private LocalText? _stopReason;
@@ -78,6 +79,9 @@ internal sealed class StagedTransfer
         {
             if (_receiver.IsFinished)
             {
+                // The registry stops these once the end handler ran; until then they are logged here.
+                _ignoredAfterEnd++;
+                _logger.Write(_ignoredAfterEnd == 1 || message is not FileChunkMessage ? LogLevel.Info : LogLevel.Debug, $"Transfer {TransferId}: {message.Type} ignored, the transfer is over ({_ignoredAfterEnd} ignored since its end).");
                 return;
             }
 

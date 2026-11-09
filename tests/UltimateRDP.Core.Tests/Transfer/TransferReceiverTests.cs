@@ -205,6 +205,19 @@ public class TransferReceiverTests
         Assert.Equal(TransferFailure.BadData, receiver.Failure);
     }
 
+    /// <summary>What the agent logged in production when the line of transferBegin was lost.</summary>
+    [Fact]
+    public void A_file_before_transferBegin_says_that_transferBegin_never_arrived()
+    {
+        using var receiver = Create();
+
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", 10));
+
+        Assert.Equal(TransferFailure.OutOfOrder, receiver.Failure);
+        Assert.Equal("fileBegin came before transferBegin: no transferBegin arrived for this transfer.", receiver.FailureDetail);
+        Assert.Equal(1, _storage.DeleteAllCalls);
+    }
+
     [Fact]
     public void A_chunk_above_the_chunk_size_is_refused()
     {

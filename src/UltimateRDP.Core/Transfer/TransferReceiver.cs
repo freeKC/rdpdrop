@@ -158,6 +158,12 @@ public sealed class TransferReceiver : IDisposable
             return null;
         }
 
+        if (State == TransferState.Waiting && message is FileBeginMessage or FileChunkMessage or FileEndMessage && TransferIdOf(message) == TransferId)
+        {
+            // Said apart from the other order errors: the line of transferBegin was lost.
+            return Fail(TransferFailure.OutOfOrder, (message as FileBeginMessage)?.RelativePath, $"{message.Type} came before transferBegin: no transferBegin arrived for this transfer.");
+        }
+
         return message switch
         {
             TransferBeginMessage begin when begin.TransferId == TransferId => OnBegin(begin),
@@ -168,6 +174,15 @@ public sealed class TransferReceiver : IDisposable
             _ => null,
         };
     }
+
+    /// <summary>The transfer id of a file message, or null for another message.</summary>
+    private static string? TransferIdOf(Message message) => message switch
+    {
+        FileBeginMessage file => file.TransferId,
+        FileChunkMessage chunk => chunk.TransferId,
+        FileEndMessage end => end.TransferId,
+        _ => null,
+    };
 
     /// <summary>Cancels the transfer and deletes what was written. Does nothing once it is finished.</summary>
     public FileAckMessage? Cancel()

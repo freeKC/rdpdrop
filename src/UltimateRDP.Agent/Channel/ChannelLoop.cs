@@ -391,14 +391,32 @@ internal sealed class ChannelLoop : IDisposable
             while (_lineReader.TryReadLine(out var line))
             {
                 // A control that ends each string with its NUL terminator would put a NUL
-                // in front of the next line.
+                // in front of the next line. More than that means data was replaced or
+                // lost on the way, and a whole message may be missing: it is logged, so
+                // that no line disappears without a trace.
                 var trimmed = line.Trim(['\0', ' ']);
-                if (trimmed.Length > 0)
+                if (trimmed.Length == 0)
                 {
-                    Dispatch(Encoding.ASCII.GetBytes(trimmed));
+                    _logger.Warn($"Protocol error: a line of {line.Length} characters held only NUL characters and spaces. Ignored.");
+                    continue;
                 }
+
+                var padding = line.Length - line.AsSpan().TrimStart(['\0', ' ']).Length;
+                if (padding > 1)
+                {
+                    _logger.Warn($"Protocol error: {padding} NUL characters or spaces came before the line that starts with {Head(trimmed)}. They were dropped; a message may be missing before this line.");
+                }
+
+                Dispatch(Encoding.ASCII.GetBytes(trimmed));
             }
         }
+    }
+
+    /// <summary>The first characters of a line, printable ASCII only, for the log.</summary>
+    private static string Head(string line)
+    {
+        var head = line.Length > 40 ? line[..40] : line;
+        return string.Concat(head.Select(c => c is >= ' ' and <= '~' ? c : '?'));
     }
 
     private void Dispatch(byte[] payload)
