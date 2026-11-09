@@ -139,6 +139,8 @@ Things to know:
 - Empty folders inside a dropped folder are not created in the session.
 - The agent must run version 0.4.1 or later, and the client too. The progress window is new in client 0.4.2 and works with an agent 0.4.1. With an older client or agent, every drop goes through drive redirection.
 
+From version 0.5.0 the files travel in a denser form when your connection allows it. The agent tells the client how the data of the client reaches it. When each character arrives as two bytes, as measured on a production server, the client packs 15 bits of the file into each character instead of base64, and a file byte costs about 1.07 bytes on the channel instead of 2.67. On a channel that carries 5.8 MB/s, the transfer goes from about 2.1 MB/s to about 5.4 MB/s. When each character arrives as one byte, the client keeps base64, at about three quarters of the channel. Both sides must run 0.5.0 for the denser form; with an older agent the client sends base64 as before. The status bar and the progress window do not change; the client log says which form a transfer uses.
+
 The client sends the files in chunks of 32 KiB. The setting `transferChunkBytes` in `%LOCALAPPDATA%\UltimateRDP\client.json` changes that size, from 4096 (4 KiB) to 262144 (256 KiB). A value outside these bounds is brought back within them. The setting is only editable in the file, and applies once the client restarts. Leave it alone unless a transfer fails at its start.
 
 ```json
@@ -177,7 +179,7 @@ Transfer <id> session counters: 0 bytes, 0 frames and 0 compressed bytes in, 0 b
 How to read them:
 
 - **The client spends well over half of the time inside SendOnVirtualChannel.** The Remote Desktop control limits the transfer on your computer.
-- **The agent spends nearly all of the time processing, and little blocked in the read.** The agent limits the transfer; the time handling messages covers the JSON, the base64, the checksum and the file write.
+- **The agent spends nearly all of the time processing, and little blocked in the read.** The agent limits the transfer; the time handling messages covers the JSON, the decoding of the chunks, the checksum and the file write.
 - **The client calls take a small share and the agent waits in the read nearly all of the time.** The data waits between the two, in the Remote Desktop connection. When the bytes in flight stay near the window, try a transfer with `transferWindowBytes` at 16777216. If the rate does not change and the round trip grows four times, the flow control of the connection is the limit. If the rate grows, keep the larger window.
 
 Whether the connection uses UDP shows in the connection bar of the Remote Desktop session: click the signal icon for the connection information.
@@ -323,11 +325,11 @@ The client hosts the Microsoft Remote Desktop ActiveX control and registers itse
 
 The drag offers copy and link only, never move. Modifier keys are recorded in the logs but not injected.
 
-For large files, the `dragEnter` carries the size of each item, and the agent answers `dragAck` with `transfer: true` when they must come through the channel. At step 5 the client then sends `drop` with `deferred: true`: the agent cancels the drag in the session and keeps the point. The client sends the files as base64 chunks of 256 KiB with at most 4 MiB not yet acknowledged, the agent writes them into its staging folder and checks the size and SHA-256 of each one, answers `transferResult`, then drops the copies at the kept point with a short drag, and reports `dropResult` as in step 6.
+For large files, the `dragEnter` carries the size of each item, and the agent answers `dragAck` with `transfer: true` when they must come through the channel. At step 5 the client then sends `drop` with `deferred: true`: the agent cancels the drag in the session and keeps the point. The client sends the files in chunks of 32 KiB by default, in base64, or in the denser `u15` form when the agent says the data of the client reaches it as UTF-16, with at most 4 MiB not yet acknowledged, the agent writes them into its staging folder and checks the size and SHA-256 of each one, answers `transferResult`, then drops the copies at the kept point with a short drag, and reports `dropResult` as in step 6.
 
 To log off, the client sends `logoff`. The agent answers `logoffResult`, waits half a second so that the answer reaches the client, then asks Windows to log off the session. It never forces applications that have unsaved work.
 
-Messages are JSON objects sent as ASCII lines, and each side detects at run time how the control maps channel bytes to characters. See [docs/design.md](docs/design.md) for the details.
+Messages are JSON objects sent as ASCII lines, except the `u15` chunks, and each side detects at run time how the control maps channel bytes to characters. See [docs/design.md](docs/design.md) for the details.
 
 ## Troubleshooting
 
@@ -374,7 +376,7 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 
 ## Status
 
-Version 0.4.4 is a test release.
+Version 0.5.0 is a test release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -383,6 +385,8 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 - The live drag into a remote application.
 
 The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client. Version 0.4.3 fixes short messages that the Remote Desktop control sometimes lost just before a large one, which failed some transfers at their start. Version 0.4.4 measures where the time of a transfer goes, on both sides, and adds the settings `transferWindowBytes` and `channelRead` to test what limits it.
+
+Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps.
 
 Feedback that helps:
 

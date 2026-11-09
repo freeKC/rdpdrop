@@ -117,6 +117,9 @@ Pure logic shared by the two apps and covered by tests.
 * `FastTransferPolicy`, `TransferSender`, `TransferReceiver`, `TransferLines`,
   `TransferPaths`, `TransferHash` and `TransferProgress`: the fast transfer of
   large files, described under "Version 0.4".
+* `U15Codec` and `ChunkEncodings`: the dense encoding of the chunks,
+  described under "Version 0.5". `DropDecision`: the drop held for the
+  answer of the agent, described under "Version 0.4.5" and "Version 0.5".
 
 ### Protocol
 
@@ -143,10 +146,11 @@ Client to agent:
 
 Agent to client:
 
-* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.3.0",
-  "driveRedirectionAvailable": true }`
+* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.5.0",
+  "driveRedirectionAvailable": true, "clientToAgentModel": "utf16" }`
 * `dragAck` : `{ "type": "dragAck", "id": "<guid>", "accepted": true,
-  "message": "optional text", "transfer": true, "transferId": "<guid>" }`
+  "message": "optional text", "transfer": true, "transferId": "<guid>",
+  "provisional": true }`
 * `dropResult` : `{ "type": "dropResult", "id": "<guid>",
   "status": "ok" | "error" | "cancelled", "effect": "copy" | "link" | "none",
   "message": "human readable text", "targetWindow": { "className": "CabinetWClass",
@@ -186,6 +190,10 @@ Field notes:
 * `size` of an item, `deferred` of `drop`, and `transfer` and `transferId` of
   `dragAck` belong to the fast transfer of version 0.4. They are not written
   when they have no value, and an older peer ignores them.
+* `clientToAgentModel` of the hello of the agent, `utf16` or
+  `oneBytePerChar`, and `provisional` of `dragAck` are new in 0.5.0, see
+  "Version 0.5". They are not written when they have no value, and an older
+  peer ignores them.
 
 Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
@@ -221,6 +229,11 @@ the wire, frames messages by lines, and detects the model at run time.
   receives either ASCII bytes or UTF-16LE bytes, and both are covered by its
   own detection. One call of the control may carry several lines one after
   the other, up to 200 000 characters by default (see "Version 0.4.3").
+* One exception since 0.5.0: when the agent says that the data of the client
+  reaches it in the UTF-16 model, the chunks of a transfer travel in `u15`,
+  whose units are characters from U+1000 to U+8FFF. Those lines are not
+  ASCII, and the agent reads them from the string of the line reader, before
+  any ASCII conversion (see "Version 0.5"). Every other line stays ASCII.
 * Both sides accumulate until `\n` and parse each line on its own. Blank
   lines are ignored. A line above 1 MiB is a protocol error that drops the
   buffer.
@@ -533,6 +546,13 @@ the fallback for anything missing.
   counters and their summary, the call counters and the acknowledgement
   round trips of the client, the window bounds and its raise above the
   acknowledgement interval, and whole transfers with other windows.
+* The dense encoding of version 0.5: round trips of `u15` (nothing, 1 to 16
+  bytes, 128 KiB, random lengths), the padding of the last unit, the bounds
+  of the alphabet, the hand parser on real lines read through the decoder
+  and the line reader in reads of 1600 and 1599 bytes, the conversions of
+  the agent path, whole transfers in `u15` with batches of two chunks per
+  call, and 100 MB in `u15` through the whole codec path. The held drop:
+  provisional and final answers of the agent.
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -1569,7 +1589,8 @@ by the cause.
   through drive redirection took more than 700 ms, a drop held at that
   moment, or a drop after it, goes through drive redirection as in 0.4.4;
   the later `dragAck` that offers the transfer is then ignored. Telling a
-  provisional answer from a final one needs a field in `dragAck`.
+  provisional answer from a final one needs a field in `dragAck`. Version
+  0.5.0 adds that field, `provisional`, see "Version 0.5".
 * The client gives the copy effect back to the local source as soon as the
   drop is held, even when the agent refuses the drag afterwards. A source
   does nothing with a copy effect.
@@ -1581,3 +1602,195 @@ by the cause.
 Only the client changes. The agent can stay at 0.4.4; its 0.4.5 build is
 the same with another version number. A 0.4.5 client works with agents
 0.4.1 to 0.4.4.
+
+No 0.4.5 release was published: the held drop ships with 0.5.0, together
+with the provisional answer that closes the first limit above.
+
+
+## Version 0.5
+
+Decided on 2026-11-09 from the logs of both sides of a transfer in
+production with 0.4.4. Version 0.5.0 multiplies the file rate by about 2.5
+on the same channel, without another transport. In this section MB means a
+million bytes.
+
+### What was measured
+
+* Client: 946 calls of `SendOnVirtualChannel`, 0.32 ms each on average, 1
+  percent of the time of the transfer. The client is not the limit.
+* Agent: blocked in `WTSVirtualChannelRead` 55.3 s of 56.9 s, processing
+  1.3 s. The agent is not the limit.
+* The reads return 1597 bytes on average, the chunks of 1600 bytes of the
+  static channel, and the acknowledgements come 1.9 s behind with the
+  window full: the flow control of the Remote Desktop connection keeps the
+  pipe full.
+* The agent read 330 514 754 bytes for 165 257 360 characters sent: from the
+  client to the agent, the control sends each character as its two UTF-16
+  bytes. From the agent to the client, the client sees one byte per
+  character. The two directions differ, and the detection on each side
+  already handled both.
+* The channel carried about 5.8 MB/s on that link, and the file data went at
+  2.1 MB/s: base64 costs 4/3 and UTF-16 costs 2, so every byte of a file took
+  8/3 bytes on the wire.
+
+The limit is the encoding: the wire is full, mostly of padding.
+
+### The dense encoding
+
+The agent tells the client how the data of the client reaches it. Its hello
+gets the field `clientToAgentModel`, `utf16` or `oneBytePerChar`, the model
+its decoder detected on the first bytes of the connection. The hello of the
+client is the first line of a connection, so the model is known when the
+agent answers it, and computing the field costs nothing more. The client
+keeps it in `AgentLink` and logs it with "Agent ready".
+
+The client chooses the encoding of each transfer from that model
+(`ChunkEncodings.Choose` in Core) and announces it in `transferBegin`:
+
+```
+{"type":"transferBegin","transferId":"<id>","files":1,"bytes":700000000,"chunkEncoding":"u15"}
+```
+
+* `base64`: the chunks of 0.4. Used when the data of the client reaches the
+  agent one byte per character, or when the agent does not say.
+* `u15`: used when the data of the client reaches the agent in the UTF-16
+  model. Each UTF-16 code unit of the chunk carries 15 bits of the file: the
+  value v, from 0 to 32767, is the unit `0x1000 + v`. The bits are taken from
+  the bytes in order, the high bit of each byte first, and the last unit is
+  padded with zero bits (`U15Codec` in Core).
+
+The units U+1000 to U+8FFF hold no surrogate, no control character, no
+space, no line break, no quote and no backslash. JSON takes them as they
+are, the line reader, which splits on U+000A and trims spaces and U+000D at
+the end of a line, never touches them, and they never sit at either end of a
+line, where the agent trims NUL characters and spaces. The range holds
+Unicode separators such as U+2028; nothing on the path splits or trims on
+them. A .NET string of such units is a valid BSTR, and in the UTF-16 model the
+control sends the units as they are, two bytes each, as the byte count
+measured on the agent shows.
+
+A `u15` chunk line stays one JSON object on one line, built by
+`TransferLines` without the serializer, with the ASCII fields first and the
+data last:
+
+```
+{"type":"fileChunk","transferId":"<id>","fileIndex":0,"offset":262144,"length":131072,"enc":"u15","data":"<units>"}
+```
+
+`length` is the number of bytes, which ends the data: the units alone do not
+tell it, since 100 and 101 bytes both take 54 units. A wrong length is caught
+by the size and the checksum of the file. base64 chunks keep the line of 0.4,
+without `length` and `enc`.
+
+On the agent, the channel loop now hands each line to the handler as its
+string. `TransferLines.TryParseChunk` reads a `u15` chunk line by hand: it
+checks the known prefix and the order of the fields, reads the numbers, and
+keeps the units as they are; the receiver decodes them into its buffer. Any
+other line, base64 chunks included, takes the path of 0.4: its ASCII bytes go
+to the JSON reader. A `u15` line must never go through that conversion,
+which turns every unit into a question mark; a line whose fields are not in
+the expected order, or whose data holds JSON escapes, goes to the JSON reader
+and still reads correctly. `IncomingTextDecoder` turns the byte pairs of the
+UTF-16 model back into the same units without any check, and the line reader
+works on characters, so nothing changed there.
+
+The receiver checks that each chunk is written in the encoding that
+`transferBegin` announced, that `length` is 1 to 256 KiB, that the unit count
+matches it, that every unit is in the range and that the padding bits are
+zero. Any failure ends the transfer with the reason `BadData`, as a bad
+base64 chunk did. An unknown `chunkEncoding` fails at `transferBegin`.
+
+Nothing else changes: the chunk size setting stays in bytes, the SHA-256,
+the acknowledgements, the window and the progress are the same, and the
+client still groups its lines into calls of at most 200 000 characters. A
+chunk of 128 KiB takes 69 906 units, about 70 000 characters with its fields,
+so two chunks travel in one call; a chunk of 32 KiB takes 17 477 units.
+
+### Wire budget
+
+Bytes on the wire per byte of file data, without the fields of each line
+(`ChunkEncodings.WireBytesPerFileByte` in Core), and the file rate they
+allow on a wire of 5.8 MB/s:
+
+| Encoding | Data of the client reaches the agent | Wire bytes per file byte | File rate at 5.8 MB/s |
+| --- | --- | --- | --- |
+| base64 | one byte per character | 4/3, 1.333 | about 4.3 MB/s |
+| base64 | UTF-16 | 8/3, 2.667 | about 2.2 MB/s, 2.1 measured |
+| u15 | UTF-16 | 16/15, 1.067 | about 5.4 MB/s |
+
+The fields of a line add about 140 characters per chunk: 0.8 percent with
+chunks of 32 KiB, 0.2 percent with chunks of 128 KiB. Over 100 MB in the
+tests, all lines counted, the wire carried 1.073 bytes per file byte with
+chunks of 32 KiB and 1.068 with chunks of 128 KiB. In the UTF-16 model `u15`
+carries 2.5 times the file data of base64 on the same wire.
+
+A mode for the one byte per character model, with 8 bits per character, was
+considered and not done: how the control narrows characters above 0xFF in
+that model is not known, and the measured link uses the UTF-16 model.
+
+Measured without a server, in the tests, on this development computer: 100
+MB in `u15` go through the whole codec path (chunk lines, channel bytes in
+blocks of 1600, model detection, line reader, hand parser, decoding,
+checksums on both sides, batches of 200 000 characters) in 0.90 to 0.93 s,
+with chunks of 32 KiB as with chunks of 128 KiB, about 110 MB/s, over two runs.
+
+### The provisional answer
+
+0.4.5 left one gap: a provisional accepted `dragAck`, sent when the check of
+the items takes more than 700 ms, decided a held drop like a final one, so
+the transfer offered by the later `dragAck` was lost. The agent now writes
+`provisional: true` on an accepted `dragAck` sent before it decided whether
+the files are transferred, and then always sends the final `dragAck` once
+the drag starts in the session: with the transfer when one was decided,
+without it otherwise. A provisional answer sent after the decision is not
+marked, since it already says everything.
+
+On the client (`DropDecision` in Core):
+
+* A provisional answer does not decide. A drop held at that moment keeps
+  waiting for the final answer, within the same 1.5 seconds from the drop.
+* A drop that happens after a provisional answer, before the final one, is
+  held as a drop before any answer is: `DropDecision.MustHold`.
+* The final answer decides as in 0.4.5: transfer, plain drop or refusal.
+* Without a final answer within the wait, the plain drop goes out, and the
+  log says "only a provisional dragAck within 1500 ms". The agent answered,
+  so the client does not look for it again.
+
+A 0.4.5 client ignores the field and handles the final `dragAck` like any
+later accept.
+
+### Logs
+
+Client, at the info level:
+
+```
+Agent ready, version 0.5.0, drive redirection available: True, data of the client reaches the agent in the Utf16 model, so transfer chunks go in u15.
+Transfer <id> of drag <id>: started with 1 item(s), chunks of 131072 bytes, window of 4194304 bytes (setting 4194304), chunks in u15, data of the client reaches the agent in the Utf16 model, 1.067 wire bytes per file byte.
+Transfer <id>: first chunk line sent, 70038 characters for chunks of 131072 bytes in u15.
+```
+
+Agent, at the info level:
+
+```
+Hello from client 0.5.0, language fr (texts in fr); drive redirection available: True; data of the client in the Utf16 model.
+Transfer <id> of drag <id>: receiving 1 file(s), 700000000 bytes, chunks in u15.
+Transfer <id>: first chunk of file 0 received, 131072 bytes in 69906 characters of u15.
+Drag <id>: provisional dragAck before the transfer decision, Starting the drag...
+```
+
+The summaries of 0.4.4 stay as they were. With a wire of about 5.8 MB/s, the
+summary of the transfer should show about 5.4 MB/s, the characters handed to
+the control about 2.5 times fewer for the same file, and the agent still
+blocked in its reads for nearly all of the time.
+
+### Versions
+
+Both sides ship together as 0.5.0. An agent before 0.5.0 does not send
+`clientToAgentModel`, so a 0.5.0 client sends it base64, as before; a client
+before 0.5.0 sends no `chunkEncoding`, which a 0.5.0 agent reads as base64.
+The dense encoding needs both sides at 0.5.0.
+
+The agent without a client does not change: the channel thread hands each
+line as a string instead of its ASCII bytes, the hello reply reads a model
+the channel loop already keeps, and nothing new runs while no client speaks
+on the channel.
