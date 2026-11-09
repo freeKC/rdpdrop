@@ -450,7 +450,6 @@ internal sealed class NativeDropCoordinator : IDisposable
 
     /// <summary>Clears the drag if it is the current one and remembers why it ended, for a late drop.</summary>
     private void Forget(NativeDrag drag, LocalText reason)
-
     {
         lock (_gate)
         {

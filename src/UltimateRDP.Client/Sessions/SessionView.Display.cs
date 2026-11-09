@@ -153,7 +153,6 @@ internal sealed partial class SessionView
             return;
         }
 
-
         ClientLog.Info($"Reconnecting to {Host} for the new {setting}.");
         if (State == SessionState.Disconnected)
         {

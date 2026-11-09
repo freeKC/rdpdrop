@@ -489,7 +489,6 @@ internal sealed partial class SessionView
         /// <summary>Text shown while the drag is refused.</summary>
         public LocalText? Problem { get; set; }
 
-
         /// <summary>True once dragEnter went out.</summary>
         public bool Sent { get; set; }
 

@@ -108,7 +108,6 @@ internal sealed class AgentProtocolHandler
                 envelope.Id,
                 DropStatus.Error,
                 Message: LocalText.Of(nameof(Strings.ProtocolMismatch), ProtocolConstants.ProtocolVersion, envelope.Version).In(_language.Culture)));
-
         }
     }
 }

@@ -115,5 +115,4 @@ internal static class ItemMapper
         PathRejection.DotSegment => LocalText.Of(nameof(Strings.PathDotSegment), path),
         _ => LocalText.Of(nameof(Strings.PathInvalidCharacters), path),
     };
-
 }

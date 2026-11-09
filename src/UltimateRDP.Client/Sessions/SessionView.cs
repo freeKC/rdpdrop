@@ -405,7 +405,6 @@ internal sealed partial class SessionView : UserControl
         DropTextChanged?.Invoke(this, EventArgs.Empty);
     }
 
-
     private string SafeControlVersion()
     {
         try

@@ -66,7 +66,6 @@ internal sealed class DropSource
         if (escapePressed)
         {
             RequestCancel(LocalText.Of(nameof(Strings.CancelEscape)));
-
             return DragAction.Cancel;
         }
 
