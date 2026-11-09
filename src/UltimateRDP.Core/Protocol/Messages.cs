@@ -16,6 +16,13 @@ namespace UltimateRDP.Core.Protocol;
 [JsonDerivedType(typeof(DragAckMessage), MessageTypes.DragAck)]
 [JsonDerivedType(typeof(LogoffMessage), MessageTypes.Logoff)]
 [JsonDerivedType(typeof(LogoffResultMessage), MessageTypes.LogoffResult)]
+[JsonDerivedType(typeof(TransferBeginMessage), MessageTypes.TransferBegin)]
+[JsonDerivedType(typeof(FileBeginMessage), MessageTypes.FileBegin)]
+[JsonDerivedType(typeof(FileChunkMessage), MessageTypes.FileChunk)]
+[JsonDerivedType(typeof(FileEndMessage), MessageTypes.FileEnd)]
+[JsonDerivedType(typeof(TransferCancelMessage), MessageTypes.TransferCancel)]
+[JsonDerivedType(typeof(FileAckMessage), MessageTypes.FileAck)]
+[JsonDerivedType(typeof(TransferResultMessage), MessageTypes.TransferResult)]
 public abstract record Message
 {
     /// <summary>
@@ -69,6 +76,27 @@ public static class MessageTypes
 
     /// <summary>Type of <see cref="LogoffResultMessage"/>.</summary>
     public const string LogoffResult = "logoffResult";
+
+    /// <summary>Type of <see cref="TransferBeginMessage"/>.</summary>
+    public const string TransferBegin = "transferBegin";
+
+    /// <summary>Type of <see cref="FileBeginMessage"/>.</summary>
+    public const string FileBegin = "fileBegin";
+
+    /// <summary>Type of <see cref="FileChunkMessage"/>.</summary>
+    public const string FileChunk = "fileChunk";
+
+    /// <summary>Type of <see cref="FileEndMessage"/>.</summary>
+    public const string FileEnd = "fileEnd";
+
+    /// <summary>Type of <see cref="TransferCancelMessage"/>.</summary>
+    public const string TransferCancel = "transferCancel";
+
+    /// <summary>Type of <see cref="FileAckMessage"/>.</summary>
+    public const string FileAck = "fileAck";
+
+    /// <summary>Type of <see cref="TransferResultMessage"/>.</summary>
+    public const string TransferResult = "transferResult";
 }
 
 /// <summary>
@@ -157,7 +185,12 @@ public static class KeyStates
 /// <param name="X">Horizontal position in the remote desktop.</param>
 /// <param name="Y">Vertical position in the remote desktop.</param>
 /// <param name="KeyState">Modifier keys, see <see cref="KeyStates"/>. Zero when absent.</param>
-public sealed record DropMessage(string Id, int X, int Y, int KeyState = KeyStates.None) : Message(MessageTypes.Drop)
+/// <param name="Deferred">
+/// True when the agent asked for a transfer in its <see cref="DragAckMessage"/>: the agent
+/// ends the live drag without a drop, remembers the point, receives the files and drops
+/// the copies there once they arrived. Not written when null.
+/// </param>
+public sealed record DropMessage(string Id, int X, int Y, int KeyState = KeyStates.None, bool? Deferred = null) : Message(MessageTypes.Drop)
 {
     internal override bool IsValid() => !string.IsNullOrEmpty(Id);
 }
@@ -167,10 +200,15 @@ public sealed record DropMessage(string Id, int X, int Y, int KeyState = KeyStat
 /// </summary>
 /// <param name="ClientPath">Full path on the client computer.</param>
 /// <param name="IsDirectory">True for a folder.</param>
-public sealed record DropItem(string ClientPath, bool IsDirectory)
+/// <param name="Size">
+/// Size in bytes: the length of a file, or the total length of the files inside a folder
+/// as far as the client could count them quickly. Null when unknown. The agent uses it to
+/// decide whether the files are transferred through the channel.
+/// </param>
+public sealed record DropItem(string ClientPath, bool IsDirectory, long? Size = null)
 {
     internal static bool AreValid(IReadOnlyList<DropItem>? items) =>
-        items is not null && items.All(item => item is not null && !string.IsNullOrEmpty(item.ClientPath));
+        items is not null && items.All(item => item is not null && !string.IsNullOrEmpty(item.ClientPath) && item.Size is null or >= 0);
 }
 
 /// <summary>
@@ -231,9 +269,16 @@ public sealed record DragLeaveMessage(string Id) : Message(MessageTypes.DragLeav
 /// <param name="Id">Identifier of the drag.</param>
 /// <param name="Accepted">True when the drag runs inside the session.</param>
 /// <param name="Message">Why the drag was refused, or a note such as a long staging.</param>
-public sealed record DragAckMessage(string Id, bool Accepted, string? Message = null) : Message(MessageTypes.DragAck)
+/// <param name="Transfer">
+/// True when the agent wants the files transferred through the channel before the drop:
+/// the client then ends the drag with a deferred <see cref="DropMessage"/> and sends the
+/// files under <paramref name="TransferId"/>. Not written when null.
+/// </param>
+/// <param name="TransferId">Identifier of the transfer, when <paramref name="Transfer"/> is true.</param>
+public sealed record DragAckMessage(string Id, bool Accepted, string? Message = null, bool? Transfer = null, string? TransferId = null) : Message(MessageTypes.DragAck)
 {
-    internal override bool IsValid() => !string.IsNullOrEmpty(Id);
+    internal override bool IsValid() =>
+        !string.IsNullOrEmpty(Id) && (Transfer != true || !string.IsNullOrEmpty(TransferId));
 }
 
 /// <summary>
