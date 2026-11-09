@@ -985,3 +985,78 @@ The client and the agent must both run 0.4.1. A 0.4.0 agent works with a
 0.4.1 client, but without the queue and the first acknowledgement, so the
 client fails after 10 seconds when the data gets through slowly; a 0.4.0
 client sends chunks of 256 KiB.
+
+
+## Version 0.4.2
+
+Decided on 2026-11-09 after the first transfer in production with 0.4.1: a
+file of 496 MB took 193 seconds, and the only sign of it was the text in the
+status bar. The user took the transfer for a failure and dragged the file
+again, which the client refused with the "not allowed" cursor. A running
+transfer must be obvious.
+
+Decision: a small window, `TransferProgressForm` in the client, opens when
+the transfer starts, that is on the deferred drop after the agent accepted the
+drag with a transfer, and closes when it ends. Only the client changes; the
+protocol does not.
+
+What it shows, from top to bottom:
+
+* the name of the file being sent, and "file 2 of 3" on the right; the
+  current file is the first one whose bytes are not all acknowledged
+  (`TransferProgress.CurrentFile` in Core);
+* a progress bar of the acknowledged bytes over the total;
+* "42 %, 2.6 MB/s, 1 min 40 s left": the values of `TransferProgress`, the
+  time left rounded up to five seconds under an hour, then to the minute;
+* "Destination:" and the host name of the session;
+* a notice line and one button.
+
+Stages:
+
+1. While the files are listed, before the first chunk, the bar runs without a
+   value (marquee), the text says "Preparing...", the first line gives the
+   first dropped item and the number of items.
+2. During the transfer, the window follows the acknowledgements at most four
+   times a second: it is refreshed where the status bar is, with the same
+   throttling.
+3. After a success: "Transferred 3 file(s) in 3 min 13 s at 2.6 MB/s,
+   dropping into the session...", with the seconds and the rate of the
+   status bar text. When the dropResult arrives, the first part stays and the
+   result of the drop ("Dropped on ...", or why nothing took the files)
+   follows on a second line; the window closes three seconds later, and
+   waits while the mouse is over it.
+4. After a failure, a cancel or a disconnection: the reason, the same text
+   as in the status bar, in red, and the button becomes Close. The window
+   stays open until the user closes it, or until a new drag starts.
+
+The button is Cancel while the transfer runs and takes the path of Session,
+Cancel the transfer. While a transfer runs, a drag or a drop over the
+session is refused as before with the status text, and the window also says
+"Wait for this transfer before dropping more files." for five seconds after
+the last refused drag over.
+
+Window rules:
+
+* Owned by the main form, not topmost, so it stays above the main form
+  only. It is shown without activation and the code never activates it, so
+  the keyboard stays in the session. A click on its button activates it, as
+  any click would.
+* Centered over the session area when it opens, within the working area of
+  the screen, until the user moves it. It is about 460 by 170 logical pixels
+  of client area, laid out at 96 DPI and scaled to the DPI of its monitor.
+* No close box: the button closes it once the transfer ended.
+* It belongs to the session view that runs the transfer: switching tabs
+  leaves it on screen, and closing that tab cancels the transfer, while the
+  agent can still be told so that it deletes what it received at once, then
+  closes the window. A change of language writes its texts again.
+
+The texts of the progress line and the durations are built by
+`TransferProgressText` in Core from templates of the resources and the
+current culture, so that they are tested without the user interface. The
+status bar texts are unchanged.
+
+Limits: over a session in full screen on the monitor of the main form, the
+window, which is not topmost, may be hidden by the full screen window.
+
+The client runs 0.4.2; the agent can stay at 0.4.1, since it does not change.
+A 0.4.2 agent is the same as a 0.4.1 agent with another version number.
