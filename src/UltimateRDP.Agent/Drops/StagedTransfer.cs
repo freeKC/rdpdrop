@@ -71,9 +71,6 @@ internal sealed class StagedTransfer
     /// <summary>Paths of the copies of the dropped items, in the order of the drag.</summary>
     public IReadOnlyList<string> StagedPaths { get; }
 
-    /// <summary>Why the transfer did not succeed, in English, once it is over.</summary>
-    public string? Outcome { get; private set; }
-
     /// <summary>Handles one transfer message of the client. Called on the channel thread.</summary>
     public void Handle(Message message)
     {
@@ -187,10 +184,10 @@ internal sealed class StagedTransfer
         var (status, text) = Describe();
         var seconds = _receiver.Seconds;
         var rate = seconds > 0 ? _receiver.ReceivedBytes / BytesPerMegabyte / seconds : 0;
-        Outcome = status == DropStatus.Ok ? null : _receiver.FailureDetail ?? text?.ToString();
+        var outcome = status == DropStatus.Ok ? null : _receiver.FailureDetail ?? text?.ToString();
         _logger.Info(string.Create(
             CultureInfo.InvariantCulture,
-            $"Transfer {TransferId} of drag {DragId}: {status}, {_receiver.ReceivedFiles} of {_receiver.ExpectedFiles} file(s), {_receiver.ReceivedBytes} of {_receiver.ExpectedBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s{(Outcome is null ? string.Empty : ". " + Outcome)}"));
+            $"Transfer {TransferId} of drag {DragId}: {status}, {_receiver.ReceivedFiles} of {_receiver.ExpectedFiles} file(s), {_receiver.ReceivedBytes} of {_receiver.ExpectedBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s{(outcome is null ? string.Empty : ". " + outcome)}"));
         _send(new TransferResultMessage(TransferId, status, text?.In(_language.Culture), _receiver.ReceivedBytes, Math.Round(seconds, 3)));
     }
 

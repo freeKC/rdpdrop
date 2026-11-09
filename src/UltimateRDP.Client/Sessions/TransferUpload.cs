@@ -18,8 +18,8 @@ namespace UltimateRDP.Client.Sessions;
 /// passes to <see cref="OnAck"/>.
 /// </summary>
 /// <remarks>
-/// The events are raised on the UI thread. The upload ends when the last file was sent;
-/// the transferResult of the agent, which the owner receives, closes the transfer.
+/// The events are raised on the UI thread. The upload ends once the agent acknowledged the
+/// last bytes; the transferResult of the agent, which the owner receives, closes the transfer.
 /// </remarks>
 internal sealed class TransferUpload
 {
@@ -101,6 +101,11 @@ internal sealed class TransferUpload
             {
                 foreach (var entry in pending.Pop().EnumerateFileSystemInfos("*", ListingOptions))
                 {
+                    if (watch.Elapsed >= budget)
+                    {
+                        break;
+                    }
+
                     if (entry is FileInfo file)
                     {
                         total += file.Length;
@@ -198,6 +203,8 @@ internal sealed class TransferUpload
                     return;
                 }
             }
+
+            WaitForLastAcknowledgement();
         }
         catch (Exception ex)
         {
@@ -294,6 +301,14 @@ internal sealed class TransferUpload
                 Post(() => SendLine(line));
                 remaining -= count;
             }
+
+            // A file that grew since it was listed would arrive cut at its listed size.
+            if (stream.Length != file.Size)
+            {
+                ClientLog.Warn(Invariant($"Transfer {TransferId}: {path} is now {stream.Length} bytes long, {file.Size} when it was listed."));
+                Fail(LocalText.Of(nameof(Strings.TransferFileChanged), path));
+                return false;
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
@@ -330,6 +345,28 @@ internal sealed class TransferUpload
             }
 
             return !_stopped;
+        }
+    }
+
+    /// <summary>
+    /// Once every file went out, waits for the agent to acknowledge the last bytes, so that
+    /// an agent that stopped answering ends the transfer instead of leaving it open.
+    /// </summary>
+    private void WaitForLastAcknowledgement()
+    {
+        lock (_gate)
+        {
+            while (!_stopped && !_sender!.IsAcknowledged)
+            {
+                if (Environment.TickCount64 - Interlocked.Read(ref _lastAckTicks) > AckTimeout.TotalMilliseconds)
+                {
+                    ClientLog.Warn(Invariant($"Transfer {TransferId}: every file was sent, and no acknowledgement came for {AckTimeout.TotalSeconds:0} s with {_sender.InFlightBytes} bytes in flight."));
+                    Fail(LocalText.Of(nameof(Strings.TransferAgentSilent)));
+                    return;
+                }
+
+                Monitor.Wait(_gate, WaitSliceMilliseconds);
+            }
         }
     }
 

@@ -184,6 +184,13 @@ internal sealed class NativeDropCoordinator : IDisposable
 
         if (drop.Deferred == true && drag.TransferId is { } transferId && drag.TransferItems is { } transferItems)
         {
+            if (drag.Transfer is not null)
+            {
+                // A second receiver would share the folder of the first, which deletes it when it stops.
+                _logger.Info($"Drag {drop.Id}: repeated deferred drop ignored, transfer {transferId} already waits for the files.");
+                return;
+            }
+
             DeferDrop(drag, drop, transferId, transferItems);
             return;
         }

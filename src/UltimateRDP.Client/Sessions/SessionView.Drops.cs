@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using UltimateRDP.Client.Channel;
 using UltimateRDP.Client.Localization;
@@ -35,7 +36,7 @@ internal sealed partial class SessionView
     private const int MoveIntervalMilliseconds = 33;
     private const int KeepAliveMilliseconds = 1000;
 
-    /// <summary>Longest time spent counting the size of a dropped folder when the drag starts.</summary>
+    /// <summary>Longest time spent counting the size of the dropped folders when the drag starts.</summary>
     private static readonly TimeSpan FolderSizeBudget = TimeSpan.FromMilliseconds(250);
 
     // Moving between the control, its child windows and the host window gives a leave
@@ -419,6 +420,7 @@ internal sealed partial class SessionView
     private List<DropItem>? MapItems(IReadOnlyList<string> files, out LocalText? problem)
     {
         var items = new List<DropItem>(files.Count);
+        var counting = Stopwatch.StartNew();
         foreach (var path in files)
         {
             var rejection = ClientPathMapper.Classify(path, out _);
@@ -429,7 +431,9 @@ internal sealed partial class SessionView
                 return null;
             }
 
-            items.Add(MeasureItem(path));
+            // The folders of one drag share the budget, so that many folders never hold the UI longer.
+            var budget = FolderSizeBudget - counting.Elapsed;
+            items.Add(MeasureItem(path, budget > TimeSpan.Zero ? budget : TimeSpan.Zero));
         }
 
         problem = null;
@@ -438,15 +442,15 @@ internal sealed partial class SessionView
 
     /// <summary>
     /// The item with its size, which lets the agent decide whether to transfer the files
-    /// through the channel. A folder is counted for a short time only.
+    /// through the channel. A folder is counted for at most <paramref name="budget"/>.
     /// </summary>
-    private static DropItem MeasureItem(string path)
+    private static DropItem MeasureItem(string path, TimeSpan budget)
     {
         try
         {
             if (Directory.Exists(path))
             {
-                return new DropItem(path, true, TransferUpload.MeasureFolder(path, FolderSizeBudget));
+                return new DropItem(path, true, TransferUpload.MeasureFolder(path, budget));
             }
 
             var file = new FileInfo(path);
@@ -491,6 +495,14 @@ internal sealed partial class SessionView
 
     private void OnDropResult(DropResultMessage result)
     {
+        if (_upload is { } upload && upload.DragId == result.Id)
+        {
+            // The agent ended the drag before it had the files, so the transfer cannot go on;
+            // the reason of the agent stays in the status bar.
+            ClientLog.Info($"Transfer {upload.TransferId}: the drag ended on the agent with {result.Status}; the transfer stops.");
+            EndTransfer(upload, "The drag ended on the agent before the transfer.");
+        }
+
         if (_pendingDropId is not null && result.Id != _pendingDropId)
         {
             ClientLog.Info($"Result {result.Id} belongs to an earlier drop; the status bar keeps the latest one.");
