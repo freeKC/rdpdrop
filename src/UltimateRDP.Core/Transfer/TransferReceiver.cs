@@ -47,6 +47,12 @@ public enum TransferFailure
     /// <summary>A message came out of order: a chunk before its file, a file before the previous one ended.</summary>
     OutOfOrder,
 
+    /// <summary>
+    /// A message of the client never arrived: <see cref="TransferReceiver.LostMessage"/>
+    /// names it. A later message shows that it was sent, so the line was lost on the way.
+    /// </summary>
+    MessageLost,
+
     /// <summary>A chunk did not start where the previous one ended: data was lost on the way.</summary>
     DataLost,
 
@@ -130,6 +136,15 @@ public sealed class TransferReceiver : IDisposable
     /// <summary>The failure in English, for the log.</summary>
     public string? FailureDetail { get; private set; }
 
+    /// <summary>
+    /// The type of the message that never arrived, when <see cref="Failure"/> is
+    /// <see cref="TransferFailure.MessageLost"/>: <c>transferBegin</c>, <c>fileBegin</c> or <c>fileEnd</c>.
+    /// </summary>
+    public string? LostMessage { get; private set; }
+
+    /// <summary>The file of <see cref="LostMessage"/>, or null for <c>transferBegin</c>.</summary>
+    public int? LostFileIndex { get; private set; }
+
     /// <summary>Files announced by <c>transferBegin</c>.</summary>
     public int ExpectedFiles { get; private set; }
 
@@ -161,7 +176,7 @@ public sealed class TransferReceiver : IDisposable
         if (State == TransferState.Waiting && message is FileBeginMessage or FileChunkMessage or FileEndMessage && TransferIdOf(message) == TransferId)
         {
             // Said apart from the other order errors: the line of transferBegin was lost.
-            return Fail(TransferFailure.OutOfOrder, (message as FileBeginMessage)?.RelativePath, $"{message.Type} came before transferBegin: no transferBegin arrived for this transfer.");
+            return Lost(MessageTypes.TransferBegin, null, (message as FileBeginMessage)?.RelativePath, $"{message.Type} came before transferBegin: no transferBegin arrived for this transfer.");
         }
 
         return message switch
@@ -240,6 +255,12 @@ public sealed class TransferReceiver : IDisposable
 
     private FileAckMessage? OnFileBegin(FileBeginMessage file)
     {
+        if (State == TransferState.Receiving && _file is { } open && file.FileIndex == open.FileIndex + 1)
+        {
+            // The next file begins while this one is open: its fileEnd was lost on the way.
+            return Lost(MessageTypes.FileEnd, open.FileIndex, open.RelativePath, $"fileEnd for file {open.FileIndex} never arrived: fileBegin {file.FileIndex} came while file {open.FileIndex} is open.");
+        }
+
         if (State != TransferState.Receiving || _file is not null || file.FileIndex != ReceivedFiles || ReceivedFiles >= ExpectedFiles)
         {
             return Fail(TransferFailure.OutOfOrder, file.RelativePath, $"fileBegin {file.FileIndex} came out of order ({ReceivedFiles} of {ExpectedFiles} files received, a file {(_file is null ? "is not" : "is")} open).");
@@ -272,6 +293,12 @@ public sealed class TransferReceiver : IDisposable
     private FileAckMessage? OnChunk(FileChunkMessage chunk)
     {
         var file = _file;
+        if (chunk.FileIndex >= BegunFiles)
+        {
+            // Seen in production: the fileBegin line before the first chunk was lost on the way.
+            return Lost(MessageTypes.FileBegin, chunk.FileIndex, file?.RelativePath, $"fileBegin for file {chunk.FileIndex} never arrived: a chunk of file {chunk.FileIndex} came while file {(file is null ? "(none)" : file.FileIndex)} is open.");
+        }
+
         if (file is null || chunk.FileIndex != file.FileIndex)
         {
             return Fail(TransferFailure.OutOfOrder, file?.RelativePath, $"A chunk of file {chunk.FileIndex} came while file {(file is null ? "(none)" : file.FileIndex)} is open.");
@@ -319,6 +346,11 @@ public sealed class TransferReceiver : IDisposable
     private FileAckMessage? OnFileEnd(FileEndMessage end)
     {
         var file = _file;
+        if (end.FileIndex >= BegunFiles)
+        {
+            return Lost(MessageTypes.FileBegin, end.FileIndex, file?.RelativePath, $"fileBegin for file {end.FileIndex} never arrived: its fileEnd came while file {(file is null ? "(none)" : file.FileIndex)} is open.");
+        }
+
         if (file is null || end.FileIndex != file.FileIndex)
         {
             return Fail(TransferFailure.OutOfOrder, file?.RelativePath, $"fileEnd {end.FileIndex} came while file {(file is null ? "(none)" : file.FileIndex)} is open.");
@@ -397,6 +429,16 @@ public sealed class TransferReceiver : IDisposable
             Fail(TransferFailure.WriteFailed, relativePath, ex.Message);
             return false;
         }
+    }
+
+    /// <summary>Files whose fileBegin arrived: the files received, and the open one.</summary>
+    private int BegunFiles => ReceivedFiles + (_file is null ? 0 : 1);
+
+    private FileAckMessage? Lost(string messageType, int? fileIndex, string? relativePath, string detail)
+    {
+        LostMessage = messageType;
+        LostFileIndex = fileIndex;
+        return Fail(TransferFailure.MessageLost, relativePath, detail);
     }
 
     private FileAckMessage? Fail(TransferFailure failure, string? relativePath, string detail)

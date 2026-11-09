@@ -1,13 +1,12 @@
-using UltimateRDP.Core.Protocol;
-
-namespace UltimateRDP.Agent.Channel;
+namespace UltimateRDP.Core.Protocol;
 
 /// <summary>
 /// Turns the bytes read on one connection into text. The byte model is detected from
 /// the first two bytes and kept until <see cref="Reset"/>. In the UTF-16 model an odd
-/// trailing byte waits for the next read.
+/// trailing byte waits for the next read. The agent decodes what it reads on the channel
+/// with it.
 /// </summary>
-internal sealed class IncomingTextDecoder
+public sealed class IncomingTextDecoder
 {
     private byte[] _carry = [];
 

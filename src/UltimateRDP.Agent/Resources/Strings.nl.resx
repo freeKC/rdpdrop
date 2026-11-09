@@ -264,6 +264,12 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   <data name="TransferDataLost" xml:space="preserve">
     <value>Er zijn onderweg gegevens verloren gegaan of beschadigd. Probeer het opnieuw.</value>
   </data>
+  <data name="TransferMessageLost" xml:space="preserve">
+    <value>Een bericht van de overdracht is onderweg verloren gegaan: {0} is nooit aangekomen. Probeer het opnieuw.</value>
+  </data>
+  <data name="TransferFileMessageLost" xml:space="preserve">
+    <value>Een bericht van de overdracht is onderweg verloren gegaan: {0} voor bestand {1} is nooit aangekomen. Probeer het opnieuw.</value>
+  </data>
   <data name="TransferIdle" xml:space="preserve">
     <value>Er kwam {0} seconden niets binnen, daarom is de overdracht gestopt.</value>
   </data>

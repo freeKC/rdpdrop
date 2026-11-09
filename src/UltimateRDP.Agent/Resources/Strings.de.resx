@@ -264,6 +264,12 @@ Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lese
   <data name="TransferDataLost" xml:space="preserve">
     <value>Daten gingen unterwegs verloren oder wurden beschädigt. Versuchen Sie es erneut.</value>
   </data>
+  <data name="TransferMessageLost" xml:space="preserve">
+    <value>Eine Nachricht der Übertragung ging unterwegs verloren: {0} ist nie angekommen. Versuchen Sie es erneut.</value>
+  </data>
+  <data name="TransferFileMessageLost" xml:space="preserve">
+    <value>Eine Nachricht der Übertragung ging unterwegs verloren: {0} für Datei {1} ist nie angekommen. Versuchen Sie es erneut.</value>
+  </data>
   <data name="TransferIdle" xml:space="preserve">
     <value>{0} Sekunden lang kam nichts an, daher wurde die Übertragung beendet.</value>
   </data>

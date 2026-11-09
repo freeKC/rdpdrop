@@ -219,6 +219,8 @@ internal sealed class StagedTransfer
                 TransferFailure.BadName => LocalText.Of(nameof(Strings.TransferBadName), path),
                 TransferFailure.WriteFailed => LocalText.Of(nameof(Strings.TransferWriteFailed), path, _receiver.FailureDetail),
                 TransferFailure.Incomplete => LocalText.Of(nameof(Strings.TransferIncomplete), path),
+                TransferFailure.MessageLost when _receiver.LostFileIndex is { } index => LocalText.Of(nameof(Strings.TransferFileMessageLost), _receiver.LostMessage, index),
+                TransferFailure.MessageLost => LocalText.Of(nameof(Strings.TransferMessageLost), _receiver.LostMessage),
                 _ => LocalText.Of(nameof(Strings.TransferDataLost)),
             }),
         };

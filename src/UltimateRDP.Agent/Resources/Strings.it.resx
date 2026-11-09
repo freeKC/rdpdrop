@@ -264,6 +264,12 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   <data name="TransferDataLost" xml:space="preserve">
     <value>Alcuni dati sono andati persi o danneggiati lungo il percorso. Riprovare.</value>
   </data>
+  <data name="TransferMessageLost" xml:space="preserve">
+    <value>Un messaggio del trasferimento è andato perso lungo il percorso: {0} non è mai arrivato. Riprovare.</value>
+  </data>
+  <data name="TransferFileMessageLost" xml:space="preserve">
+    <value>Un messaggio del trasferimento è andato perso lungo il percorso: {0} del file {1} non è mai arrivato. Riprovare.</value>
+  </data>
   <data name="TransferIdle" xml:space="preserve">
     <value>Non è arrivato nulla per {0} secondi, quindi il trasferimento è stato interrotto.</value>
   </data>

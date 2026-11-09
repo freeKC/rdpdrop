@@ -264,6 +264,12 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   <data name="TransferDataLost" xml:space="preserve">
     <value>Se perdieron o dañaron datos por el camino. Vuelva a intentarlo.</value>
   </data>
+  <data name="TransferMessageLost" xml:space="preserve">
+    <value>Un mensaje de la transferencia se perdió por el camino: {0} nunca llegó. Vuelva a intentarlo.</value>
+  </data>
+  <data name="TransferFileMessageLost" xml:space="preserve">
+    <value>Un mensaje de la transferencia se perdió por el camino: {0} del archivo {1} nunca llegó. Vuelva a intentarlo.</value>
+  </data>
   <data name="TransferIdle" xml:space="preserve">
     <value>No llegó nada durante {0} segundos, así que la transferencia se detuvo.</value>
   </data>

@@ -213,7 +213,9 @@ public class TransferReceiverTests
 
         receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", 10));
 
-        Assert.Equal(TransferFailure.OutOfOrder, receiver.Failure);
+        Assert.Equal(TransferFailure.MessageLost, receiver.Failure);
+        Assert.Equal("transferBegin", receiver.LostMessage);
+        Assert.Null(receiver.LostFileIndex);
         Assert.Equal("fileBegin came before transferBegin: no transferBegin arrived for this transfer.", receiver.FailureDetail);
         Assert.Equal(1, _storage.DeleteAllCalls);
     }
@@ -263,10 +265,58 @@ public class TransferReceiverTests
     public void Messages_out_of_order_fail()
     {
         using var receiver = Create();
-
+        receiver.Handle(new TransferBeginMessage("t1", 2, 6));
         receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", 3));
+        receiver.Handle(Chunk(0, 0, [1, 2, 3]));
+        receiver.Handle(new FileEndMessage("t1", 0, Hash([1, 2, 3])));
+
+        receiver.Handle(Chunk(0, 3, [4]));
 
         Assert.Equal(TransferFailure.OutOfOrder, receiver.Failure);
+    }
+
+    /// <summary>What the agent logged in production when the line of fileBegin was lost before the first chunk.</summary>
+    [Fact]
+    public void A_chunk_whose_fileBegin_never_arrived_names_the_lost_message()
+    {
+        using var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 1, 3));
+
+        receiver.Handle(Chunk(0, 0, [1, 2, 3]));
+
+        Assert.Equal(TransferFailure.MessageLost, receiver.Failure);
+        Assert.Equal("fileBegin", receiver.LostMessage);
+        Assert.Equal(0, receiver.LostFileIndex);
+        Assert.StartsWith("fileBegin for file 0 never arrived", receiver.FailureDetail, StringComparison.Ordinal);
+        Assert.Equal(1, _storage.DeleteAllCalls);
+    }
+
+    [Fact]
+    public void A_fileEnd_whose_fileBegin_never_arrived_names_the_lost_message()
+    {
+        using var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 1, 0));
+
+        receiver.Handle(new FileEndMessage("t1", 0, Hash([])));
+
+        Assert.Equal(TransferFailure.MessageLost, receiver.Failure);
+        Assert.Equal("fileBegin", receiver.LostMessage);
+        Assert.Equal(0, receiver.LostFileIndex);
+    }
+
+    [Fact]
+    public void The_next_file_while_one_is_open_says_that_its_fileEnd_never_arrived()
+    {
+        using var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 2, 0));
+        receiver.Handle(new FileBeginMessage("t1", 0, @"Folder\x", 0));
+
+        receiver.Handle(new FileBeginMessage("t1", 1, @"Folder\y", 0));
+
+        Assert.Equal(TransferFailure.MessageLost, receiver.Failure);
+        Assert.Equal("fileEnd", receiver.LostMessage);
+        Assert.Equal(0, receiver.LostFileIndex);
+        Assert.Equal(@"Folder\x", receiver.FailurePath);
     }
 
     [Fact]
