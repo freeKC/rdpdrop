@@ -43,16 +43,27 @@ Each zip holds a single `.exe` file.
    "C:\Program Files\UltimateRDP\UltimateRDP.Agent.exe" --install-all-users
    ```
 
-   The agent then starts with each user session and shows a tray icon. Users who are already signed in get it at their next sign in.
+   The agent then starts with each user session. Users who are already signed in get it at their next sign in. Running the command again changes nothing. If you had installed the agent for your own account with `--install`, the command also removes that entry and says so, so that the agent does not start twice in your session. It refuses an executable inside a user profile, such as a Downloads folder, because other users may not be able to read it.
 
 To install it for your own account only, run the same command with `--install` from a normal prompt. This also starts the agent at once.
 
 Other options:
 
 - `--uninstall` stops the agent from starting with your session and stops the running copy. Run it from an elevated prompt to remove the all users entry as well.
+- `--status` prints the version, the `Run` entries under `HKEY_CURRENT_USER` and `HKEY_LOCAL_MACHINE`, the settings file and whether the agent runs in your session. It changes nothing.
 - `--help` lists the options.
 
-To update, exit the running agent from its tray menu, replace the executable, then start it again or sign in again. The client and the agent must have the same version.
+To update on a server, stop every copy of the agent from an elevated prompt with `taskkill /im UltimateRDP.Agent.exe /f`, replace the executable, then let the users sign in again. To update your own copy, exit it from its tray menu or with `--uninstall`, replace the executable, then install it again. The client and the agent must have the same version.
+
+### Sessions opened with the Microsoft client
+
+On a server, most users may connect with the Microsoft client (mstsc), which has no UltimateRDP channel. For them the agent stays out of sight and does nothing visible:
+
+- It shows no icon, no window and no message. Its tray icon appears only while an UltimateRDP client is connected to the session, and goes away when that client disconnects. The `trayIcon` setting below changes this.
+- While it waits, it uses a few megabytes of memory and no measurable processor time. It tries to open its channel every ten seconds, and at once when a client connects to the session, so that a user who reconnects with the UltimateRDP client finds the agent ready.
+- Its log gets one line when it starts and at most one line per hour while it waits.
+- It survives disconnections and reconnections, from either client. At sign out it releases the mouse button if a drop was in progress, closes the channel and exits, without delaying the sign out.
+- An unexpected error never shows a dialog: it is written to the log, and the agent either goes on or exits quietly.
 
 ### On your computer
 
@@ -181,7 +192,7 @@ File, Forget saved credentials deletes both kinds of credential for the host of 
 
 ## Agent tray menu and settings
 
-The tray menu of the agent holds:
+By default the tray icon of the agent is visible only while an UltimateRDP client is connected to the session. Its menu holds:
 
 - **Stage files in the session before the drop**: off by default. When on, the agent copies the files into the session before the drag starts, and the remote application receives local paths instead of `\\tsclient` paths. Turn it on for applications that refuse network paths. Large files take time to copy before the drag starts.
 - **Open log folder**, **About** and **Exit**.
@@ -195,15 +206,22 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
 ```json
 {
   "logLevel": "debug",
-  "stageFiles": false
+  "stageFiles": false,
+  "trayIcon": "auto"
 }
 ```
 
-`logLevel` is `debug`, `info`, `warn` or `error`, and `info` when absent. `stageFiles` is `false` when absent. Restart the agent after editing the file by hand.
+| Setting | Values | When absent | Meaning |
+| --- | --- | --- | --- |
+| `stageFiles` | `true`, `false` | `false` | The tray menu entry "Stage files in the session before the drop". |
+| `logLevel` | `debug`, `info`, `warn`, `error` | `info` | The lowest level written to the log. Only editable in the file. |
+| `trayIcon` | `auto`, `always`, `never` | `auto` | `auto` shows the tray icon only while an UltimateRDP client is connected to the session. `always` shows it from the start of the agent. `never` never shows it: the agent is then controlled with `--uninstall` and its `Run` entry only. Only editable in the file. |
+
+An unknown value gives the default and a warning in the log. Restart the agent after editing the file by hand.
 
 ## How it works
 
-The client hosts the Microsoft Remote Desktop ActiveX control and registers itself as a drop target on its windows. The agent runs in the tray of your session and listens on a static virtual channel named `ULTRDP`. The client never sends file contents. It sends the local paths and the cursor position, and the session reads the files from the redirected drives.
+The client hosts the Microsoft Remote Desktop ActiveX control and registers itself as a drop target on its windows. The agent runs in your session and listens on a static virtual channel named `ULTRDP`. The client never sends file contents. It sends the local paths and the cursor position, and the session reads the files from the redirected drives.
 
 1. When the drag first moves over the session, the client converts the cursor position to remote desktop coordinates and sends `dragEnter` with the paths.
 2. The agent opens an invisible proxy window over the whole remote screen. It moves the remote cursor to the point and simulates a left button press on that window. The press starts a real OLE drag inside the session, with the files as `\\tsclient\<drive>\...` paths, or as staged copies.
@@ -220,7 +238,7 @@ Messages are JSON objects sent as ASCII lines, and each side detects at run time
 
 ## Troubleshooting
 
-- **The agent never becomes ready.** Check that the agent runs in the session: its icon should be in the tray. A server policy may also block virtual channels. The agent log says so when it cannot open the channel.
+- **The agent never becomes ready.** Run `UltimateRDP.Agent.exe --status` in the session: it says whether the agent runs there and where it is set to start from. The tray icon only appears once the client is connected, so its absence before that is normal. A server policy may also block virtual channels: the agent log then has a warning that it cannot open the channel.
 - **"The agent did not acknowledge the drag".** The agent did not answer the start of the drag within a second. A slow connection or a busy agent can cause it. When the status bar says "The session does not accept simulated input", the session may be locked, or a policy may block simulated input. Please report it with both logs.
 - **The target shows no drop feedback, or the status bar says "Nothing under the cursor accepted the files."** The application under the cursor may not accept files at that place. Some applications also refuse network paths such as `\\tsclient\C\...`. For those, turn on "Stage files in the session before the drop" in the agent tray menu.
 - **The first drop on Explorer takes several seconds.** Explorer reads the redirected drive the first time, which can be slow. Later drops are usually faster.

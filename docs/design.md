@@ -110,6 +110,8 @@ Pure logic shared by the two apps and covered by tests.
 * `RecentList`: rules of the list of recent connection files.
 * `UiLanguages`: the supported languages and the rules that turn a language
   choice or a Windows language into one of them.
+* `TrayIconModes`, `ChannelRetryPolicy`, `IdleReport` and `InstallLocation`:
+  rules of the agent, described under "Production behaviour of the agent".
 
 ### Protocol
 
@@ -288,8 +290,9 @@ Behaviour:
    `ChannelTextCodec`, feed a `LineReader`, dispatch messages, write replies
    with `WTSVirtualChannelWrite` in the same byte model. On any error
    (session disconnected, channel closed, not an RDP session) close
-   everything, wait two seconds and retry forever. Also listen to
-   `WM_WTSSESSION_CHANGE` to retry at once after a reconnect.
+   everything, wait and retry forever; the wait is described under
+   "Production behaviour of the agent" below. Also listen to
+   `WM_WTSSESSION_CHANGE` to retry at once after a connection or a logon.
 2. On `hello`: reply with the agent version and whether at least one
    `\\tsclient\<letter>` is reachable.
 3. On `dragEnter`: map every item with `ClientPathMapper` and check that the
@@ -312,11 +315,12 @@ Behaviour:
    log off from the Start menu; `EWX_FORCE` is never used. When the call
    fails, a second `logoffResult` with `accepted: false` carries the Windows
    error text.
-6. Tray menu: Stage files in the session before the drop, Open log folder,
+6. Tray icon, shown as the `trayIcon` setting says (see below), with its
+   menu: Stage files in the session before the drop, Open log folder,
    About, Exit. About is a task dialog with the version, the publisher
    APROGSYS and its web site, and the project page, as links. Settings in
    `%LOCALAPPDATA%\UltimateRDP\agent.json` (`stageFiles`, and `logLevel`
-   which is only editable in the file). Logs in
+   and `trayIcon` which are only editable in the file). Logs in
    `%LOCALAPPDATA%\UltimateRDP\logs\agent-<date>.log`, rotated by day, kept
    fourteen days.
 7. Command line:
@@ -324,8 +328,70 @@ Behaviour:
      user session, then start the agent.
    * `--uninstall`: remove that value and stop any running instance.
    * `--install-all-users`: same under `HKLM` (needs an elevated prompt).
+     Running it again changes nothing. It refuses an executable inside a
+     user profile (the profile of the current user, or the folder of all
+     profiles) and suggests `C:\Program Files\UltimateRDP`. It removes the
+     `HKCU` value of the current user, which would start a second copy, and
+     says so.
+   * `--status`: print the version, the path of the executable, the `Run`
+     values under `HKCU` and `HKLM`, the settings file, the `trayIcon` mode,
+     the log folder and whether an agent runs in this session (its mutex
+     exists). Changes nothing.
    * `--help`: list the options.
    * no argument: run.
+
+#### Production behaviour of the agent
+
+The agent is meant to start in every session of a Remote Desktop server,
+where most users connect with mstsc and never have the `ULTRDP` channel. For
+them it must be invisible, harmless and light.
+
+* Silence. Without an option, nothing is ever shown: no window, no message
+  box, no console output. An error in a handler of the UI thread is logged
+  and the agent goes on. An unhandled error on any other thread (channel,
+  drag, timer, thread pool) is logged, the simulated button is released if
+  a drag held it, and the process ends at once with exit code 1 through
+  `TerminateProcess`, before Windows can show an error report. A task error
+  that nobody observed is only logged. The drag threads keep their own
+  handler, which cancels the drag. A settings file that cannot be read gives
+  the defaults; a log folder that cannot be created leaves the agent running
+  without a log.
+* Tray icon on demand. `trayIcon` is `auto` (the default), `always` or
+  `never`. In `auto` the icon appears when an UltimateRDP client speaks on a
+  newly opened channel, and disappears when that channel closes. In `never`
+  there is no icon; `--uninstall` and the `Run` value control the agent. The
+  parsing and the visibility rule are `TrayIconModes` in Core.
+* Footprint. The icon, its menu, the drag infrastructure, the staging folder
+  and the log off handler are created when first needed. Until the icon
+  exists, the UI thread runs a plain `GetMessage` loop for its hidden window;
+  the WinForms loop, which loads GDI+, only starts with the icon. The exit
+  event of `--uninstall` is watched by the channel thread, so the waiting
+  agent has no other thread of its own. Garbage collection is workstation,
+  not concurrent, with `GCConserveMemory` 5. Measured on Windows 11 at idle,
+  in a session without the channel, over sixty seconds: about 4 MB of
+  private working set, 5 threads, and no measurable processor time, against
+  about 7 MB and 12 threads before these changes.
+* Retry without spinning. `ChannelRetryPolicy` in Core decides the wait
+  before the next open: two seconds after a closed channel or an unexpected
+  failure, ten seconds when the session is not remote
+  (`GetSystemMetrics(SM_REMOTESESSION)`), has no client, when the open fails
+  with "not found" (the client did not ask for the channel), or after three
+  failures in a row. For thirty seconds after the start, a connection or a
+  logon, the wait stays at two seconds, because the channel may need a
+  moment to appear. `WTS_REMOTE_CONNECT`, `WTS_CONSOLE_CONNECT` and
+  `WTS_SESSION_LOGON` trigger an attempt at once.
+* Session life. A disconnection closes the channel and hides the icon; a
+  reconnection, from mstsc or from UltimateRDP, retries at once. The hidden
+  window answers `WM_QUERYENDSESSION` with TRUE at once and, on
+  `WM_ENDSESSION`, releases the simulated button, cancels the drag, closes
+  the channel within half a second each and exits. Every log line is on
+  disk as soon as it is written, so nothing needs flushing.
+* Logging at scale. The default level stays `info`, but the waiting state
+  writes one line at start, one line when the channel opens or closes, and
+  at most one line per hour ("Still waiting for a client channel", with the
+  reason; `IdleReport` in Core). A failure that a session without client
+  does not explain, such as a policy that blocks the channel, is a warning,
+  once until the channel opens.
 
 ### Localization
 
@@ -379,8 +445,11 @@ the fallback for anything missing.
   and effect `none`; the drop is ignored.
 * A `drop` whose id matches no live drag: `dropResult` with status `error`
   and the message "No drag in progress for this drop."
-* Agent cannot open the channel (console session, policy forbidding the
-  channel): logged once at warning level, then silent retries.
+* Agent cannot open the channel: when the session cannot have an UltimateRDP
+  client (console session, no client, or a client without the channel),
+  this is the normal state, reported at most once per hour. Any other
+  failure, such as a policy forbidding the channel, is logged once at
+  warning level. Retries go on in both cases.
 * Protocol error (a line too long or bad JSON): logged, line reader reset,
   connection kept.
 * No `logoffResult` within five seconds of a `logoff`: the client shows "The
@@ -410,8 +479,10 @@ the fallback for anything missing.
   rejection of malformed ones, key state flags, path mapping (drive letter
   case, UNC rejection, relative rejection, rejection kinds), `.rdp` parsing
   (UTF-16 and UTF-8, types, defaults), session display sizes and scale
-  factors, account names of saved credentials, the recent connections list
-  and the language rules.
+  factors, account names of saved credentials, the recent connections list,
+  the language rules, and the agent rules: the `trayIcon` setting and its
+  visibility, the retry waits of the channel, the spacing of the waiting log
+  line and the folders refused by `--install-all-users`.
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -601,6 +672,12 @@ Two features, decided on 2026-11-09:
 
 The client and the agent must both run 0.3.0: an older agent ignores the log
 off request and writes its texts in English.
+
+Before the release, the agent was also prepared for servers where most
+sessions use mstsc: it stays silent and light without a client, shows its
+tray icon only while an UltimateRDP client is connected (setting
+`trayIcon`), exits cleanly at log off, and gains `--status`. See
+"Production behaviour of the agent" above.
 
 The project was first called RdpDrop. Before the release of 0.3.0 it was
 renamed UltimateRDP, and APROGSYS became its publisher. The names listed
