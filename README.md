@@ -102,7 +102,7 @@ To really end the session, use File, Log off the remote session. The entry is av
 ### Dragging into the session
 
 1. Start the client. It connects with the settings of the .rdp file. Log on as usual.
-2. Watch the status bar at the bottom of the window. The agent label goes from "Agent: waiting" to "Agent ready (v0.4.2)".
+2. Watch the status bar at the bottom of the window. The agent label goes from "Agent: waiting" to "Agent ready (v0.4.3)".
 3. Drag files or folders from Explorer onto the session. A blue banner at the top of the session says "Drop here to send the files into the session".
 4. Move over the remote application you want. It shows its own drop feedback, for example a highlighted folder or an attachment area.
 5. Release the button on the target. The remote application receives the files as a normal drop.
@@ -143,9 +143,12 @@ The client sends the files in chunks of 32 KiB. The setting `transferChunkBytes`
 
 ```json
 {
-  "transferChunkBytes": 32768
+  "transferChunkBytes": 32768,
+  "logLevel": "info"
 }
 ```
+
+The setting `logLevel` of the same file is `info` by default. Set it to `debug` to log every message the client sends to the agent and every call it makes to the Remote Desktop control, then restart the client.
 
 ### Status bar messages
 
@@ -304,6 +307,7 @@ Messages are JSON objects sent as ASCII lines, and each side detects at run time
 - **Drops are refused because of the drives.** Turn on drive redirection in the .rdp file, under Local Resources, More, Drives. On the server, check the policy "Do not allow drive redirection".
 - **The drop lands on the wrong window.** Coordinate scaling after a window resize, or full screen over several monitors, can be the cause. Please report it with both logs.
 - **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s. The client log also gives the length of the first chunk line it sent, and the agent log has a line for the first chunk of each file it received. When the status bar says "The agent did not acknowledge the first data of the transfer.", the data did not get through: the client log then gives the byte model, the chunk size, the length of the lines and the number of lines sent. A smaller `transferChunkBytes` may help, see "Large files". To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
+- **A transfer fails with "A message of the transfer was lost on the way".** A line sent to the agent did not arrive, which versions before 0.4.3 could cause; drop the files again, and if it happens with 0.4.3, report it with both logs taken with `logLevel` set to `debug` on both sides.
 - **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
 
 ## Build from source
@@ -336,7 +340,7 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 
 ## Status
 
-Version 0.4.2 is a test release.
+Version 0.4.3 is a test release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -344,7 +348,7 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 - The transfer through drive redirection to the remote desktop.
 - The live drag into a remote application.
 
-The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client.
+The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client. Version 0.4.3 fixes short messages that the Remote Desktop control sometimes lost just before a large one, which failed some transfers at their start.
 
 Feedback that helps:
 

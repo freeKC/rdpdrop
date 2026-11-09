@@ -216,18 +216,21 @@ the wire, frames messages by lines, and detects the model at run time.
   raw bytes, two per character, little endian (reinterpret the UTF-16 units
   as bytes). The client keeps the detected model and logs it, since this is
   the first thing to check when a drop fails. The detected model is only
-  used to read. When sending, the client always hands the ASCII line itself
-  to the control: whatever the control does with it, the agent receives
-  either ASCII bytes or UTF-16LE bytes, and both are covered by its own
-  detection.
+  used to read. When sending, the client always hands the ASCII lines
+  themselves to the control: whatever the control does with them, the agent
+  receives either ASCII bytes or UTF-16LE bytes, and both are covered by its
+  own detection. One call of the control may carry several lines one after
+  the other, up to 1 MiB of characters (see "Version 0.4.3").
 * Both sides accumulate until `\n` and parse each line on its own. Blank
   lines are ignored. A line above 1 MiB is a protocol error that drops the
   buffer.
 
 This lives in Core as `LineFraming` (encode a message as an ASCII line),
-`LineReader` (accumulate text, yield complete lines) and `ChannelTextCodec`
-(model detection and byte/string conversion in both directions), all unit
-tested.
+`LineReader` (accumulate text, yield complete lines), `ChannelTextCodec`
+(model detection and byte/string conversion in both directions),
+`IncomingTextDecoder` (the reading side of the agent), `SendQueue` (the lines
+of the client grouped into calls) and `SentDataRetention` (when the client
+frees what it handed to the control), all unit tested.
 
 ### UltimateRDP.Client
 
@@ -1076,3 +1079,148 @@ window, which is not topmost, may be hidden by the full screen window.
 
 The client runs 0.4.2; the agent can stay at 0.4.1, since it does not change.
 A 0.4.2 agent is the same as a 0.4.1 agent with another version number.
+
+
+## Version 0.4.3
+
+A short line sent to the channel just before a large one was sometimes lost,
+without any error on either side. Two incidents of 2026-11-09, with the logs
+of both sides:
+
+* With 0.4.0, in the UTF-16 model: the client sent `drop` (101 characters),
+  9 ms later `transferBegin` (101 characters), then `fileBegin`, then a chunk
+  line of 350 000 characters. The agent received `drop`, then `fileBegin`:
+  the `transferBegin` line never came out of its line reader, and no protocol
+  error was logged.
+* With 0.4.1 on both sides, in the one byte per character model: the client
+  sent `transferBegin` (101 characters), then `fileBegin` (about 200
+  characters, `SendOnVirtualChannel` returned without an exception), then
+  8 ms later the first chunk line of 174 868 characters. The agent, at the
+  debug level, received `transferBegin`, then the chunk ("A chunk of file 0
+  came while file (none) is open"), never `fileBegin`, without any warning
+  about NUL characters or long lines. Two other transfers of the same day,
+  18 MB and 496 MB, worked with the same code.
+
+So the line is lost between the return of `SendOnVirtualChannel` and the read
+of the agent. The likely mechanism, not proven: the control sends after the
+call returned, from the BSTR that the interop marshaller frees as soon as the
+call returns; when the heap gives that memory to something else first, the
+control reads a wrong length or wrong content. The fixes below hold whether
+or not this is the exact mechanism.
+
+### The client owns the strings it sends
+
+`IMsTscAxOwnedData` in the client is a copy of the IMsTscAx interface whose
+`SendOnVirtualChannel` takes the data as a pointer. It was checked by
+reflection against `Interop.MSTSCLib.dll` of Devolutions.MsRdpEx 2026.10.26
+(the legacy interop): IID `8C11EFAE-92C3-11D1-BC1E-00C04FA31489`, a dual
+interface that derives from `IMsTscAx_Redist`, which declares no member, and
+declares 30 methods; `SendOnVirtualChannel` is the 30th, DISPID 34, slot 36
+of the table of functions after IUnknown and IDispatch. The copy repeats the
+30 methods in the same order and with the same signatures. A throwaway
+program confirmed the layout on the control itself: a server name written
+through slot 7 of the copy reads back through the interop, and the desktop
+width and the version read through the copy match the interop.
+
+`OwnedChannelData` in the client allocates every string it hands to the
+control with `Marshal.StringToBSTR` and keeps it (`SentDataRetention` in
+Core):
+
+* a call that carried chunks of a transfer is freed once the agent
+  acknowledged the first chunk of a later call: the channel keeps the order,
+  so the agent then received the earlier call in full;
+* a call without chunks is freed 10 seconds after it went out, and a call
+  with chunks 60 seconds after, which only happens when its transfer ended
+  without an acknowledgement;
+* when more than 64 MiB are kept, the oldest calls are freed first, with a
+  line in the log;
+* when the tab closes, what is kept is freed 60 seconds later.
+
+During a transfer, about the window in base64 and one call are kept: some
+13 MB, two bytes per character. Before the first connection of a tab, the client checks that the
+copy has the IID and the methods, in their order, of the interface of the
+interop assembly, and that the control gives it; otherwise it uses the
+interop call as before. The log says once which path is used:
+"SendOnVirtualChannel goes through the hand written interface (slot 36)", or
+a warning that gives the reason.
+
+### The client sends the lines together
+
+The line protocol allows several lines in one call, and the line reader of
+the agent already splits them. `AgentLink` now puts every line into a
+`SendQueue` (Core) and sends the queue at the end of the current message of
+the UI thread, through a posted call, or at once when more than 1 MiB of
+characters wait. Each call of the control holds at most 1 MiB of characters;
+a single longer line would go alone. The order of the lines never changes.
+
+Sequence of the calls for a drop with transfer, with the default chunk of
+32 KiB:
+
+* before, one call per message: `drop`, `transferBegin`, `fileBegin`, then
+  one call per chunk line of about 44 000 characters;
+* now, `drop` leaves at the end of the UI message that handled the drop. The
+  background thread of the transfer then posts `transferBegin`, `fileBegin`
+  and the first chunks; whatever was posted before the queue is sent leaves
+  in the same call, so `transferBegin` and `fileBegin` normally travel with
+  the first chunks instead of alone in front of them. The chunks that follow
+  go by up to 23 per call (5 with chunks of 128 KiB) while the window has
+  room, and the `fileEnd` and `fileBegin` lines between two files travel
+  with them.
+
+The largest call is now about 1 MiB of characters, 2 MB on the wire in the
+UTF-16 model. The largest call seen to work in production was 174 868
+characters; with 0.4.0, calls of 350 000 characters in the UTF-16 model
+delivered nothing, which may have been the same defect. A transfer whose
+first data does not get through still fails after 10 seconds with "The agent
+did not acknowledge the first data of the transfer.", so a limit of the
+control on large calls would show there.
+
+A call that fails empties the queue and reports the lost lines: a transfer
+that had lines among them stops with the text of a send refused by the
+control, as before, and a drop without transfer shows that the drop was not
+sent. A lost `dragEnter` or `logoff` is caught by the wait for its answer, as
+before. A disconnection drops the lines still waiting, with a line in the log.
+
+### Logs
+
+The client has a `logLevel` setting in `client.json`: `info` by default, or
+`debug`. At the debug level the client logs every message it queues with its
+type and length (`fileBegin` and `fileEnd` with their file, each chunk with
+its file and the bytes of the transfer sent with it, the moves too), and one
+line per call of the control: number of lines, characters, type and subject
+of the first line, and the strings kept. The info level keeps the lines it
+had: the drag messages except the moves, `transferBegin`, `transferCancel`,
+hello, logoff and the first chunk line of a transfer.
+
+### The agent names a lost message
+
+`TransferReceiver` fails with the new reason `MessageLost` when a later
+message shows that one never arrived:
+
+* a chunk or a `fileEnd` for a file whose `fileBegin` never arrived:
+  "fileBegin for file N never arrived";
+* a `fileBegin` for the next file while a file is open: "fileEnd for file N
+  never arrived";
+* a message of a file before `transferBegin`, as in 0.4.1.
+
+The client shows the message of the agent as before, which now reads "A
+message of the transfer was lost on the way: fileBegin for file 0 never
+arrived. Try again." in the language of the client. The log of the agent has
+the English detail. `IncomingTextDecoder` moved from the agent to Core, so
+that the tests read several lines of one call through the same code as the
+agent.
+
+An automatic retry of the transfer after such a loss was considered: the
+agent would keep the drop point for 10 seconds after the failure and restart
+its receiver on a new `transferBegin` with the same id. It is not done. The
+agent forgets the drag when its transfer fails, chunks of the failed attempt
+still on their way would reach the new receiver before its `transferBegin`,
+and the failure deletes the staging folder of the id; handling all three
+changes the state machine of the drop on the agent and adds a field to
+`transferResult`, for a loss that the two fixes above should remove. The
+user drops the files again.
+
+The client and the agent should both run 0.4.3. A 0.4.1 or 0.4.2 agent works
+with a 0.4.3 client, since several lines in one call were always allowed; it
+only reports a lost `fileBegin` as "Data was lost or damaged on the way." A
+0.4.3 agent works with a 0.4.1 or 0.4.2 client.
