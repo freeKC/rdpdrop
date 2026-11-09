@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AboutText" xml:space="preserve">
+    <value>{0} {1}
+
+Arrastre archivos y carpetas desde este equipo y suéltelos en la sesión de Escritorio remoto.
+
+Credenciales guardadas: {0} nunca guarda una contraseña. Windows la guarda cuando marca «Recordarme» en su solicitud de credenciales. Antes de conectarse, {0} usa la credencial genérica TERMSRV/&lt;host&gt; del Administrador de credenciales de Windows si existe.
+
+{2}</value>
+  </data>
+  <data name="AboutTitle" xml:space="preserve">
+    <value>Acerca de {0}</value>
+  </data>
+  <data name="AgentNoAck" xml:space="preserve">
+    <value>El agente no confirmó el arrastre</value>
+  </data>
+  <data name="AgentNotConnected" xml:space="preserve">
+    <value>Agente: sin conexión</value>
+  </data>
+  <data name="AgentNotFound" xml:space="preserve">
+    <value>No hay ningún agente en el equipo remoto</value>
+  </data>
+  <data name="AgentReady" xml:space="preserve">
+    <value>Agente listo (v{0})</value>
+  </data>
+  <data name="AgentWaiting" xml:space="preserve">
+    <value>Agente: en espera</value>
+  </data>
+  <data name="CancelledReason" xml:space="preserve">
+    <value>Cancelado: {0}</value>
+  </data>
+  <data name="CannotConnect" xml:space="preserve">
+    <value>No se puede conectar: {0}</value>
+  </data>
+  <data name="CannotReadFile" xml:space="preserve">
+    <value>No se puede leer el archivo {0}.
+{1}</value>
+  </data>
+  <data name="ConnectedTo" xml:space="preserve">
+    <value>Conectado a {0}</value>
+  </data>
+  <data name="ConnectingTo" xml:space="preserve">
+    <value>Conectando a {0}...</value>
+  </data>
+  <data name="ConnectionNotConnected" xml:space="preserve">
+    <value>Sin conexión</value>
+  </data>
+  <data name="CredentialsForgotten" xml:space="preserve">
+    <value>Se olvidaron las credenciales guardadas de {0}; la próxima conexión las pedirá.</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>Desconectado</value>
+  </data>
+  <data name="DisconnectedByRemote" xml:space="preserve">
+    <value>Desconectado por el equipo remoto</value>
+  </data>
+  <data name="DisconnectedCode" xml:space="preserve">
+    <value>Desconectado (código {0})</value>
+  </data>
+  <data name="DisconnectedReason" xml:space="preserve">
+    <value>Desconectado: {0}</value>
+  </data>
+  <data name="DisconnectedSessionClosed" xml:space="preserve">
+    <value>Desconectado: la sesión se cerró desde el equipo remoto</value>
+  </data>
+  <data name="Disconnecting" xml:space="preserve">
+    <value>Desconectando...</value>
+  </data>
+  <data name="Dragging" xml:space="preserve">
+    <value>Arrastrando {0} elemento(s) a la sesión...</value>
+  </data>
+  <data name="DropCancelled" xml:space="preserve">
+    <value>Colocación cancelada.</value>
+  </data>
+  <data name="DropFailedNoDetail" xml:space="preserve">
+    <value>Error al colocar: el agente no dio detalles.</value>
+  </data>
+  <data name="DropFailedNotSent" xml:space="preserve">
+    <value>Error al colocar: no se pudo enviar el mensaje al agente.</value>
+  </data>
+  <data name="DropFailedReason" xml:space="preserve">
+    <value>Error al colocar: {0}</value>
+  </data>
+  <data name="DropRefused" xml:space="preserve">
+    <value>Colocación rechazada.</value>
+  </data>
+  <data name="DropRefusedAgentWaiting" xml:space="preserve">
+    <value>Colocación rechazada: el agente de UltimateRDP aún no ha respondido.</value>
+  </data>
+  <data name="DropRefusedByAgent" xml:space="preserve">
+    <value>Colocación rechazada: el agente rechazó el arrastre.</value>
+  </data>
+  <data name="DropRefusedNoAgent" xml:space="preserve">
+    <value>Colocación rechazada: el agente de UltimateRDP no se está ejecutando en la sesión remota.</value>
+  </data>
+  <data name="DropRefusedNoLiveDrag" xml:space="preserve">
+    <value>Colocación rechazada: el arrastre no empezó en la sesión. Vuelva a arrastrar los archivos.</value>
+  </data>
+  <data name="DropRefusedNotConnected" xml:space="preserve">
+    <value>Colocación rechazada: sin conexión.</value>
+  </data>
+  <data name="DropRefusedReason" xml:space="preserve">
+    <value>Colocación rechazada: {0}</value>
+  </data>
+  <data name="DropZoneBanner" xml:space="preserve">
+    <value>Suelte aquí para enviar los archivos a la sesión</value>
+  </data>
+  <data name="DroppedOn" xml:space="preserve">
+    <value>Colocado en {0} ({1})</value>
+  </data>
+  <data name="EffectCopy" xml:space="preserve">
+    <value>copia</value>
+  </data>
+  <data name="EffectLink" xml:space="preserve">
+    <value>vínculo</value>
+  </data>
+  <data name="EmptyWindowHint" xml:space="preserve">
+    <value>No hay ninguna sesión abierta. Use Archivo, Abrir .rdp o Archivo, Recientes para iniciar una.</value>
+  </data>
+  <data name="FatalError" xml:space="preserve">
+    <value>Error grave {0} en el control de Escritorio remoto</value>
+  </data>
+  <data name="FileDoesNotRedirectDrives" xml:space="preserve">
+    <value>Este archivo .rdp no redirige las unidades: no se podrán colocar archivos.</value>
+  </data>
+  <data name="FileHasNoAddress" xml:space="preserve">
+    <value>El archivo {0} no indica ningún equipo al que conectarse (falta la línea «full address»).</value>
+  </data>
+  <data name="ForgetCredentialsQuestion" xml:space="preserve">
+    <value>¿Olvidar las credenciales que Windows guardó para {0}?
+
+La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada.</value>
+  </data>
+  <data name="ForgetCredentialsTip" xml:space="preserve">
+    <value>UltimateRDP nunca guarda credenciales. Windows las guarda cuando marca «Recordarme» en su solicitud de credenciales.</value>
+  </data>
+  <data name="FullScreenNeedsConnection" xml:space="preserve">
+    <value>La pantalla completa está disponible una vez conectado.</value>
+  </data>
+  <data name="LogOffFailedNoDetail" xml:space="preserve">
+    <value>No se pudo cerrar la sesión: el agente no dio detalles.</value>
+  </data>
+  <data name="LogOffFailedReason" xml:space="preserve">
+    <value>No se pudo cerrar la sesión: {0}</value>
+  </data>
+  <data name="LogOffNoAnswer" xml:space="preserve">
+    <value>El agente no respondió a la solicitud de cierre de sesión.</value>
+  </data>
+  <data name="LogOffNotSent" xml:space="preserve">
+    <value>No se pudo cerrar la sesión: no se pudo enviar la solicitud al agente.</value>
+  </data>
+  <data name="LogOffQuestion" xml:space="preserve">
+    <value>Esto cierra su sesión de Windows en el servidor y finaliza las aplicaciones que se ejecutan en ella. ¿Desea continuar?</value>
+  </data>
+  <data name="LoggedOnTo" xml:space="preserve">
+    <value>Sesión iniciada en {0}</value>
+  </data>
+  <data name="LoggingOff" xml:space="preserve">
+    <value>Cerrando la sesión remota...</value>
+  </data>
+  <data name="MenuAbout" xml:space="preserve">
+    <value>&amp;Acerca de UltimateRDP</value>
+  </data>
+  <data name="MenuAllMonitors" xml:space="preserve">
+    <value>Usar todos los &amp;monitores</value>
+  </data>
+  <data name="MenuClearRecent" xml:space="preserve">
+    <value>&amp;Borrar recientes</value>
+  </data>
+  <data name="MenuCloseTab" xml:space="preserve">
+    <value>&amp;Cerrar pestaña</value>
+  </data>
+  <data name="MenuConnect" xml:space="preserve">
+    <value>&amp;Conectar</value>
+  </data>
+  <data name="MenuDisconnect" xml:space="preserve">
+    <value>&amp;Desconectar</value>
+  </data>
+  <data name="MenuFile" xml:space="preserve">
+    <value>&amp;Archivo</value>
+  </data>
+  <data name="MenuFindAgent" xml:space="preserve">
+    <value>&amp;Buscar de nuevo el agente</value>
+  </data>
+  <data name="MenuForgetCredentials" xml:space="preserve">
+    <value>&amp;Olvidar credenciales guardadas</value>
+  </data>
+  <data name="MenuForgetCredentialsFor" xml:space="preserve">
+    <value>&amp;Olvidar credenciales guardadas de {0}</value>
+  </data>
+  <data name="MenuFullScreen" xml:space="preserve">
+    <value>&amp;Pantalla completa</value>
+  </data>
+  <data name="MenuHelp" xml:space="preserve">
+    <value>Ay&amp;uda</value>
+  </data>
+  <data name="MenuKeysFullScreen" xml:space="preserve">
+    <value>En la sesión en &amp;pantalla completa</value>
+  </data>
+  <data name="MenuKeysLocal" xml:space="preserve">
+    <value>En este &amp;equipo</value>
+  </data>
+  <data name="MenuKeysRemote" xml:space="preserve">
+    <value>En la &amp;sesión</value>
+  </data>
+  <data name="MenuLanguage" xml:space="preserve">
+    <value>&amp;Idioma</value>
+  </data>
+  <data name="MenuLanguageAuto" xml:space="preserve">
+    <value>&amp;Automático (idioma de Windows)</value>
+  </data>
+  <data name="MenuLogOff" xml:space="preserve">
+    <value>Cerrar la &amp;sesión remota</value>
+  </data>
+  <data name="MenuOpenLogFolder" xml:space="preserve">
+    <value>Abrir la carpeta de &amp;registros</value>
+  </data>
+  <data name="MenuOpenRdp" xml:space="preserve">
+    <value>&amp;Abrir .rdp...</value>
+  </data>
+  <data name="MenuProjectPage" xml:space="preserve">
+    <value>&amp;Página del proyecto</value>
+  </data>
+  <data name="MenuQuit" xml:space="preserve">
+    <value>Sa&amp;lir</value>
+  </data>
+  <data name="MenuRecent" xml:space="preserve">
+    <value>&amp;Recientes</value>
+  </data>
+  <data name="MenuRecentNone" xml:space="preserve">
+    <value>(ninguno)</value>
+  </data>
+  <data name="MenuReopen" xml:space="preserve">
+    <value>Volver a abrir en una &amp;nueva pestaña</value>
+  </data>
+  <data name="MenuResizeSession" xml:space="preserve">
+    <value>&amp;Redimensionar la sesión a la ventana</value>
+  </data>
+  <data name="MenuScaleAuto" xml:space="preserve">
+    <value>&amp;Automático ({0})</value>
+  </data>
+  <data name="MenuScaleFactor" xml:space="preserve">
+    <value>&amp;Factor de escala</value>
+  </data>
+  <data name="MenuScaleToWindow" xml:space="preserve">
+    <value>&amp;Escalar a la ventana</value>
+  </data>
+  <data name="MenuSession" xml:space="preserve">
+    <value>&amp;Sesión</value>
+  </data>
+  <data name="MenuView" xml:space="preserve">
+    <value>&amp;Ver</value>
+  </data>
+  <data name="MenuWindowsKeys" xml:space="preserve">
+    <value>&amp;Teclas de Windows</value>
+  </data>
+  <data name="NoSavedCredentials" xml:space="preserve">
+    <value>No hay credenciales guardadas para {0}.</value>
+  </data>
+  <data name="NothingAccepted" xml:space="preserve">
+    <value>Nada bajo el cursor aceptó los archivos.</value>
+  </data>
+  <data name="OpenDialogFilter" xml:space="preserve">
+    <value>Archivos de Escritorio remoto (*.rdp)|*.rdp</value>
+  </data>
+  <data name="OpenDialogTitle" xml:space="preserve">
+    <value>Abrir un archivo de Escritorio remoto</value>
+  </data>
+  <data name="PathDevice" xml:space="preserve">
+    <value>«{0}» es una ruta de dispositivo. Solo se pueden colocar archivos de una letra de unidad local.</value>
+  </data>
+  <data name="PathDotSegment" xml:space="preserve">
+    <value>«{0}» contiene un segmento «.» o «..». Solo se pueden colocar rutas completas normalizadas.</value>
+  </data>
+  <data name="PathDriveRelative" xml:space="preserve">
+    <value>«{0}» es relativa a la carpeta actual de su unidad. Solo se pueden colocar rutas completas como C:\carpeta.</value>
+  </data>
+  <data name="PathEmpty" xml:space="preserve">
+    <value>La ruta está vacía.</value>
+  </data>
+  <data name="PathInvalidCharacters" xml:space="preserve">
+    <value>«{0}» contiene caracteres no permitidos en un nombre de archivo.</value>
+  </data>
+  <data name="PathNetwork" xml:space="preserve">
+    <value>«{0}» es una ruta de red (UNC). Solo se pueden colocar archivos de una letra de unidad local, porque la sesión remota llega a ellos mediante la redirección de unidades.</value>
+  </data>
+  <data name="PathRelative" xml:space="preserve">
+    <value>«{0}» es una ruta relativa. Solo se pueden colocar rutas completas que empiecen por una letra de unidad, como C:\.</value>
+  </data>
+  <data name="Reconnecting" xml:space="preserve">
+    <value>Reconectando a {0} (intento {1})...</value>
+  </data>
+  <data name="SessionSeesNoDrive" xml:space="preserve">
+    <value>La sesión no ve ninguna unidad redirigida: no se podrán colocar archivos. Active las unidades en Recursos locales.</value>
+  </data>
+  <data name="SettingAppliesNextConnection" xml:space="preserve">
+    <value>{0} se aplicará en la próxima conexión.</value>
+  </data>
+  <data name="SettingAppliesWhenConnecting" xml:space="preserve">
+    <value>{0} se aplicará al conectarse.</value>
+  </data>
+  <data name="SettingMonitors" xml:space="preserve">
+    <value>La nueva configuración de monitores</value>
+  </data>
+  <data name="SettingReconnectQuestion" xml:space="preserve">
+    <value>{0} se aplicará en una nueva conexión a {1}.
+
+¿Desea volver a conectarse ahora?</value>
+  </data>
+  <data name="SettingScaleFactor" xml:space="preserve">
+    <value>El nuevo factor de escala</value>
+  </data>
+  <data name="SettingWindowsKeys" xml:space="preserve">
+    <value>La nueva configuración de las teclas de Windows</value>
+  </data>
+  <data name="StatusNoSession" xml:space="preserve">
+    <value>Ninguna sesión</value>
+  </data>
+  <data name="TabDisconnected" xml:space="preserve">
+    <value>{0} (desconectado)</value>
+  </data>
+  <data name="UnexpectedError" xml:space="preserve">
+    <value>Se produjo un error inesperado.
+{0}
+
+Los detalles están en la carpeta de registros {1}.</value>
+  </data>
+  <data name="WindowUnderCursor" xml:space="preserve">
+    <value>la ventana bajo el cursor</value>
+  </data>
+</root>

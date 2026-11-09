@@ -6,9 +6,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Version>0.3.0</Version>
     <Authors>FreeKC</Authors>
-    <Product>RdpDrop</Product>
+    <Product>UltimateRDP</Product>
     <Copyright>Copyright (c) 2026 FreeKC</Copyright>
-    <RepositoryUrl>https://github.com/freeKC/rdpdrop</RepositoryUrl>
+    <RepositoryUrl>https://github.com/freeKC/ultimaterdp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 </Project>

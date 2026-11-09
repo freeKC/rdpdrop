@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AboutCaption" xml:space="preserve">
+    <value>À propos d'{0}</value>
+  </data>
+  <data name="AboutOpenProjectPage" xml:space="preserve">
+    <value>Ouvrir la page du projet</value>
+  </data>
+  <data name="AboutText" xml:space="preserve">
+    <value>Reçoit les fichiers déposés sur la fenêtre du client UltimateRDP et les dépose, par la redirection des lecteurs, sur la fenêtre située sous le curseur dans cette session. Si rien à cet endroit ne les accepte, le dépôt est ignoré.
+
+{0}</value>
+  </data>
+  <data name="AgentStillRunning" xml:space="preserve">
+    <value>L'agent fonctionne toujours ; quittez-le depuis son menu dans la zone de notification.</value>
+  </data>
+  <data name="AgentStopped" xml:space="preserve">
+    <value>L'agent en cours d'exécution a été arrêté.</value>
+  </data>
+  <data name="CancelAgentStopping" xml:space="preserve">
+    <value>l'agent s'arrête</value>
+  </data>
+  <data name="CancelDropTimeout" xml:space="preserve">
+    <value>le dépôt n'a pas atteint la cible à temps</value>
+  </data>
+  <data name="CancelEscape" xml:space="preserve">
+    <value>la touche Échap a été pressée dans la session</value>
+  </data>
+  <data name="CancelIdle" xml:space="preserve">
+    <value>aucun message du client depuis cinq secondes</value>
+  </data>
+  <data name="CancelLeft" xml:space="preserve">
+    <value>le glisser a quitté la session côté client</value>
+  </data>
+  <data name="CancelNewerDrag" xml:space="preserve">
+    <value>un nouveau glisser a commencé</value>
+  </data>
+  <data name="CancelUnexpected" xml:space="preserve">
+    <value>l'agent a rencontré une erreur inattendue</value>
+  </data>
+  <data name="CannotOpenLogFolder" xml:space="preserve">
+    <value>Impossible d'ouvrir {0}.
+
+{1}</value>
+  </data>
+  <data name="CannotRemoveValue" xml:space="preserve">
+    <value>Impossible de supprimer la valeur de {0}. {1}</value>
+  </data>
+  <data name="CannotWriteKey" xml:space="preserve">
+    <value>Impossible d'écrire dans {0}. {1}</value>
+  </data>
+  <data name="DoDragDropFailed" xml:space="preserve">
+    <value>Échec de DoDragDrop : {0}</value>
+  </data>
+  <data name="DragCancelled" xml:space="preserve">
+    <value>Le glisser a été annulé.</value>
+  </data>
+  <data name="DragCancelledBeforeStart" xml:space="preserve">
+    <value>Le glisser a été annulé avant de commencer.</value>
+  </data>
+  <data name="DragCancelledReason" xml:space="preserve">
+    <value>Le glisser a été annulé : {0}.</value>
+  </data>
+  <data name="DragEndedWithDrop" xml:space="preserve">
+    <value>Le glisser s'est déjà terminé par un dépôt.</value>
+  </data>
+  <data name="DragFailed" xml:space="preserve">
+    <value>Le glisser dans la session a échoué.</value>
+  </data>
+  <data name="DragHoldsNothing" xml:space="preserve">
+    <value>Le glisser ne contient aucun fichier ni dossier.</value>
+  </data>
+  <data name="DragThreadFailed" xml:space="preserve">
+    <value>Le glisser dans la session a échoué : {0}</value>
+  </data>
+  <data name="DroppedOn" xml:space="preserve">
+    <value>Déposé sur {0}</value>
+  </data>
+  <data name="InputRefused" xml:space="preserve">
+    <value>La session n'accepte pas les entrées simulées ; elle est peut-être verrouillée ou affiche un bureau sécurisé.</value>
+  </data>
+  <data name="InstalledForAllUsers" xml:space="preserve">
+    <value>L'agent démarre désormais avec chaque session utilisateur, depuis
+{0}
+
+Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, comme Program Files. Les utilisateurs déjà connectés auront l'agent à leur prochaine connexion.</value>
+  </data>
+  <data name="InstalledForUser" xml:space="preserve">
+    <value>L'agent démarre désormais avec votre session.</value>
+  </data>
+  <data name="ItemsCannotBeDropped" xml:space="preserve">
+    <value>Les éléments ne peuvent pas être déposés.</value>
+  </data>
+  <data name="LogoffAccepted" xml:space="preserve">
+    <value>La session distante se ferme.</value>
+  </data>
+  <data name="LogoffFailed" xml:space="preserve">
+    <value>Windows n'a pas fermé la session : {0}</value>
+  </data>
+  <data name="NoDragForDrop" xml:space="preserve">
+    <value>Aucun glisser en cours pour ce dépôt.</value>
+  </data>
+  <data name="NoReasonGiven" xml:space="preserve">
+    <value>aucune raison donnée</value>
+  </data>
+  <data name="NoRedirection" xml:space="preserve">
+    <value>Les lecteurs locaux ne sont pas redirigés vers cette session, les fichiers déposés ne peuvent donc pas être lus. Dans les paramètres de connexion, ouvrez Ressources locales, choisissez Plus, sélectionnez les lecteurs à partager, puis reconnectez-vous.</value>
+  </data>
+  <data name="NothingAccepted" xml:space="preserve">
+    <value>Rien sous le curseur n'a accepté les fichiers.</value>
+  </data>
+  <data name="PathDevice" xml:space="preserve">
+    <value>« {0} » est un chemin de périphérique. Seuls les fichiers d'un lecteur local avec une lettre peuvent être déposés.</value>
+  </data>
+  <data name="PathDotSegment" xml:space="preserve">
+    <value>« {0} » contient un segment « . » ou « .. ». Seuls les chemins complets normalisés peuvent être déposés.</value>
+  </data>
+  <data name="PathDriveRelative" xml:space="preserve">
+    <value>« {0} » est relatif au dossier courant de son lecteur. Seuls les chemins complets comme C:\dossier peuvent être déposés.</value>
+  </data>
+  <data name="PathEmpty" xml:space="preserve">
+    <value>Le chemin est vide.</value>
+  </data>
+  <data name="PathInvalidCharacters" xml:space="preserve">
+    <value>« {0} » contient des caractères interdits dans un nom de fichier.</value>
+  </data>
+  <data name="PathNetwork" xml:space="preserve">
+    <value>« {0} » est un chemin réseau (UNC). Seuls les fichiers d'un lecteur local avec une lettre peuvent être déposés, car la session distante y accède par la redirection des lecteurs.</value>
+  </data>
+  <data name="PathRelative" xml:space="preserve">
+    <value>« {0} » est un chemin relatif. Seuls les chemins complets commençant par une lettre de lecteur, comme C:\, peuvent être déposés.</value>
+  </data>
+  <data name="PressNotDelivered" xml:space="preserve">
+    <value>La session n'a pas transmis à l'agent l'appui simulé sur le bouton.</value>
+  </data>
+  <data name="PreviousDropBusy" xml:space="preserve">
+    <value>Le dépôt précédent est encore en cours dans la session. Réessayez quand il sera terminé.</value>
+  </data>
+  <data name="ProtocolMismatch" xml:space="preserve">
+    <value>L'agent UltimateRDP de la session utilise le protocole {0} et le client le protocole {1}. Installez la même version d'UltimateRDP des deux côtés.</value>
+  </data>
+  <data name="RunElevated" xml:space="preserve">
+    <value>Exécutez de nouveau cette commande depuis une invite de commandes élevée (Exécuter en tant qu'administrateur).</value>
+  </data>
+  <data name="StagingFailed" xml:space="preserve">
+    <value>Les fichiers n'ont pas pu être copiés dans la session avant le glisser. {0}</value>
+  </data>
+  <data name="StagingProgress" xml:space="preserve">
+    <value>Copie de {0} élément(s) dans la session avant le début du glisser...</value>
+  </data>
+  <data name="StartingDrag" xml:space="preserve">
+    <value>Démarrage du glisser dans la session...</value>
+  </data>
+  <data name="StillInstalledForAllUsers" xml:space="preserve">
+    <value>L'agent est toujours configuré pour démarrer pour tous les utilisateurs, sous HKEY_LOCAL_MACHINE. Exécutez --uninstall depuis une invite de commandes élevée pour retirer aussi ce réglage.</value>
+  </data>
+  <data name="TooManyArguments" xml:space="preserve">
+    <value>Trop d'arguments.</value>
+  </data>
+  <data name="TrayAbout" xml:space="preserve">
+    <value>À propos</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Quitter</value>
+  </data>
+  <data name="TrayOpenLogFolder" xml:space="preserve">
+    <value>Ouvrir le dossier des journaux</value>
+  </data>
+  <data name="TrayStageFiles" xml:space="preserve">
+    <value>Copier les fichiers dans la session avant le dépôt</value>
+  </data>
+  <data name="UnexpectedError" xml:space="preserve">
+    <value>L'agent a rencontré une erreur inattendue : {0}</value>
+  </data>
+  <data name="UninstalledForAllUsers" xml:space="preserve">
+    <value>L'agent ne démarre plus avec chaque session utilisateur.</value>
+  </data>
+  <data name="UninstalledForUser" xml:space="preserve">
+    <value>L'agent ne démarre plus avec votre session.</value>
+  </data>
+  <data name="UnknownOption" xml:space="preserve">
+    <value>Option inconnue « {0} ».</value>
+  </data>
+  <data name="UnknownWindowAbovePoint" xml:space="preserve">
+    <value>Une autre fenêtre reste au-dessus du point de dépôt, le glisser ne peut donc pas commencer.</value>
+  </data>
+  <data name="UnreachableMany" xml:space="preserve">
+    <value>{0} éléments sont inaccessibles depuis la session distante : {1}. Vérifiez que leurs lecteurs sont partagés dans les paramètres Ressources locales de la connexion et qu'ils sont toujours branchés.</value>
+  </data>
+  <data name="UnreachableMore" xml:space="preserve">
+    <value>{0} et {1} autre(s)</value>
+  </data>
+  <data name="UnreachableOne" xml:space="preserve">
+    <value>{0} est inaccessible depuis la session distante. Vérifiez que son lecteur est partagé dans les paramètres Ressources locales de la connexion et qu'il est toujours branché.</value>
+  </data>
+  <data name="UsageHelp" xml:space="preserve">
+    <value>Afficher ce texte.</value>
+  </data>
+  <data name="UsageInstall" xml:space="preserve">
+    <value>Démarrer l'agent avec votre session, puis le lancer.</value>
+  </data>
+  <data name="UsageInstallAllUsers" xml:space="preserve">
+    <value>Démarrer l'agent avec chaque session utilisateur (invite élevée).</value>
+  </data>
+  <data name="UsageNoOption" xml:space="preserve">
+    <value>(sans option)</value>
+  </data>
+  <data name="UsageRun" xml:space="preserve">
+    <value>Lancer l'agent dans la zone de notification.</value>
+  </data>
+  <data name="UsageTitle" xml:space="preserve">
+    <value>Utilisation : {0} [option]</value>
+  </data>
+  <data name="UsageUninstall" xml:space="preserve">
+    <value>Ne plus démarrer l'agent avec votre session, et l'arrêter.</value>
+  </data>
+  <data name="WindowAbovePoint" xml:space="preserve">
+    <value>Une autre fenêtre ({0}) reste au-dessus du point de dépôt, le glisser ne peut donc pas commencer.</value>
+  </data>
+  <data name="WindowUnderCursor" xml:space="preserve">
+    <value>la fenêtre sous le curseur</value>
+  </data>
+</root>

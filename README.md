@@ -1,16 +1,16 @@
-# RdpDrop
+# UltimateRDP
 
-[![CI](https://github.com/freeKC/rdpdrop/actions/workflows/ci.yml/badge.svg)](https://github.com/freeKC/rdpdrop/actions/workflows/ci.yml)
+[![CI](https://github.com/freeKC/ultimaterdp/actions/workflows/ci.yml/badge.svg)](https://github.com/freeKC/ultimaterdp/actions/workflows/ci.yml)
 
-RdpDrop lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. RdpDrop is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection for the transfer itself.
+UltimateRDP lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. UltimateRDP is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection for the transfer itself.
 
 ## Why
 
-The Microsoft Remote Desktop client rejects drops on its window, because RDP has no drag and drop channel. Copy and paste works, and so does drive redirection, but neither is a drop. RdpDrop adds the gesture on top of what RDP already offers.
+The Microsoft Remote Desktop client rejects drops on its window, because RDP has no drag and drop channel. Copy and paste works, and so does drive redirection, but neither is a drop. UltimateRDP adds the gesture on top of what RDP already offers.
 
-While you drag over the client window, the agent replays the same drag inside the session as a real OLE drag and drop. Any remote application that accepts dropped files therefore accepts them from RdpDrop, and shows its own drop feedback while you move. When nothing under the cursor accepts the drop, the drop is ignored: nothing is copied anywhere.
+While you drag over the client window, the agent replays the same drag inside the session as a real OLE drag and drop. Any remote application that accepts dropped files therefore accepts them from UltimateRDP, and shows its own drop feedback while you move. When nothing under the cursor accepts the drop, the drop is ignored: nothing is copied anywhere.
 
-The file bytes travel through drive redirection, never through the RdpDrop channel.
+The file bytes travel through drive redirection, never through the UltimateRDP channel.
 
 ## What you need
 
@@ -21,9 +21,9 @@ The file bytes travel through drive redirection, never through the RdpDrop chann
 
 The client is one portable executable. It runs without administrator rights. The agent archive also holds one executable.
 
-RdpDrop works through a Remote Desktop Gateway.
+UltimateRDP works through a Remote Desktop Gateway.
 
-RdpDrop has a deliberately narrow scope:
+UltimateRDP has a deliberately narrow scope:
 
 - One direction only, from the local computer to the session. For the other direction, keep using copy and paste.
 - Full desktop sessions only. RemoteApp is not supported.
@@ -35,12 +35,12 @@ Each zip holds a single `.exe` file.
 
 ### On the server
 
-1. Download the `RdpDrop.Agent` zip from the [Releases page](https://github.com/freeKC/rdpdrop/releases).
-2. Unzip it to a folder that every user can read, such as `C:\Program Files\RdpDrop`.
+1. Download the `UltimateRDP.Agent` zip from the [Releases page](https://github.com/freeKC/ultimaterdp/releases).
+2. Unzip it to a folder that every user can read, such as `C:\Program Files\UltimateRDP`.
 3. From an elevated command prompt, run:
 
    ```
-   "C:\Program Files\RdpDrop\RdpDrop.Agent.exe" --install-all-users
+   "C:\Program Files\UltimateRDP\UltimateRDP.Agent.exe" --install-all-users
    ```
 
    The agent then starts with each user session and shows a tray icon. Users who are already signed in get it at their next sign in.
@@ -56,15 +56,15 @@ To update, exit the running agent from its tray menu, replace the executable, th
 
 ### On your computer
 
-1. Download the `RdpDrop.Client` zip from the [Releases page](https://github.com/freeKC/rdpdrop/releases).
-2. Unzip it anywhere. There is nothing to install. RdpDrop writes nothing to the registry.
+1. Download the `UltimateRDP` zip from the [Releases page](https://github.com/freeKC/ultimaterdp/releases).
+2. Unzip it anywhere. There is nothing to install. UltimateRDP writes nothing to the registry.
 3. Start it with your connection file:
 
    ```
-   RdpDrop.Client.exe path\to\connection.rdp
+   UltimateRDP.exe path\to\connection.rdp
    ```
 
-   You can also double click `RdpDrop.Client.exe` and pick the .rdp file in the dialog.
+   You can also double click `UltimateRDP.exe` and pick the .rdp file in the dialog.
 
 ## Use
 
@@ -100,7 +100,7 @@ If nothing under the cursor accepts the drop, the drop is ignored and the status
 
 When the target is Explorer, Explorer shows its usual Windows copy dialog in the session. It shows the progress and asks what to do when a file already exists.
 
-RdpDrop only offers copy and link to the remote application. It never offers a move. Ctrl, Shift and Alt are not passed to the session during a drag.
+UltimateRDP only offers copy and link to the remote application. It never offers a move. Ctrl, Shift and Alt are not passed to the session during a drag.
 
 ### Status bar messages
 
@@ -122,8 +122,8 @@ Messages of the connection:
 - **"This .rdp file does not redirect drives: drops will not work."**: the .rdp file does not share any local drive. Turn on drives in the .rdp file and reconnect.
 - **"The session sees no redirected drive: drops will not work."**: the agent answered, but no `\\tsclient` drive is reachable from the session. The server may block drive redirection.
 - **"Drop refused: not connected."**: there is no session yet.
-- **"Drop refused: the RdpDrop agent has not answered yet."**: wait for "Agent ready".
-- **"Drop refused: the RdpDrop agent is not running in the remote session."**: start the agent in the session.
+- **"Drop refused: the UltimateRDP agent has not answered yet."**: wait for "Agent ready".
+- **"Drop refused: the UltimateRDP agent is not running in the remote session."**: start the agent in the session.
 - **"Drop refused"** with a path: only files and folders on a local drive letter can be dropped. Network (UNC) paths are refused, because the session reaches your files through drive redirection.
 - **"Drop failed"**: the agent could not finish. The rest of the message gives its reason.
 
@@ -153,7 +153,7 @@ The client and the agent speak English, French, German, Spanish, Italian, Portug
 
 The View, Language submenu lists "Automatic (Windows language)" and the seven languages, each named in its own language. A choice applies at once to the menus, the status bar and the tabs, and the client remembers it. Automatic, the default, follows the display language of Windows, and uses English when Windows runs in another language.
 
-The choice is the `language` setting in `%LOCALAPPDATA%\RdpDrop\client.json`: `auto`, `en`, `fr`, `de`, `es`, `it`, `pt` or `nl`.
+The choice is the `language` setting in `%LOCALAPPDATA%\UltimateRDP\client.json`: `auto`, `en`, `fr`, `de`, `es`, `it`, `pt` or `nl`.
 
 ```json
 {
@@ -167,7 +167,7 @@ Some texts come from Windows and follow its own language: the Yes and No buttons
 
 ### Saved credentials
 
-Before connecting, the client reads the generic credential `TERMSRV/<host>` from the Windows Credential Manager. When it exists and holds a password, the client applies it and turns off the prompt for that connection. RdpDrop never writes a credential. You can create one with:
+Before connecting, the client reads the generic credential `TERMSRV/<host>` from the Windows Credential Manager. When it exists and holds a password, the client applies it and turns off the prompt for that connection. UltimateRDP never writes a credential. You can create one with:
 
 ```
 cmdkey /generic:TERMSRV/<host> /user:<domain\user> /pass
@@ -175,7 +175,7 @@ cmdkey /generic:TERMSRV/<host> /user:<domain\user> /pass
 
 `cmdkey` then asks for the password.
 
-The "Remember me" box of the Windows credential prompt saves a different credential type, a domain password. Windows keeps that password for itself, so RdpDrop cannot read it. The Windows prompt itself may still use it.
+The "Remember me" box of the Windows credential prompt saves a different credential type, a domain password. Windows keeps that password for itself, so UltimateRDP cannot read it. The Windows prompt itself may still use it.
 
 File, Forget saved credentials deletes both kinds of credential for the host of the active tab. The open session is not affected, and the next connection asks again.
 
@@ -188,9 +188,9 @@ The tray menu of the agent holds:
 
 The menu follows the display language of Windows on the server.
 
-Staged copies go to `%LOCALAPPDATA%\RdpDrop\staging\<id>` in the session. Each folder is deleted one hour after its drop, because the target may still be reading the files. When the agent starts, it deletes the folders that are older than one hour.
+Staged copies go to `%LOCALAPPDATA%\UltimateRDP\staging\<id>` in the session. Each folder is deleted one hour after its drop, because the target may still be reading the files. When the agent starts, it deletes the folders that are older than one hour.
 
-The agent keeps its settings in `%LOCALAPPDATA%\RdpDrop\agent.json` on the server:
+The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the server:
 
 ```json
 {
@@ -203,7 +203,7 @@ The agent keeps its settings in `%LOCALAPPDATA%\RdpDrop\agent.json` on the serve
 
 ## How it works
 
-The client hosts the Microsoft Remote Desktop ActiveX control and registers itself as a drop target on its windows. The agent runs in the tray of your session and listens on a static virtual channel named `RDPDROP`. The client never sends file contents. It sends the local paths and the cursor position, and the session reads the files from the redirected drives.
+The client hosts the Microsoft Remote Desktop ActiveX control and registers itself as a drop target on its windows. The agent runs in the tray of your session and listens on a static virtual channel named `ULTRDP`. The client never sends file contents. It sends the local paths and the cursor position, and the session reads the files from the redirected drives.
 
 1. When the drag first moves over the session, the client converts the cursor position to remote desktop coordinates and sends `dragEnter` with the paths.
 2. The agent opens an invisible proxy window over the whole remote screen. It moves the remote cursor to the point and simulates a left button press on that window. The press starts a real OLE drag inside the session, with the files as `\\tsclient\<drive>\...` paths, or as staged copies.
@@ -229,22 +229,22 @@ Messages are JSON objects sent as ASCII lines, and each side detects at run time
 - **The texts are in the wrong language.** Choose the language in View, Language. When a message from the agent is in another language than the menus, the agent runs an older version; install the same version on both sides.
 - **Drops are refused because of the drives.** Turn on drive redirection in the .rdp file, under Local Resources, More, Drives. On the server, check the policy "Do not allow drive redirection".
 - **The drop lands on the wrong window.** Coordinate scaling after a window resize, or full screen over several monitors, can be the cause. Please report it with both logs.
-- **Where the logs are.** The client writes `%LOCALAPPDATA%\RdpDrop\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
+- **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
 
 ## Build from source
 
 You need the .NET 10 SDK on Windows.
 
 ```
-dotnet build RdpDrop.sln -c Release
-dotnet test RdpDrop.sln
+dotnet build UltimateRDP.sln -c Release
+dotnet test UltimateRDP.sln
 ```
 
 To publish a self contained single file executable without symbols:
 
 ```
-dotnet publish src/RdpDrop.Client -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false
-dotnet publish src/RdpDrop.Agent -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false
+dotnet publish src/UltimateRDP.Client -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false
+dotnet publish src/UltimateRDP.Agent -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false
 ```
 
 Releases are built by GitHub Actions when a `v*` tag is pushed. The workflow builds, tests, publishes both applications and attaches the two zips to the release.
@@ -280,7 +280,7 @@ Feedback that helps:
 - Whether drops land in the right place in full screen, with one monitor or all monitors.
 - Whether saved credentials work, and which kind you have in the Credential Manager.
 
-Please send it through [GitHub issues](https://github.com/freeKC/rdpdrop/issues), with both logs.
+Please send it through [GitHub issues](https://github.com/freeKC/ultimaterdp/issues), with both logs.
 
 ## License
 

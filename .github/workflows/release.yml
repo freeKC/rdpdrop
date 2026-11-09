@@ -36,24 +36,24 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore RdpDrop.sln
+        run: dotnet restore UltimateRDP.sln
 
       - name: Build
-        run: dotnet build RdpDrop.sln -c Release --no-restore
+        run: dotnet build UltimateRDP.sln -c Release --no-restore
 
       - name: Test
-        run: dotnet test RdpDrop.sln -c Release --no-build --logger trx
+        run: dotnet test UltimateRDP.sln -c Release --no-build --logger trx
 
       - name: Publish client
-        run: dotnet publish src/RdpDrop.Client/RdpDrop.Client.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false -o artifacts/RdpDrop.Client
+        run: dotnet publish src/UltimateRDP.Client/UltimateRDP.Client.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false -o artifacts/UltimateRDP
 
       - name: Publish agent
-        run: dotnet publish src/RdpDrop.Agent/RdpDrop.Agent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false -o artifacts/RdpDrop.Agent
+        run: dotnet publish src/UltimateRDP.Agent/UltimateRDP.Agent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false -o artifacts/UltimateRDP.Agent
 
       - name: Keep only the executables
         shell: pwsh
         run: |
-          foreach ($folder in 'artifacts/RdpDrop.Client', 'artifacts/RdpDrop.Agent') {
+          foreach ($folder in 'artifacts/UltimateRDP', 'artifacts/UltimateRDP.Agent') {
             Get-ChildItem -Path $folder -Exclude *.exe | Remove-Item -Recurse -Force
             $files = @(Get-ChildItem -Path $folder -Recurse -File)
             if ($files.Count -ne 1) {
@@ -146,21 +146,21 @@ jobs:
       - name: Zip
         shell: pwsh
         run: |
-          foreach ($folder in 'artifacts/RdpDrop.Client', 'artifacts/RdpDrop.Agent') {
+          foreach ($folder in 'artifacts/UltimateRDP', 'artifacts/UltimateRDP.Agent') {
             $files = @(Get-ChildItem -Path $folder -Recurse -File)
             if ($files.Count -ne 1 -or $files[0].Extension -ne '.exe') {
               Write-Error "$folder must hold exactly one executable"
               exit 1
             }
           }
-          Compress-Archive -Path artifacts/RdpDrop.Client/* -DestinationPath "RdpDrop.Client-$env:TAG-win-x64.zip"
-          Compress-Archive -Path artifacts/RdpDrop.Agent/* -DestinationPath "RdpDrop.Agent-$env:TAG-win-x64.zip"
+          Compress-Archive -Path artifacts/UltimateRDP/* -DestinationPath "UltimateRDP-$env:TAG-win-x64.zip"
+          Compress-Archive -Path artifacts/UltimateRDP.Agent/* -DestinationPath "UltimateRDP.Agent-$env:TAG-win-x64.zip"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           body_path: docs/releases/${{ github.ref_name }}.md
           files: |
-            RdpDrop.Client-${{ github.ref_name }}-win-x64.zip
-            RdpDrop.Agent-${{ github.ref_name }}-win-x64.zip
+            UltimateRDP-${{ github.ref_name }}-win-x64.zip
+            UltimateRDP.Agent-${{ github.ref_name }}-win-x64.zip
           fail_on_unmatched_files: true

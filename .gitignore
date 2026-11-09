@@ -481,7 +481,7 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-# RdpDrop
+# UltimateRDP
 *.user
 .vs/
 bin/
