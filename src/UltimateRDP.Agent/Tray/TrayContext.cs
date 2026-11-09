@@ -159,22 +159,41 @@ internal sealed class TrayContext : ApplicationContext
         {
             Caption = LocalText.Of(nameof(Strings.AboutCaption), AgentInfo.ProductName).ForUser(),
             Heading = $"{AgentInfo.ProductName} {AgentInfo.Version}",
-            Text = LocalText.Of(nameof(Strings.AboutText), AgentInfo.ProjectUrl).ForUser(),
-
+            Text = LocalText.Of(nameof(Strings.AboutText), Link(AgentInfo.ProjectUrl)).ForUser(),
+            Footnote = new TaskDialogFootnote(
+                $"{LocalText.Of(nameof(Strings.AboutPublisher), AgentInfo.Publisher).ForUser()}\n{Link(AgentInfo.PublisherUrl)}"),
             Icon = TaskDialogIcon.Information,
+            EnableLinks = true,
             Buttons = { openButton, TaskDialogButton.Close },
+        };
+
+        // Only the two addresses written above are links.
+        page.LinkClicked += (_, e) =>
+        {
+            if (e.LinkHref is AgentInfo.ProjectUrl or AgentInfo.PublisherUrl)
+            {
+                OpenUrl(e.LinkHref);
+            }
         };
 
         if (TaskDialog.ShowDialog(page) == openButton)
         {
-            try
-            {
-                Process.Start(new ProcessStartInfo { FileName = AgentInfo.ProjectUrl, UseShellExecute = true })?.Dispose();
-            }
-            catch (System.ComponentModel.Win32Exception ex)
-            {
-                _logger.Warn($"Cannot open {AgentInfo.ProjectUrl}. {ex.Message}");
-            }
+            OpenUrl(AgentInfo.ProjectUrl);
         }
     }
+
+    private void OpenUrl(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true })?.Dispose();
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            _logger.Warn($"Cannot open {url}. {ex.Message}");
+        }
+    }
+
+    /// <summary>Task dialog markup that shows <paramref name="url"/> as a link to itself.</summary>
+    private static string Link(string url) => $"<a href=\"{url}\">{url}</a>";
 }

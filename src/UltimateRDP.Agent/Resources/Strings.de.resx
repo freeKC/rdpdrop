@@ -47,6 +47,9 @@
   <data name="AboutOpenProjectPage" xml:space="preserve">
     <value>Projektseite öffnen</value>
   </data>
+  <data name="AboutPublisher" xml:space="preserve">
+    <value>Herausgegeben von {0}</value>
+  </data>
   <data name="AboutText" xml:space="preserve">
     <value>Empfängt Dateien, die auf dem Fenster des UltimateRDP-Clients abgelegt werden, und legt sie über die Laufwerksumleitung auf dem Fenster unter dem Mauszeiger in dieser Sitzung ab. Nimmt dort nichts sie an, wird das Ablegen ignoriert.
 

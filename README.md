@@ -282,6 +282,10 @@ Feedback that helps:
 
 Please send it through [GitHub issues](https://github.com/freeKC/ultimaterdp/issues), with both logs.
 
+## Credits
+
+UltimateRDP is developed and published by [APROGSYS](https://www.aprogsys.com/). The source code is on [GitHub](https://github.com/freeKC/ultimaterdp), under the MIT license.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

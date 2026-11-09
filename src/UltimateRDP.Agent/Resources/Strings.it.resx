@@ -47,6 +47,9 @@
   <data name="AboutOpenProjectPage" xml:space="preserve">
     <value>Apri la pagina del progetto</value>
   </data>
+  <data name="AboutPublisher" xml:space="preserve">
+    <value>Pubblicato da {0}</value>
+  </data>
   <data name="AboutText" xml:space="preserve">
     <value>Riceve i file rilasciati sulla finestra del client UltimateRDP e li rilascia, tramite il reindirizzamento delle unità, sulla finestra sotto il cursore in questa sessione. Se lì nessuna finestra li accetta, il rilascio viene ignorato.
 

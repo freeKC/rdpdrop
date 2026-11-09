@@ -8,6 +8,10 @@ internal static class AppInfo
 
     public const string ProjectUrl = "https://github.com/freeKC/ultimaterdp";
 
+    public const string Publisher = "APROGSYS";
+
+    public const string PublisherUrl = "https://www.aprogsys.com/";
+
     /// <summary>Version without the build metadata, for example 0.2.1.</summary>
     public static string Version { get; } = ReadVersion();
 

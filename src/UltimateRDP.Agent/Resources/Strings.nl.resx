@@ -47,6 +47,9 @@
   <data name="AboutOpenProjectPage" xml:space="preserve">
     <value>Projectpagina openen</value>
   </data>
+  <data name="AboutPublisher" xml:space="preserve">
+    <value>Uitgegeven door {0}</value>
+  </data>
   <data name="AboutText" xml:space="preserve">
     <value>Ontvangt bestanden die op het venster van de UltimateRDP-client worden neergezet en zet ze via de omleiding van stations neer op het venster onder de cursor in deze sessie. Als niets daar ze accepteert, wordt het neerzetten genegeerd.
 

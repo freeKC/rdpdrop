@@ -5,10 +5,12 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Version>0.3.0</Version>
-    <Authors>FreeKC</Authors>
+    <Authors>APROGSYS</Authors>
+    <Company>APROGSYS</Company>
     <Product>UltimateRDP</Product>
-    <Copyright>Copyright (c) 2026 FreeKC</Copyright>
+    <Copyright>Copyright (c) 2026 APROGSYS</Copyright>
     <RepositoryUrl>https://github.com/freeKC/ultimaterdp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://www.aprogsys.com/</PackageProjectUrl>
   </PropertyGroup>
 </Project>

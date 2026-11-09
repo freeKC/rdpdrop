@@ -47,6 +47,9 @@
   <data name="AboutOpenProjectPage" xml:space="preserve">
     <value>Ouvrir la page du projet</value>
   </data>
+  <data name="AboutPublisher" xml:space="preserve">
+    <value>Publié par {0}</value>
+  </data>
   <data name="AboutText" xml:space="preserve">
     <value>Reçoit les fichiers déposés sur la fenêtre du client UltimateRDP et les dépose, par la redirection des lecteurs, sur la fenêtre située sous le curseur dans cette session. Si rien à cet endroit ne les accepte, le dépôt est ignoré.
 

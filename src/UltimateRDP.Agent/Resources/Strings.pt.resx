@@ -47,6 +47,9 @@
   <data name="AboutOpenProjectPage" xml:space="preserve">
     <value>Abrir a página do projeto</value>
   </data>
+  <data name="AboutPublisher" xml:space="preserve">
+    <value>Publicado por {0}</value>
+  </data>
   <data name="AboutText" xml:space="preserve">
     <value>Recebe os arquivos soltos na janela do cliente UltimateRDP e os solta, pelo redirecionamento de unidades, na janela sob o cursor nesta sessão. Quando nada ali os aceita, o envio é ignorado.
 

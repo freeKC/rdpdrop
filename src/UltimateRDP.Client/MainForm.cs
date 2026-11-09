@@ -413,13 +413,31 @@ internal sealed partial class MainForm : Form
 
     private void ShowAbout()
     {
-        MessageBox.Show(
-            this,
-            LocalText.Of(nameof(Strings.AboutText), AppInfo.Name, AppInfo.Version, AppInfo.ProjectUrl).ToString(),
-            LocalText.Of(nameof(Strings.AboutTitle), AppInfo.Name).ToString(),
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+        var publisher = LocalText.Of(nameof(Strings.AboutPublisher), AppInfo.Publisher).ToString();
+        var page = new TaskDialogPage
+        {
+            Caption = LocalText.Of(nameof(Strings.AboutTitle), AppInfo.Name).ToString(),
+            Text = LocalText.Of(nameof(Strings.AboutText), AppInfo.Name, AppInfo.Version, Link(AppInfo.ProjectUrl)).ToString(),
+            Footnote = new TaskDialogFootnote($"{publisher}\n{Link(AppInfo.PublisherUrl)}"),
+            Icon = TaskDialogIcon.Information,
+            EnableLinks = true,
+            Buttons = { TaskDialogButton.OK },
+        };
+
+        // Only the two addresses written above are links.
+        page.LinkClicked += (_, e) =>
+        {
+            if (e.LinkHref is AppInfo.ProjectUrl or AppInfo.PublisherUrl)
+            {
+                OpenWithShell(e.LinkHref);
+            }
+        };
+
+        TaskDialog.ShowDialog(this, page);
     }
+
+    /// <summary>Task dialog markup that shows <paramref name="url"/> as a link to itself.</summary>
+    private static string Link(string url) => $"<a href=\"{url}\">{url}</a>";
 
     private static void OpenLogFolder()
     {

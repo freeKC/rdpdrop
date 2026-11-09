@@ -11,6 +11,10 @@ internal static class AgentInfo
 
     public const string ProjectUrl = "https://github.com/freeKC/ultimaterdp";
 
+    public const string Publisher = "APROGSYS";
+
+    public const string PublisherUrl = "https://www.aprogsys.com/";
+
     /// <summary>Per session mutex that keeps a single agent in each user session.</summary>
     public const string InstanceMutexName = @"Local\UltimateRDP.Agent";
 

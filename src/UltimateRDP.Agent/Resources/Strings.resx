@@ -48,6 +48,10 @@
   <data name="AboutOpenProjectPage" xml:space="preserve">
     <value>Open the project page</value>
   </data>
+  <data name="AboutPublisher" xml:space="preserve">
+    <value>Published by {0}</value>
+    <comment>{0} is the publisher name.</comment>
+  </data>
   <data name="AboutText" xml:space="preserve">
     <value>Receives files dropped on the UltimateRDP client window and drops them, through drive redirection, on the window under the cursor in this session. When nothing there accepts them, the drop is ignored.
 

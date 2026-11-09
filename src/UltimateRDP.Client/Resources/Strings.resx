@@ -41,6 +41,10 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="AboutPublisher" xml:space="preserve">
+    <value>Published by {0}</value>
+    <comment>{0} is the publisher name.</comment>
+  </data>
   <data name="AboutText" xml:space="preserve">
     <value>{0} {1}
 
