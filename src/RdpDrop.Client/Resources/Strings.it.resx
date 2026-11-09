@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AboutText" xml:space="preserve">
+    <value>{0} {1}
+
+Trascina file e cartelle da questo computer e rilasciali nella sessione Desktop remoto.
+
+Credenziali salvate: {0} non salva mai una password. Windows la salva quando selezioni "Memorizza credenziali" nella sua richiesta di credenziali. Prima di connettersi, {0} usa la credenziale generica TERMSRV/&lt;host&gt; di Gestione credenziali di Windows, se presente.
+
+{2}</value>
+  </data>
+  <data name="AboutTitle" xml:space="preserve">
+    <value>Informazioni su {0}</value>
+  </data>
+  <data name="AgentNoAck" xml:space="preserve">
+    <value>L'agente non ha confermato il trascinamento</value>
+  </data>
+  <data name="AgentNotConnected" xml:space="preserve">
+    <value>Agente: non connesso</value>
+  </data>
+  <data name="AgentNotFound" xml:space="preserve">
+    <value>Nessun agente nel computer remoto</value>
+  </data>
+  <data name="AgentReady" xml:space="preserve">
+    <value>Agente pronto (v{0})</value>
+  </data>
+  <data name="AgentWaiting" xml:space="preserve">
+    <value>Agente: in attesa</value>
+  </data>
+  <data name="CancelledReason" xml:space="preserve">
+    <value>Annullato: {0}</value>
+  </data>
+  <data name="CannotConnect" xml:space="preserve">
+    <value>Impossibile connettersi: {0}</value>
+  </data>
+  <data name="CannotReadFile" xml:space="preserve">
+    <value>Impossibile leggere il file {0}.
+{1}</value>
+  </data>
+  <data name="ConnectedTo" xml:space="preserve">
+    <value>Connesso a {0}</value>
+  </data>
+  <data name="ConnectingTo" xml:space="preserve">
+    <value>Connessione a {0}...</value>
+  </data>
+  <data name="ConnectionNotConnected" xml:space="preserve">
+    <value>Non connesso</value>
+  </data>
+  <data name="CredentialsForgotten" xml:space="preserve">
+    <value>Credenziali salvate per {0} dimenticate; la prossima connessione le richiederà.</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>Disconnesso</value>
+  </data>
+  <data name="DisconnectedByRemote" xml:space="preserve">
+    <value>Disconnesso dal computer remoto</value>
+  </data>
+  <data name="DisconnectedCode" xml:space="preserve">
+    <value>Disconnesso (codice {0})</value>
+  </data>
+  <data name="DisconnectedReason" xml:space="preserve">
+    <value>Disconnesso: {0}</value>
+  </data>
+  <data name="DisconnectedSessionClosed" xml:space="preserve">
+    <value>Disconnesso: la sessione è stata chiusa dal computer remoto</value>
+  </data>
+  <data name="Disconnecting" xml:space="preserve">
+    <value>Disconnessione...</value>
+  </data>
+  <data name="Dragging" xml:space="preserve">
+    <value>Trascinamento di {0} elemento/i nella sessione...</value>
+  </data>
+  <data name="DropCancelled" xml:space="preserve">
+    <value>Rilascio annullato.</value>
+  </data>
+  <data name="DropFailedNoDetail" xml:space="preserve">
+    <value>Rilascio non riuscito: nessun dettaglio dall'agente.</value>
+  </data>
+  <data name="DropFailedNotSent" xml:space="preserve">
+    <value>Rilascio non riuscito: impossibile inviare il messaggio all'agente.</value>
+  </data>
+  <data name="DropFailedReason" xml:space="preserve">
+    <value>Rilascio non riuscito: {0}</value>
+  </data>
+  <data name="DropRefused" xml:space="preserve">
+    <value>Rilascio rifiutato.</value>
+  </data>
+  <data name="DropRefusedAgentWaiting" xml:space="preserve">
+    <value>Rilascio rifiutato: l'agente RdpDrop non ha ancora risposto.</value>
+  </data>
+  <data name="DropRefusedByAgent" xml:space="preserve">
+    <value>Rilascio rifiutato: l'agente ha rifiutato il trascinamento.</value>
+  </data>
+  <data name="DropRefusedNoAgent" xml:space="preserve">
+    <value>Rilascio rifiutato: l'agente RdpDrop non è in esecuzione nella sessione remota.</value>
+  </data>
+  <data name="DropRefusedNoLiveDrag" xml:space="preserve">
+    <value>Rilascio rifiutato: il trascinamento non è iniziato nella sessione. Trascina di nuovo i file.</value>
+  </data>
+  <data name="DropRefusedNotConnected" xml:space="preserve">
+    <value>Rilascio rifiutato: non connesso.</value>
+  </data>
+  <data name="DropRefusedReason" xml:space="preserve">
+    <value>Rilascio rifiutato: {0}</value>
+  </data>
+  <data name="DropZoneBanner" xml:space="preserve">
+    <value>Rilascia qui per inviare i file nella sessione</value>
+  </data>
+  <data name="DroppedOn" xml:space="preserve">
+    <value>Rilasciato su {0} ({1})</value>
+  </data>
+  <data name="EffectCopy" xml:space="preserve">
+    <value>copia</value>
+  </data>
+  <data name="EffectLink" xml:space="preserve">
+    <value>collegamento</value>
+  </data>
+  <data name="EmptyWindowHint" xml:space="preserve">
+    <value>Nessuna sessione aperta. Usa File, Apri .rdp oppure File, Recenti per avviarne una.</value>
+  </data>
+  <data name="FatalError" xml:space="preserve">
+    <value>Errore irreversibile {0} nel controllo Desktop remoto</value>
+  </data>
+  <data name="FileDoesNotRedirectDrives" xml:space="preserve">
+    <value>Questo file .rdp non reindirizza le unità: il rilascio non funzionerà.</value>
+  </data>
+  <data name="FileHasNoAddress" xml:space="preserve">
+    <value>Il file {0} non indica un computer a cui connettersi (manca la riga "full address").</value>
+  </data>
+  <data name="ForgetCredentialsQuestion" xml:space="preserve">
+    <value>Dimenticare le credenziali salvate da Windows per {0}?
+
+La prossima connessione le richiederà di nuovo. La sessione aperta non viene modificata.</value>
+  </data>
+  <data name="ForgetCredentialsTip" xml:space="preserve">
+    <value>RdpDrop non salva mai le credenziali. Windows le salva quando selezioni "Memorizza credenziali" nella sua richiesta di credenziali.</value>
+  </data>
+  <data name="FullScreenNeedsConnection" xml:space="preserve">
+    <value>Lo schermo intero è disponibile dopo la connessione.</value>
+  </data>
+  <data name="LogOffFailedNoDetail" xml:space="preserve">
+    <value>Chiusura della sessione non riuscita: nessun dettaglio dall'agente.</value>
+  </data>
+  <data name="LogOffFailedReason" xml:space="preserve">
+    <value>Chiusura della sessione non riuscita: {0}</value>
+  </data>
+  <data name="LogOffNoAnswer" xml:space="preserve">
+    <value>L'agente non ha risposto alla richiesta di chiusura della sessione.</value>
+  </data>
+  <data name="LogOffNotSent" xml:space="preserve">
+    <value>Chiusura della sessione non riuscita: impossibile inviare la richiesta all'agente.</value>
+  </data>
+  <data name="LogOffQuestion" xml:space="preserve">
+    <value>Questa operazione chiude la sessione di Windows sul server e termina le applicazioni in esecuzione. Continuare?</value>
+  </data>
+  <data name="LoggedOnTo" xml:space="preserve">
+    <value>Accesso eseguito a {0}</value>
+  </data>
+  <data name="LoggingOff" xml:space="preserve">
+    <value>Chiusura della sessione remota...</value>
+  </data>
+  <data name="MenuAbout" xml:space="preserve">
+    <value>&amp;Informazioni su RdpDrop</value>
+  </data>
+  <data name="MenuAllMonitors" xml:space="preserve">
+    <value>Usa tutti i &amp;monitor</value>
+  </data>
+  <data name="MenuClearRecent" xml:space="preserve">
+    <value>&amp;Cancella elenco</value>
+  </data>
+  <data name="MenuCloseTab" xml:space="preserve">
+    <value>&amp;Chiudi scheda</value>
+  </data>
+  <data name="MenuConnect" xml:space="preserve">
+    <value>&amp;Connetti</value>
+  </data>
+  <data name="MenuDisconnect" xml:space="preserve">
+    <value>&amp;Disconnetti</value>
+  </data>
+  <data name="MenuFile" xml:space="preserve">
+    <value>&amp;File</value>
+  </data>
+  <data name="MenuFindAgent" xml:space="preserve">
+    <value>Cerca di nuovo l'&amp;agente</value>
+  </data>
+  <data name="MenuForgetCredentials" xml:space="preserve">
+    <value>&amp;Dimentica le credenziali salvate</value>
+  </data>
+  <data name="MenuForgetCredentialsFor" xml:space="preserve">
+    <value>&amp;Dimentica le credenziali salvate per {0}</value>
+  </data>
+  <data name="MenuFullScreen" xml:space="preserve">
+    <value>&amp;Schermo intero</value>
+  </data>
+  <data name="MenuHelp" xml:space="preserve">
+    <value>&amp;Guida</value>
+  </data>
+  <data name="MenuKeysFullScreen" xml:space="preserve">
+    <value>Nella sessione a schermo &amp;intero</value>
+  </data>
+  <data name="MenuKeysLocal" xml:space="preserve">
+    <value>Su questo &amp;computer</value>
+  </data>
+  <data name="MenuKeysRemote" xml:space="preserve">
+    <value>Nella &amp;sessione</value>
+  </data>
+  <data name="MenuLanguage" xml:space="preserve">
+    <value>&amp;Lingua</value>
+  </data>
+  <data name="MenuLanguageAuto" xml:space="preserve">
+    <value>&amp;Automatica (lingua di Windows)</value>
+  </data>
+  <data name="MenuLogOff" xml:space="preserve">
+    <value>Chiudi la sessione re&amp;mota</value>
+  </data>
+  <data name="MenuOpenLogFolder" xml:space="preserve">
+    <value>Apri la cartella dei &amp;log</value>
+  </data>
+  <data name="MenuOpenRdp" xml:space="preserve">
+    <value>&amp;Apri .rdp...</value>
+  </data>
+  <data name="MenuProjectPage" xml:space="preserve">
+    <value>&amp;Pagina del progetto</value>
+  </data>
+  <data name="MenuQuit" xml:space="preserve">
+    <value>&amp;Esci</value>
+  </data>
+  <data name="MenuRecent" xml:space="preserve">
+    <value>&amp;Recenti</value>
+  </data>
+  <data name="MenuRecentNone" xml:space="preserve">
+    <value>(nessuno)</value>
+  </data>
+  <data name="MenuReopen" xml:space="preserve">
+    <value>Riapri in una &amp;nuova scheda</value>
+  </data>
+  <data name="MenuResizeSession" xml:space="preserve">
+    <value>&amp;Ridimensiona la sessione alla finestra</value>
+  </data>
+  <data name="MenuScaleAuto" xml:space="preserve">
+    <value>&amp;Automatico ({0})</value>
+  </data>
+  <data name="MenuScaleFactor" xml:space="preserve">
+    <value>&amp;Fattore di scala</value>
+  </data>
+  <data name="MenuScaleToWindow" xml:space="preserve">
+    <value>&amp;Adatta alla finestra</value>
+  </data>
+  <data name="MenuSession" xml:space="preserve">
+    <value>&amp;Sessione</value>
+  </data>
+  <data name="MenuView" xml:space="preserve">
+    <value>&amp;Visualizza</value>
+  </data>
+  <data name="MenuWindowsKeys" xml:space="preserve">
+    <value>&amp;Tasti Windows</value>
+  </data>
+  <data name="NoSavedCredentials" xml:space="preserve">
+    <value>Nessuna credenziale salvata per {0}.</value>
+  </data>
+  <data name="NothingAccepted" xml:space="preserve">
+    <value>Nessuna finestra sotto il cursore ha accettato i file.</value>
+  </data>
+  <data name="OpenDialogFilter" xml:space="preserve">
+    <value>File Desktop remoto (*.rdp)|*.rdp</value>
+  </data>
+  <data name="OpenDialogTitle" xml:space="preserve">
+    <value>Apri un file Desktop remoto</value>
+  </data>
+  <data name="PathDevice" xml:space="preserve">
+    <value>"{0}" è un percorso di dispositivo. Si possono rilasciare solo file su una lettera di unità locale.</value>
+  </data>
+  <data name="PathDotSegment" xml:space="preserve">
+    <value>"{0}" contiene un segmento "." o "..". Si possono rilasciare solo percorsi completi normalizzati.</value>
+  </data>
+  <data name="PathDriveRelative" xml:space="preserve">
+    <value>"{0}" è relativo alla cartella corrente della sua unità. Si possono rilasciare solo percorsi completi come C:\cartella.</value>
+  </data>
+  <data name="PathEmpty" xml:space="preserve">
+    <value>Il percorso è vuoto.</value>
+  </data>
+  <data name="PathInvalidCharacters" xml:space="preserve">
+    <value>"{0}" contiene caratteri non consentiti in un nome di file.</value>
+  </data>
+  <data name="PathNetwork" xml:space="preserve">
+    <value>"{0}" è un percorso di rete (UNC). Si possono rilasciare solo file su una lettera di unità locale, perché la sessione remota li raggiunge tramite il reindirizzamento delle unità.</value>
+  </data>
+  <data name="PathRelative" xml:space="preserve">
+    <value>"{0}" è un percorso relativo. Si possono rilasciare solo percorsi completi che iniziano con una lettera di unità, come C:\.</value>
+  </data>
+  <data name="Reconnecting" xml:space="preserve">
+    <value>Riconnessione a {0} (tentativo {1})...</value>
+  </data>
+  <data name="SessionSeesNoDrive" xml:space="preserve">
+    <value>La sessione non vede alcuna unità reindirizzata: il rilascio non funzionerà. Attiva le unità in Risorse locali.</value>
+  </data>
+  <data name="SettingAppliesNextConnection" xml:space="preserve">
+    <value>{0} si applicherà alla prossima connessione.</value>
+  </data>
+  <data name="SettingAppliesWhenConnecting" xml:space="preserve">
+    <value>{0} si applica quando ti connetti.</value>
+  </data>
+  <data name="SettingMonitors" xml:space="preserve">
+    <value>La nuova impostazione dei monitor</value>
+  </data>
+  <data name="SettingReconnectQuestion" xml:space="preserve">
+    <value>{0} si applica a una nuova connessione a {1}.
+
+Riconnettere ora?</value>
+  </data>
+  <data name="SettingScaleFactor" xml:space="preserve">
+    <value>Il nuovo fattore di scala</value>
+  </data>
+  <data name="SettingWindowsKeys" xml:space="preserve">
+    <value>La nuova impostazione dei tasti Windows</value>
+  </data>
+  <data name="StatusNoSession" xml:space="preserve">
+    <value>Nessuna sessione</value>
+  </data>
+  <data name="TabDisconnected" xml:space="preserve">
+    <value>{0} (disconnesso)</value>
+  </data>
+  <data name="UnexpectedError" xml:space="preserve">
+    <value>Si è verificato un errore imprevisto.
+{0}
+
+I dettagli sono nella cartella dei log {1}.</value>
+  </data>
+  <data name="WindowUnderCursor" xml:space="preserve">
+    <value>la finestra sotto il cursore</value>
+  </data>
+</root>

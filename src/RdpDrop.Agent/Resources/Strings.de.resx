@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AboutCaption" xml:space="preserve">
+    <value>Info zu {0}</value>
+  </data>
+  <data name="AboutOpenProjectPage" xml:space="preserve">
+    <value>Projektseite öffnen</value>
+  </data>
+  <data name="AboutText" xml:space="preserve">
+    <value>Empfängt Dateien, die auf dem Fenster des RdpDrop-Clients abgelegt werden, und legt sie über die Laufwerksumleitung auf dem Fenster unter dem Mauszeiger in dieser Sitzung ab. Nimmt dort nichts sie an, wird das Ablegen ignoriert.
+
+{0}</value>
+  </data>
+  <data name="AgentStillRunning" xml:space="preserve">
+    <value>Der Agent läuft noch; beenden Sie ihn über sein Menü im Infobereich.</value>
+  </data>
+  <data name="AgentStopped" xml:space="preserve">
+    <value>Der laufende Agent wurde beendet.</value>
+  </data>
+  <data name="CancelAgentStopping" xml:space="preserve">
+    <value>der Agent wird beendet</value>
+  </data>
+  <data name="CancelDropTimeout" xml:space="preserve">
+    <value>das Ablegen hat das Ziel nicht rechtzeitig erreicht</value>
+  </data>
+  <data name="CancelEscape" xml:space="preserve">
+    <value>in der Sitzung wurde Esc gedrückt</value>
+  </data>
+  <data name="CancelIdle" xml:space="preserve">
+    <value>seit fünf Sekunden keine Nachricht vom Client</value>
+  </data>
+  <data name="CancelLeft" xml:space="preserve">
+    <value>der Ziehvorgang hat die Sitzung auf dem Client verlassen</value>
+  </data>
+  <data name="CancelNewerDrag" xml:space="preserve">
+    <value>ein neuer Ziehvorgang wurde gestartet</value>
+  </data>
+  <data name="CancelUnexpected" xml:space="preserve">
+    <value>beim Agent ist ein unerwarteter Fehler aufgetreten</value>
+  </data>
+  <data name="CannotOpenLogFolder" xml:space="preserve">
+    <value>{0} kann nicht geöffnet werden.
+
+{1}</value>
+  </data>
+  <data name="CannotRemoveValue" xml:space="preserve">
+    <value>Der Wert kann nicht aus {0} entfernt werden. {1}</value>
+  </data>
+  <data name="CannotWriteKey" xml:space="preserve">
+    <value>{0} kann nicht geschrieben werden. {1}</value>
+  </data>
+  <data name="DoDragDropFailed" xml:space="preserve">
+    <value>DoDragDrop fehlgeschlagen: {0}</value>
+  </data>
+  <data name="DragCancelled" xml:space="preserve">
+    <value>Der Ziehvorgang wurde abgebrochen.</value>
+  </data>
+  <data name="DragCancelledBeforeStart" xml:space="preserve">
+    <value>Der Ziehvorgang wurde vor dem Start abgebrochen.</value>
+  </data>
+  <data name="DragCancelledReason" xml:space="preserve">
+    <value>Der Ziehvorgang wurde abgebrochen: {0}.</value>
+  </data>
+  <data name="DragEndedWithDrop" xml:space="preserve">
+    <value>Der Ziehvorgang wurde bereits mit einem Ablegen beendet.</value>
+  </data>
+  <data name="DragFailed" xml:space="preserve">
+    <value>Der Ziehvorgang in der Sitzung ist fehlgeschlagen.</value>
+  </data>
+  <data name="DragHoldsNothing" xml:space="preserve">
+    <value>Der Ziehvorgang enthält weder Datei noch Ordner.</value>
+  </data>
+  <data name="DragThreadFailed" xml:space="preserve">
+    <value>Der Ziehvorgang in der Sitzung ist fehlgeschlagen: {0}</value>
+  </data>
+  <data name="DroppedOn" xml:space="preserve">
+    <value>Abgelegt auf {0}</value>
+  </data>
+  <data name="InputRefused" xml:space="preserve">
+    <value>Die Sitzung nimmt keine simulierten Eingaben an; sie ist eventuell gesperrt oder zeigt einen sicheren Desktop.</value>
+  </data>
+  <data name="InstalledForAllUsers" xml:space="preserve">
+    <value>Der Agent startet jetzt mit jeder Benutzersitzung, aus
+{0}
+
+Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lesen kann, etwa Program Files. Bereits angemeldete Benutzer erhalten den Agent bei ihrer nächsten Anmeldung.</value>
+  </data>
+  <data name="InstalledForUser" xml:space="preserve">
+    <value>Der Agent startet jetzt mit Ihrer Sitzung.</value>
+  </data>
+  <data name="ItemsCannotBeDropped" xml:space="preserve">
+    <value>Die Elemente können nicht abgelegt werden.</value>
+  </data>
+  <data name="LogoffAccepted" xml:space="preserve">
+    <value>Die Remotesitzung wird abgemeldet.</value>
+  </data>
+  <data name="LogoffFailed" xml:space="preserve">
+    <value>Windows hat die Sitzung nicht abgemeldet: {0}</value>
+  </data>
+  <data name="NoDragForDrop" xml:space="preserve">
+    <value>Für dieses Ablegen läuft kein Ziehvorgang.</value>
+  </data>
+  <data name="NoReasonGiven" xml:space="preserve">
+    <value>kein Grund angegeben</value>
+  </data>
+  <data name="NoRedirection" xml:space="preserve">
+    <value>Die lokalen Laufwerke werden nicht an diese Sitzung umgeleitet, daher können die abgelegten Dateien nicht gelesen werden. Öffnen Sie in den Verbindungseinstellungen Lokale Ressourcen, wählen Sie Weitere, markieren Sie die freizugebenden Laufwerke und verbinden Sie sich erneut.</value>
+  </data>
+  <data name="NothingAccepted" xml:space="preserve">
+    <value>Nichts unter dem Mauszeiger hat die Dateien angenommen.</value>
+  </data>
+  <data name="PathDevice" xml:space="preserve">
+    <value>„{0}“ ist ein Gerätepfad. Nur Dateien auf einem lokalen Laufwerksbuchstaben können abgelegt werden.</value>
+  </data>
+  <data name="PathDotSegment" xml:space="preserve">
+    <value>„{0}“ enthält ein Segment „.“ oder „..“. Nur normalisierte vollständige Pfade können abgelegt werden.</value>
+  </data>
+  <data name="PathDriveRelative" xml:space="preserve">
+    <value>„{0}“ ist relativ zum aktuellen Ordner seines Laufwerks. Nur vollständige Pfade wie C:\Ordner können abgelegt werden.</value>
+  </data>
+  <data name="PathEmpty" xml:space="preserve">
+    <value>Der Pfad ist leer.</value>
+  </data>
+  <data name="PathInvalidCharacters" xml:space="preserve">
+    <value>„{0}“ enthält Zeichen, die in Dateinamen nicht zulässig sind.</value>
+  </data>
+  <data name="PathNetwork" xml:space="preserve">
+    <value>„{0}“ ist ein Netzwerkpfad (UNC). Nur Dateien auf einem lokalen Laufwerksbuchstaben können abgelegt werden, da die Remotesitzung sie über die Laufwerksumleitung erreicht.</value>
+  </data>
+  <data name="PathRelative" xml:space="preserve">
+    <value>„{0}“ ist ein relativer Pfad. Nur vollständige Pfade, die mit einem Laufwerksbuchstaben wie C:\ beginnen, können abgelegt werden.</value>
+  </data>
+  <data name="PressNotDelivered" xml:space="preserve">
+    <value>Die Sitzung hat das simulierte Drücken der Maustaste nicht an den Agent weitergegeben.</value>
+  </data>
+  <data name="PreviousDropBusy" xml:space="preserve">
+    <value>Das vorherige Ablegen wird in der Sitzung noch ausgeführt. Versuchen Sie es erneut, sobald es abgeschlossen ist.</value>
+  </data>
+  <data name="ProtocolMismatch" xml:space="preserve">
+    <value>Der RdpDrop-Agent in der Sitzung verwendet Protokoll {0}, der Client Protokoll {1}. Installieren Sie auf beiden Seiten dieselbe Version von RdpDrop.</value>
+  </data>
+  <data name="RunElevated" xml:space="preserve">
+    <value>Führen Sie diesen Befehl erneut in einer Eingabeaufforderung mit erhöhten Rechten aus (Als Administrator ausführen).</value>
+  </data>
+  <data name="StagingFailed" xml:space="preserve">
+    <value>Die Dateien konnten vor dem Ziehvorgang nicht in die Sitzung kopiert werden. {0}</value>
+  </data>
+  <data name="StagingProgress" xml:space="preserve">
+    <value>{0} Element(e) werden vor dem Ziehvorgang in die Sitzung kopiert...</value>
+  </data>
+  <data name="StartingDrag" xml:space="preserve">
+    <value>Ziehvorgang in der Sitzung wird gestartet...</value>
+  </data>
+  <data name="StillInstalledForAllUsers" xml:space="preserve">
+    <value>Der Agent ist unter HKEY_LOCAL_MACHINE weiterhin für den Start bei allen Benutzern eingetragen. Führen Sie --uninstall in einer Eingabeaufforderung mit erhöhten Rechten aus, um auch diesen Eintrag zu entfernen.</value>
+  </data>
+  <data name="TooManyArguments" xml:space="preserve">
+    <value>Zu viele Argumente.</value>
+  </data>
+  <data name="TrayAbout" xml:space="preserve">
+    <value>Info</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Beenden</value>
+  </data>
+  <data name="TrayOpenLogFolder" xml:space="preserve">
+    <value>Protokollordner öffnen</value>
+  </data>
+  <data name="TrayStageFiles" xml:space="preserve">
+    <value>Dateien vor dem Ablegen in die Sitzung kopieren</value>
+  </data>
+  <data name="UnexpectedError" xml:space="preserve">
+    <value>Beim Agent ist ein unerwarteter Fehler aufgetreten: {0}</value>
+  </data>
+  <data name="UninstalledForAllUsers" xml:space="preserve">
+    <value>Der Agent startet nicht mehr mit jeder Benutzersitzung.</value>
+  </data>
+  <data name="UninstalledForUser" xml:space="preserve">
+    <value>Der Agent startet nicht mehr mit Ihrer Sitzung.</value>
+  </data>
+  <data name="UnknownOption" xml:space="preserve">
+    <value>Unbekannte Option „{0}“.</value>
+  </data>
+  <data name="UnknownWindowAbovePoint" xml:space="preserve">
+    <value>Ein anderes Fenster liegt über dem Ablagepunkt, daher kann der Ziehvorgang nicht starten.</value>
+  </data>
+  <data name="UnreachableMany" xml:space="preserve">
+    <value>{0} Elemente sind aus der Remotesitzung nicht erreichbar: {1}. Prüfen Sie, ob ihre Laufwerke in den Einstellungen für lokale Ressourcen der Verbindung freigegeben und noch angeschlossen sind.</value>
+  </data>
+  <data name="UnreachableMore" xml:space="preserve">
+    <value>{0} und {1} weitere</value>
+  </data>
+  <data name="UnreachableOne" xml:space="preserve">
+    <value>{0} ist aus der Remotesitzung nicht erreichbar. Prüfen Sie, ob das Laufwerk in den Einstellungen für lokale Ressourcen der Verbindung freigegeben und noch angeschlossen ist.</value>
+  </data>
+  <data name="UsageHelp" xml:space="preserve">
+    <value>Diesen Text anzeigen.</value>
+  </data>
+  <data name="UsageInstall" xml:space="preserve">
+    <value>Den Agent mit Ihrer Sitzung starten und dann ausführen.</value>
+  </data>
+  <data name="UsageInstallAllUsers" xml:space="preserve">
+    <value>Den Agent mit jeder Benutzersitzung starten (erhöhte Rechte).</value>
+  </data>
+  <data name="UsageNoOption" xml:space="preserve">
+    <value>(keine Option)</value>
+  </data>
+  <data name="UsageRun" xml:space="preserve">
+    <value>Den Agent im Infobereich ausführen.</value>
+  </data>
+  <data name="UsageTitle" xml:space="preserve">
+    <value>Verwendung: {0} [option]</value>
+  </data>
+  <data name="UsageUninstall" xml:space="preserve">
+    <value>Den Agent nicht mehr mit Ihrer Sitzung starten und ihn beenden.</value>
+  </data>
+  <data name="WindowAbovePoint" xml:space="preserve">
+    <value>Ein anderes Fenster ({0}) liegt über dem Ablagepunkt, daher kann der Ziehvorgang nicht starten.</value>
+  </data>
+  <data name="WindowUnderCursor" xml:space="preserve">
+    <value>das Fenster unter dem Mauszeiger</value>
+  </data>
+</root>
