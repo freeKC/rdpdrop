@@ -144,9 +144,12 @@ The client sends the files in chunks of 32 KiB. The setting `transferChunkBytes`
 ```json
 {
   "transferChunkBytes": 32768,
+  "transferBatchCharacters": 200000,
   "logLevel": "info"
 }
 ```
+
+The client sends its messages to the agent together, at most `transferBatchCharacters` characters in one call to the Remote Desktop control: 200000 by default, from 50000 to 1048576. A value outside these bounds is brought back within them. Leave it alone unless a transfer fails at its start.
 
 The setting `logLevel` of the same file is `info` by default. Set it to `debug` to log every message the client sends to the agent and every call it makes to the Remote Desktop control, then restart the client.
 

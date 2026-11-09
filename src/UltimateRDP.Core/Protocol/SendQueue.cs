@@ -45,8 +45,17 @@ public sealed record SendBatch(string Text, IReadOnlyList<QueuedLine> Lines)
 /// </remarks>
 public sealed class SendQueue
 {
-    /// <summary>Most characters handed to the control in one call by default: 1 MiB.</summary>
-    public const int DefaultMaxBatchCharacters = 1024 * 1024;
+    /// <summary>
+    /// Most characters handed to the control in one call by default: 200 000, just above
+    /// the largest call seen to work in production, 174 868 characters.
+    /// </summary>
+    public const int DefaultMaxBatchCharacters = 200_000;
+
+    /// <summary>Smallest limit the client accepts in its settings.</summary>
+    public const int MinBatchLimit = 50_000;
+
+    /// <summary>Largest limit the client accepts in its settings: 1 MiB of characters.</summary>
+    public const int MaxBatchLimit = 1024 * 1024;
 
     private readonly Queue<QueuedLine> _lines = new();
 
@@ -60,6 +69,12 @@ public sealed class SendQueue
 
     /// <summary>Most characters in one batch.</summary>
     public int MaxBatchCharacters { get; }
+
+    /// <summary>
+    /// A limit from the settings, brought within <see cref="MinBatchLimit"/> and
+    /// <see cref="MaxBatchLimit"/>.
+    /// </summary>
+    public static int ClampBatchLimit(int characters) => Math.Clamp(characters, MinBatchLimit, MaxBatchLimit);
 
     /// <summary>Number of lines waiting.</summary>
     public int Count => _lines.Count;

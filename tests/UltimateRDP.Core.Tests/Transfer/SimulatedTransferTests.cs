@@ -107,7 +107,7 @@ public class SimulatedTransferTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// The lines leave in batches of at most 1 MiB of characters, as the client of 0.4.3
+    /// The lines leave in batches of at most 200 000 characters, as the client of 0.4.3
     /// sends them, and the agent splits them back into the same messages.
     /// </summary>
     [Theory]
@@ -132,8 +132,12 @@ public class SimulatedTransferTests(ITestOutputHelper output)
             Assert.Equal(data, storage.Content(file.RelativePath));
         }
 
-        Assert.InRange(longest, 1, SendQueue.DefaultMaxBatchCharacters);
-        Assert.True(transfer.Channel.LinesSent < transfer.Sender.ChunkLines, $"{transfer.Channel.LinesSent} calls for {transfer.Sender.ChunkLines} chunk lines.");
+        // A chunk line longer than the limit, at 256 KiB, goes alone; every other call stays within it.
+        Assert.InRange(longest, 1, Math.Max(SendQueue.DefaultMaxBatchCharacters, transfer.Sender.LongestChunkLine));
+        if (2 * transfer.Sender.LongestChunkLine <= SendQueue.DefaultMaxBatchCharacters)
+        {
+            Assert.True(transfer.Channel.LinesSent < transfer.Sender.ChunkLines, $"{transfer.Channel.LinesSent} calls for {transfer.Sender.ChunkLines} chunk lines.");
+        }
     }
 
     [Theory]

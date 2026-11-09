@@ -104,7 +104,7 @@ public class SendQueueTests
     }
 
     [Fact]
-    public void The_default_limit_is_one_mebibyte_of_characters()
+    public void The_default_limit_is_two_hundred_thousand_characters()
     {
         var queue = new SendQueue();
         for (var i = 0; i < 30; i++)
@@ -114,9 +114,34 @@ public class SendQueueTests
 
         var first = queue.TakeBatch()!;
 
-        Assert.Equal(1024 * 1024, queue.MaxBatchCharacters);
-        Assert.Equal(23, first.Lines.Count);
+        Assert.Equal(200_000, queue.MaxBatchCharacters);
+        Assert.Equal(4, first.Lines.Count);
         Assert.True(first.Text.Length <= SendQueue.DefaultMaxBatchCharacters);
+    }
+
+    /// <summary>A chunk of 128 KiB, the largest call seen to work in production, goes alone.</summary>
+    [Fact]
+    public void Chunks_of_128_KiB_go_one_per_call_by_default()
+    {
+        var queue = new SendQueue();
+        queue.Enqueue(Line("fileEnd", 120, "t1"));
+        queue.Enqueue(Line("fileChunk", 174_868, "t1", 0));
+        queue.Enqueue(Line("fileChunk", 174_868, "t1", 1));
+
+        Assert.Equal(2, queue.TakeBatch()!.Lines.Count);
+        Assert.Single(queue.TakeBatch()!.Lines);
+        Assert.Null(queue.TakeBatch());
+    }
+
+    [Theory]
+    [InlineData(0, SendQueue.MinBatchLimit)]
+    [InlineData(49_999, 50_000)]
+    [InlineData(200_000, 200_000)]
+    [InlineData(1_048_576, 1_048_576)]
+    [InlineData(int.MaxValue, SendQueue.MaxBatchLimit)]
+    public void A_limit_from_the_settings_is_brought_within_its_bounds(int setting, int expected)
+    {
+        Assert.Equal(expected, SendQueue.ClampBatchLimit(setting));
     }
 
     [Fact]

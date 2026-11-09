@@ -220,7 +220,7 @@ the wire, frames messages by lines, and detects the model at run time.
   themselves to the control: whatever the control does with them, the agent
   receives either ASCII bytes or UTF-16LE bytes, and both are covered by its
   own detection. One call of the control may carry several lines one after
-  the other, up to 1 MiB of characters (see "Version 0.4.3").
+  the other, up to 200 000 characters by default (see "Version 0.4.3").
 * Both sides accumulate until `\n` and parse each line on its own. Blank
   lines are ignored. A line above 1 MiB is a protocol error that drops the
   buffer.
@@ -1149,9 +1149,13 @@ a warning that gives the reason.
 The line protocol allows several lines in one call, and the line reader of
 the agent already splits them. `AgentLink` now puts every line into a
 `SendQueue` (Core) and sends the queue at the end of the current message of
-the UI thread, through a posted call, or at once when more than 1 MiB of
-characters wait. Each call of the control holds at most 1 MiB of characters;
-a single longer line would go alone. The order of the lines never changes.
+the UI thread, through a posted call, or at once when more characters wait
+than one call may hold. Each call of the control holds at most 200 000
+characters by default; a single longer line, a chunk of more than about
+146 KiB, goes alone. The order of the lines never changes. The limit is the
+client setting `transferBatchCharacters` in `client.json`, from 50 000 to
+1 048 576 characters, logged at startup with the other settings, so that it
+can be tuned without a release.
 
 Sequence of the calls for a drop with transfer, with the default chunk of
 32 KiB:
@@ -1163,17 +1167,17 @@ Sequence of the calls for a drop with transfer, with the default chunk of
   and the first chunks; whatever was posted before the queue is sent leaves
   in the same call, so `transferBegin` and `fileBegin` normally travel with
   the first chunks instead of alone in front of them. The chunks that follow
-  go by up to 23 per call (5 with chunks of 128 KiB) while the window has
-  room, and the `fileEnd` and `fileBegin` lines between two files travel
-  with them.
+  go by up to 4 per call while the window has room, and the `fileEnd` and
+  `fileBegin` lines between two files travel with them. With chunks of
+  128 KiB (174 868 characters) each chunk goes alone, with the short lines
+  that fit beside it.
 
-The largest call is now about 1 MiB of characters, 2 MB on the wire in the
-UTF-16 model. The largest call seen to work in production was 174 868
-characters; with 0.4.0, calls of 350 000 characters in the UTF-16 model
-delivered nothing, which may have been the same defect. A transfer whose
-first data does not get through still fails after 10 seconds with "The agent
-did not acknowledge the first data of the transfer.", so a limit of the
-control on large calls would show there.
+The limit of 200 000 characters keeps every call close to the size seen to
+work in production, 174 868 characters in one call, as long as the chunks
+stay at 128 KiB or less; with 0.4.0, calls of 350 000 characters in the
+UTF-16 model delivered nothing. Calls of up to
+1 MiB of characters were considered and not taken, since nothing shows that
+the control delivers them.
 
 A call that fails empties the queue and reports the lost lines: a transfer
 that had lines among them stops with the text of a send refused by the

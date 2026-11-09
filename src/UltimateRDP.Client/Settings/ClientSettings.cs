@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Core.Localization;
+using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.Recent;
 using UltimateRDP.Core.Transfer;
 
@@ -54,6 +55,12 @@ internal sealed class ClientSettings
     public int TransferChunkBytes { get; set; } = TransferSender.DefaultChunkSize;
 
     /// <summary>
+    /// Most characters handed to the control in one call, from 50 000 to 1 048 576,
+    /// 200 000 by default. Only editable in the file.
+    /// </summary>
+    public int TransferBatchCharacters { get; set; } = SendQueue.DefaultMaxBatchCharacters;
+
+    /// <summary>
     /// <c>info</c> by default, or <c>debug</c> to also log every message sent to the agent
     /// and every call of the control. Only editable in the file.
     /// </summary>
@@ -104,7 +111,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, log level {LogLevel}";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, channel call up to {TransferBatchCharacters} characters, log level {LogLevel}";
 
     private ClientSettings Normalized()
     {
@@ -125,6 +132,7 @@ internal sealed class ClientSettings
 
         Language = UiLanguages.NormalizeChoice(Language);
         TransferChunkBytes = TransferSender.ClampChunkSize(TransferChunkBytes);
+        TransferBatchCharacters = SendQueue.ClampBatchLimit(TransferBatchCharacters);
         LogLevel = string.Equals(LogLevel?.Trim(), DebugLevel, StringComparison.OrdinalIgnoreCase) ? DebugLevel : InfoLevel;
         RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;

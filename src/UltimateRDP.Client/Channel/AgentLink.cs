@@ -33,8 +33,9 @@ namespace UltimateRDP.Client.Channel;
 /// </para>
 /// <para>
 /// Every line goes into a <see cref="SendQueue"/> first. The queue is sent at the end of
-/// the current message of the UI thread, or at once when more than 1 MiB of characters
-/// wait, in as few calls of the control as the 1 MiB limit per call allows, and each
+/// the current message of the UI thread, or at once when more characters wait than one
+/// call may hold, in as few calls of the control as that limit allows (the
+/// <c>transferBatchCharacters</c> setting, 200 000 characters by default), and each
 /// string handed to the control stays allocated until the agent received it
 /// (<see cref="OwnedChannelData"/>). A short line is therefore never alone in a call just
 /// before a large one, the case where the control lost lines in production. A call that
@@ -50,7 +51,7 @@ internal sealed class AgentLink : IDisposable
     private readonly RdpControl _control;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = HelloIntervalMilliseconds };
     private readonly ChannelReceiver _receiver = new();
-    private readonly SendQueue _queue = new();
+    private readonly SendQueue _queue;
     private readonly OwnedChannelData _data;
 
     private DateTime _discoveryDeadline;
@@ -59,9 +60,12 @@ internal sealed class AgentLink : IDisposable
     private bool _flushPosted;
     private long _channelCalls;
 
-    public AgentLink(RdpControl control)
+    /// <param name="control">The Remote Desktop control.</param>
+    /// <param name="batchCharacters">Most characters in one call of the control, see <see cref="SendQueue.ClampBatchLimit"/>.</param>
+    public AgentLink(RdpControl control, int batchCharacters)
     {
         _control = control;
+        _queue = new SendQueue(SendQueue.ClampBatchLimit(batchCharacters));
         _data = new OwnedChannelData(control);
         _control.OnChannelReceivedData += OnChannelReceivedData;
         _timer.Tick += (_, _) => OnTimer();
@@ -336,8 +340,8 @@ internal sealed class AgentLink : IDisposable
     }
 
     /// <summary>
-    /// Queues a line. More than 1 MiB of characters waiting go out at once in full calls;
-    /// the rest goes out at the end of the current UI message.
+    /// Queues a line. When more characters wait than one call may hold, full calls go out at
+    /// once; the rest goes out at the end of the current UI message.
     /// </summary>
     private void Enqueue(QueuedLine line)
     {
@@ -366,7 +370,7 @@ internal sealed class AgentLink : IDisposable
         _control.BeginInvoke(Flush);
     }
 
-    /// <summary>Sends every line waiting, in calls of at most 1 MiB of characters.</summary>
+    /// <summary>Sends every line waiting, in calls of at most the limit of the queue.</summary>
     private void Flush()
     {
         _flushPosted = false;
