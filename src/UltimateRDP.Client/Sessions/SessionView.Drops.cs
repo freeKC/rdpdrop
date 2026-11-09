@@ -7,6 +7,7 @@ using UltimateRDP.Client.Rdp;
 using UltimateRDP.Client.Resources;
 using UltimateRDP.Core.Paths;
 using UltimateRDP.Core.Protocol;
+using UltimateRDP.Core.Transfer;
 
 namespace UltimateRDP.Client.Sessions;
 
@@ -30,6 +31,12 @@ namespace UltimateRDP.Client.Sessions;
 /// the channel; see SessionView.Transfer.cs. Every drop that goes out opens a
 /// <see cref="DropProgressForm"/>, which shows the drop until its result.
 /// </para>
+/// <para>
+/// A drop that happens before the dragAck arrived is held until it does, for at most
+/// <see cref="DropDecision.MaxWait"/>, so that a quick release does not lose the transfer
+/// that the dragAck may offer. The moves that keep the live drag of the agent alive go on
+/// meanwhile, and a new drag is refused as during a transfer.
+/// </para>
 /// </remarks>
 internal sealed partial class SessionView
 {
@@ -47,8 +54,12 @@ internal sealed partial class SessionView
     private readonly System.Windows.Forms.Timer _ackTimer = new() { Interval = AckTimeoutMilliseconds };
     private readonly System.Windows.Forms.Timer _moveTimer = new() { Interval = MoveIntervalMilliseconds };
     private readonly System.Windows.Forms.Timer _leaveTimer = new() { Interval = LeaveDelayMilliseconds };
+    private readonly System.Windows.Forms.Timer _holdTimer = new() { Interval = (int)DropDecision.MaxWait.TotalMilliseconds };
     private DropZoneBanner? _banner;
     private LiveDrag? _live;
+
+    /// <summary>The drop that waits for the dragAck of its drag, if any.</summary>
+    private HeldDrop? _held;
     private string? _pendingDropId;
     private LocalText? _dropTextBeforeDrag;
 
@@ -87,6 +98,7 @@ internal sealed partial class SessionView
         _ackTimer.Tick += (_, _) => OnAckTimeout();
         _moveTimer.Tick += (_, _) => FlushMove(keepAlive: true);
         _leaveTimer.Tick += (_, _) => OnLeaveConfirmed();
+        _holdTimer.Tick += (_, _) => OnHoldTick();
         _agent.DragAckReceived += (_, ack) => OnDragAck(ack);
     }
 
@@ -95,6 +107,12 @@ internal sealed partial class SessionView
     {
         _pendingDropId = null;
         _live = null;
+        if (_held is { } held)
+        {
+            // The session is gone: the agent cannot be told, and its watchdog ends the drag.
+            GiveUpHeldDrop(held, LocalText.Of(nameof(Strings.DropInterrupted)), "the session was disconnected", sendLeave: false);
+        }
+
         StopDragTimers();
         HideBanner();
         AbortTransfer();
@@ -104,11 +122,13 @@ internal sealed partial class SessionView
     private void DisposeDrops()
     {
         _upload?.Stop();
+        _held = null;
         CloseProgressWindow();
         StopDragTimers();
         _ackTimer.Dispose();
         _moveTimer.Dispose();
         _leaveTimer.Dispose();
+        _holdTimer.Dispose();
         _banner?.Dispose();
         _banner = null;
     }
@@ -123,9 +143,10 @@ internal sealed partial class SessionView
             return LocalText.Of(nameof(Strings.DropRefusedNotConnected));
         }
 
-        if (_upload is not null)
+        if (_upload is not null || _held is not null)
         {
-            // One transfer at a time: a new drag would end the one the agent is receiving.
+            // One transfer at a time: a new drag would end the one the agent is receiving,
+            // or the live drag whose dragAck a held drop waits for.
             return LocalText.Of(nameof(Strings.TransferBusy));
         }
 
@@ -277,11 +298,12 @@ internal sealed partial class SessionView
     /// <summary>
     /// Sends the queued move once the last message is at least a thirtieth of a second
     /// old. While the cursor rests, a move is repeated every second so that the agent does
-    /// not cancel the drag after five seconds without news.
+    /// not cancel the drag after five seconds without news. The moves go on while a drop
+    /// is held for the dragAck, since the live drag of the agent runs until the drop.
     /// </summary>
     private void FlushMove(bool keepAlive)
     {
-        var live = _live;
+        var live = _live ?? _held?.Live;
         if (live is not { Sent: true, State: AckState.Pending or AckState.Accepted })
         {
             _moveTimer.Stop();
@@ -316,17 +338,36 @@ internal sealed partial class SessionView
         }
 
         var remote = ToRemote(e.ClientPoint);
+        if (live.State == AckState.Pending)
+        {
+            // Sent now, the drop would go through drive redirection even when the dragAck
+            // on its way offers a transfer.
+            return HoldDrop(live, e, remote);
+        }
+
         LogDrag(Invariant($"Drop after {live.Moves} move(s){(live.TransferId is null ? string.Empty : ", deferred for transfer " + live.TransferId)}"), live.Id, e, remote);
-        var drop = new DropMessage(live.Id, remote.X, remote.Y, e.KeyState, Deferred: live.TransferId is null ? null : true);
+        EndLiveDrag(sendLeave: false);
+        return SendDrop(live, remote, e.KeyState) ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+
+    /// <summary>
+    /// Sends the drop of <paramref name="live"/>, which no longer is the live drag, deferred
+    /// when the agent offered a transfer, then starts the transfer or waits for the result.
+    /// Returns false when the drop could not be sent.
+    /// </summary>
+    private bool SendDrop(LiveDrag live, Point remote, int keyState)
+    {
+        var drop = new DropMessage(live.Id, remote.X, remote.Y, keyState, Deferred: live.TransferId is null ? null : true);
         if (!_agent.SendDrag(drop, live.Id))
         {
-            EndLiveDrag(sendLeave: true);
-            ShowDropStatus(LocalText.Of(nameof(Strings.DropFailedNotSent)));
-            return DragDropEffects.None;
+            SendLeave(live);
+            var reason = LocalText.Of(nameof(Strings.DropFailedNotSent));
+            ShowDropStatus(reason);
+            ProgressWindowOf(live.Id)?.ShowFailure(reason);
+            return false;
         }
 
         _pendingDropId = live.Id;
-        EndLiveDrag(sendLeave: false);
         if (live.TransferId is { } transferId)
         {
             StartTransfer(live.Id, transferId, live.Items);
@@ -337,11 +378,145 @@ internal sealed partial class SessionView
             OpenProgressWindow(live.Id, live.Items, transfer: false);
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// The drop happened before the dragAck arrived: it waits for it, for at most
+    /// <see cref="DropDecision.MaxWait"/>, with the window in its preparing stage. The live
+    /// drag of the agent is kept alive by the moves meanwhile, now at the drop point.
+    /// </summary>
+    private DragDropEffects HoldDrop(LiveDrag live, FileDragEventArgs e, Point remote)
+    {
+        LogDrag(Invariant($"Drop after {live.Moves} move(s), held until the agent answers the drag"), live.Id, e, remote);
+        _ackTimer.Stop();
+        _leaveTimer.Stop();
+        _live = null;
+        _held = new HeldDrop(live, remote, e.KeyState, new DropDecision(live.Id, Environment.TickCount64));
+        live.Queued = (remote, live.LastKeys);
+        FlushMove(keepAlive: false);
+        _moveTimer.Start();
+        _holdTimer.Interval = (int)DropDecision.MaxWait.TotalMilliseconds;
+        _holdTimer.Stop();
+        _holdTimer.Start();
+        ShowDropStatus(LocalText.Of(nameof(Strings.Dragging), live.Items.Count));
+        OpenProgressWindow(live.Id, live.Items, transfer: true);
+        RaiseStateChanged();
         return DragDropEffects.Copy;
     }
 
+    private void OnHoldTick()
+    {
+        if (_held is not { } held)
+        {
+            _holdTimer.Stop();
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (!held.Decision.Expire(now))
+        {
+            // A timer may tick a little early; it waits for the rest.
+            _holdTimer.Interval = (int)Math.Max(1, held.Decision.RemainingMilliseconds(now));
+            return;
+        }
+
+        ResolveHeldDrop(held);
+
+        // As after a missing dragAck during a drag: an agent that exited or restarted in
+        // the session goes unnoticed otherwise.
+        _agent.Recheck("no dragAck for a held drop");
+    }
+
+    /// <summary>The dragAck of a held drop arrived: the decision is taken at once.</summary>
+    private void OnHeldDragAck(HeldDrop held, DragAckMessage ack)
+    {
+        if (!held.Decision.OnAck(ack, Environment.TickCount64))
+        {
+            return;
+        }
+
+        var live = held.Live;
+        if (ack.Accepted)
+        {
+            live.State = AckState.Accepted;
+            live.TransferId = held.Decision.TransferId;
+        }
+        else
+        {
+            live.State = AckState.Refused;
+            live.Problem = RefusalText(ack);
+        }
+
+        ResolveHeldDrop(held);
+    }
+
+    /// <summary>
+    /// Ends the wait of <paramref name="held"/>: the drop goes out, deferred when a transfer
+    /// was offered, or the refusal of the agent is shown.
+    /// </summary>
+    private void ResolveHeldDrop(HeldDrop held)
+    {
+        var live = held.Live;
+        var decision = held.Decision;
+        ReleaseHold();
+        ClientLog.Info(Invariant($"Drop {live.Id} held {decision.WaitedMilliseconds(Environment.TickCount64)} ms for the agent answer: {decision.Describe()}."));
+        if (!decision.SendsDrop)
+        {
+            SendLeave(live);
+            var problem = live.Problem ?? LocalText.Of(nameof(Strings.DropRefused));
+            ShowDropStatus(problem);
+            ProgressWindowOf(live.Id)?.ShowFailure(problem);
+            return;
+        }
+
+        SendDrop(live, held.Point, held.KeyState);
+    }
+
+    /// <summary>
+    /// Gives up a held drop before the agent answered: cancelled by the user, the tab
+    /// closing or the session ending. The agent is told when <paramref name="sendLeave"/> is set.
+    /// </summary>
+    private void GiveUpHeldDrop(HeldDrop held, LocalText reason, string why, bool sendLeave)
+    {
+        held.Decision.Abandon(Environment.TickCount64);
+        ReleaseHold();
+        ClientLog.Info(Invariant($"Drop {held.Live.Id} held {held.Decision.WaitedMilliseconds(Environment.TickCount64)} ms for the agent answer: {held.Decision.Describe()}, {why}."));
+        if (sendLeave)
+        {
+            SendLeave(held.Live);
+        }
+
+        ShowDropStatus(reason);
+        ProgressWindowOf(held.Live.Id)?.ShowFailure(reason);
+    }
+
+    /// <summary>Forgets the held drop and stops its timers.</summary>
+    private void ReleaseHold()
+    {
+        _held = null;
+        _holdTimer.Stop();
+        if (_live is null)
+        {
+            _moveTimer.Stop();
+        }
+
+        RaiseStateChanged();
+    }
+
+    private static LocalText RefusalText(DragAckMessage ack) =>
+        string.IsNullOrWhiteSpace(ack.Message)
+            ? LocalText.Of(nameof(Strings.DropRefusedByAgent))
+            : LocalText.Of(nameof(Strings.DropRefusedReason), ack.Message);
+
     private void OnDragAck(DragAckMessage ack)
     {
+        if (_held is { } held && held.Live.Id == ack.Id)
+        {
+            OnHeldDragAck(held, ack);
+            return;
+        }
+
         var live = _live;
         if (live is not null && live.Id == ack.Id)
         {
@@ -367,9 +542,7 @@ internal sealed partial class SessionView
             }
 
             live.State = AckState.Refused;
-            live.Problem = string.IsNullOrWhiteSpace(ack.Message)
-                ? LocalText.Of(nameof(Strings.DropRefusedByAgent))
-                : LocalText.Of(nameof(Strings.DropRefusedReason), ack.Message);
+            live.Problem = RefusalText(ack);
             _ackTimer.Stop();
             ShowDropStatus(live.Problem);
             return;
@@ -413,7 +586,16 @@ internal sealed partial class SessionView
         var live = _live;
         _live = null;
         StopDragTimers();
-        if (sendLeave && live is { Sent: true, LeaveSent: false })
+        if (sendLeave && live is not null)
+        {
+            SendLeave(live);
+        }
+    }
+
+    /// <summary>Tells the agent that the drag of <paramref name="live"/> is over, once.</summary>
+    private void SendLeave(LiveDrag live)
+    {
+        if (live is { Sent: true, LeaveSent: false })
         {
             live.LeaveSent = true;
             _agent.SendDrag(new DragLeaveMessage(live.Id), live.Id);
@@ -423,8 +605,12 @@ internal sealed partial class SessionView
     private void StopDragTimers()
     {
         _ackTimer.Stop();
-        _moveTimer.Stop();
         _leaveTimer.Stop();
+        if (_held is null)
+        {
+            // A held drop keeps its moves going, even while a new drag is refused.
+            _moveTimer.Stop();
+        }
     }
 
     private List<DropItem>? MapItems(IReadOnlyList<string> files, out LocalText? problem)
@@ -583,5 +769,20 @@ internal sealed partial class SessionView
         public string? TransferId { get; set; }
 
         public int Moves { get; set; }
+    }
+
+    /// <summary>A drop that waits for the dragAck of its drag, with what the drop message needs.</summary>
+    private sealed class HeldDrop(LiveDrag live, Point point, int keyState, DropDecision decision)
+    {
+        /// <summary>The drag, which is no longer the live drag of the view.</summary>
+        public LiveDrag Live { get; } = live;
+
+        /// <summary>The drop point in the remote desktop.</summary>
+        public Point Point { get; } = point;
+
+        /// <summary>The keys at the drop.</summary>
+        public int KeyState { get; } = keyState;
+
+        public DropDecision Decision { get; } = decision;
     }
 }

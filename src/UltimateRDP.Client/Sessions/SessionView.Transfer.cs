@@ -32,12 +32,18 @@ internal sealed partial class SessionView
     /// <summary>The window of the current or last drop, until it is closed.</summary>
     private DropProgressForm? _progressWindow;
 
-    /// <summary>True while files are being transferred to the agent.</summary>
-    public bool CanCancelTransfer => _upload is not null;
+    /// <summary>True while files are being transferred to the agent, or a drop waits for the dragAck that may offer a transfer.</summary>
+    public bool CanCancelTransfer => _upload is not null || _held is not null;
 
-    /// <summary>Cancels the transfer in progress, from the menu or the progress window.</summary>
+    /// <summary>Cancels the transfer in progress, or the held drop, from the menu or the progress window.</summary>
     public void CancelTransfer()
     {
+        if (_held is { } held)
+        {
+            GiveUpHeldDrop(held, LocalText.Of(nameof(Strings.DropCancelled)), "cancelled by the user", sendLeave: true);
+            return;
+        }
+
         if (_upload is not { } upload)
         {
             return;
@@ -251,6 +257,11 @@ internal sealed partial class SessionView
     /// </summary>
     private void CancelTransferForClose()
     {
+        if (_held is { } held)
+        {
+            GiveUpHeldDrop(held, LocalText.Of(nameof(Strings.DropCancelled)), "the tab of the session is closing", sendLeave: true);
+        }
+
         if (_upload is { } upload)
         {
             ClientLog.Info($"Transfer {upload.TransferId}: cancelled, the tab of the session is closing.");
@@ -287,15 +298,23 @@ internal sealed partial class SessionView
 
     /// <summary>
     /// Opens the window of a new drop, centered over the session, without taking the focus:
-    /// preparing a <paramref name="transfer"/>, or dropping through drive redirection.
+    /// preparing a <paramref name="transfer"/>, or dropping through drive redirection. A
+    /// window already open for the same drag, the one of a held drop, moves on to that stage.
     /// </summary>
     private void OpenProgressWindow(string dragId, IReadOnlyList<DropItem> items, bool transfer)
     {
+        var firstItem = items.Count > 0 ? TransferPaths.ItemName(items[0].ClientPath) : string.Empty;
+        if (ProgressWindowOf(dragId) is { IsRunning: true } open)
+        {
+            ShowStage(open, firstItem, items.Count, transfer);
+            return;
+        }
+
         CloseProgressWindow();
         var window = new DropProgressForm(dragId, Host);
         window.CancelRequested += (_, _) =>
         {
-            if (_upload is { } upload && upload.DragId == window.DragId)
+            if ((_upload?.DragId ?? _held?.Live.Id) == window.DragId)
             {
                 CancelTransfer();
             }
@@ -308,29 +327,35 @@ internal sealed partial class SessionView
             }
         };
         _progressWindow = window;
-        var firstItem = items.Count > 0 ? TransferPaths.ItemName(items[0].ClientPath) : string.Empty;
-        if (transfer)
-        {
-            window.ShowPreparing(firstItem, items.Count);
-        }
-        else
-        {
-            window.ShowDropping(firstItem, items.Count);
-        }
-
+        ShowStage(window, firstItem, items.Count, transfer);
         window.ShowOver(FindForm(), SessionScreenArea());
     }
 
-    /// <summary>The window of <paramref name="upload"/>, when it is still open.</summary>
-    private DropProgressForm? ProgressWindowOf(TransferUpload upload) =>
-        _progressWindow is { IsDisposed: false } window && window.DragId == upload.DragId ? window : null;
+    private static void ShowStage(DropProgressForm window, string firstItem, int itemCount, bool transfer)
+    {
+        if (transfer)
+        {
+            window.ShowPreparing(firstItem, itemCount);
+        }
+        else
+        {
+            window.ShowDropping(firstItem, itemCount);
+        }
+    }
 
-    /// <summary>A new drag was refused because a transfer runs: the window says so too.</summary>
+    /// <summary>The window of <paramref name="upload"/>, when it is still open.</summary>
+    private DropProgressForm? ProgressWindowOf(TransferUpload upload) => ProgressWindowOf(upload.DragId);
+
+    /// <summary>The window of the drop of <paramref name="dragId"/>, when it is still open.</summary>
+    private DropProgressForm? ProgressWindowOf(string dragId) =>
+        _progressWindow is { IsDisposed: false } window && window.DragId == dragId ? window : null;
+
+    /// <summary>A new drag was refused because a transfer runs or a drop is held: the window says so too.</summary>
     private void NoteBusyRefusal()
     {
-        if (_upload is { } upload)
+        if ((_upload?.DragId ?? _held?.Live.Id) is { } dragId)
         {
-            ProgressWindowOf(upload)?.ShowBusyNotice();
+            ProgressWindowOf(dragId)?.ShowBusyNotice();
         }
     }
 
