@@ -326,7 +326,10 @@ Behaviour:
 7. Command line:
    * `--install`: add a `Run` value under `HKCU` so the agent starts with the
      user session, then start the agent.
-   * `--uninstall`: remove that value and stop any running instance.
+   * `--uninstall`: remove that value, and the `HKLM` value too when run
+     elevated; stop the running instance through its exit event, say so when
+     none was running, and exit with code 1 when it still runs after five
+     seconds.
    * `--install-all-users`: same under `HKLM` (needs an elevated prompt).
      Running it again changes nothing. It refuses an executable inside a
      user profile (the profile of the current user, or the folder of all
@@ -372,8 +375,9 @@ them it must be invisible, harmless and light.
   private working set, 5 threads, and no measurable processor time, against
   about 7 MB and 12 threads before these changes.
 * Retry without spinning. `ChannelRetryPolicy` in Core decides the wait
-  before the next open: two seconds after a closed channel or an unexpected
-  failure, ten seconds when the session is not remote
+  before the next open: two seconds after a closed channel on which a client
+  spoke, or an unexpected failure (a channel that closes before any client
+  data counts as a failure), ten seconds when the session is not remote
   (`GetSystemMetrics(SM_REMOTESESSION)`), has no client, when the open fails
   with "not found" (the client did not ask for the channel), or after three
   failures in a row. For thirty seconds after the start, a connection or a
