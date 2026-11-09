@@ -33,6 +33,9 @@ internal sealed class DropProgressForm : Form
     private const int BusyNoticeMilliseconds = 5000;
     private const int BarMaximum = 1000;
 
+    /// <summary>Size of the client area at 96 DPI.</summary>
+    private static readonly Size LogicalClientSize = new(460, 170);
+
     private static readonly Color FailureColor = Color.FromArgb(192, 0, 0);
     private static readonly Color NoticeColor = Color.FromArgb(150, 80, 0);
 
@@ -91,9 +94,11 @@ internal sealed class DropProgressForm : Form
 
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(460, 170);
-        Padding = new Padding(10, 8, 10, 6);
+
+        // The border first: a change of border keeps the outer size and changes the client size.
         FormBorderStyle = FormBorderStyle.FixedDialog;
+        ClientSize = LogicalClientSize;
+        Padding = new Padding(10, 8, 10, 6);
         ControlBox = false;
         MinimizeBox = false;
         MaximizeBox = false;
@@ -308,6 +313,13 @@ internal sealed class DropProgressForm : Form
     /// <summary>Writes every text again in the current user interface language.</summary>
     public void ApplyTexts() => Render();
 
+    protected override void OnLoad(EventArgs e)
+    {
+        // The window now exists on its monitor and knows its DPI.
+        FitToDpi();
+        base.OnLoad(e);
+    }
+
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
@@ -319,7 +331,25 @@ internal sealed class DropProgressForm : Form
     protected override void OnDpiChanged(DpiChangedEventArgs e)
     {
         base.OnDpiChanged(e);
-        BeginInvoke(Place);
+        BeginInvoke(() =>
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            FitToDpi();
+
+            // Taken to another monitor than the session, for example with Win+Shift+Arrow:
+            // it stays there, as after a move with the mouse. Moving it back from here
+            // would start a second change of DPI inside the first one.
+            if (!_area.IsEmpty && Screen.FromControl(this).DeviceName != Screen.FromRectangle(_area).DeviceName)
+            {
+                _movedByUser = true;
+            }
+
+            Place();
+        });
     }
 
     protected override void OnResizeEnd(EventArgs e)
@@ -448,6 +478,20 @@ internal sealed class DropProgressForm : Form
         {
             _closeAt = null;
             Close();
+        }
+    }
+
+    /// <summary>
+    /// Gives the client area its size at the DPI of the monitor. The auto scaling of
+    /// Windows Forms scales the outer size, title bar included, so the client area
+    /// would grow at each scaling.
+    /// </summary>
+    private void FitToDpi()
+    {
+        var size = LogicalToDeviceUnits(LogicalClientSize);
+        if (ClientSize != size)
+        {
+            ClientSize = size;
         }
     }
 

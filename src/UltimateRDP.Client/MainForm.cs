@@ -41,6 +41,7 @@ internal sealed partial class MainForm : Form
     private readonly ToolStripStatusLabel _connectionLabel = new();
     private readonly ToolStripStatusLabel _agentLabel = new();
     private readonly ToolStripStatusLabel _dropLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly Rectangle _initialBounds;
 
     private bool _closeRequested;
     private bool _closeScheduled;
@@ -58,11 +59,15 @@ internal sealed partial class MainForm : Form
         InitializeFileMenu();
         InitializeViewMenu();
 
+        SuspendLayout();
         Text = AppInfo.Name;
-        StartPosition = FormStartPosition.CenterScreen;
-        var area = Screen.PrimaryScreen?.WorkingArea.Size ?? new Size(1280, 800);
-        Size = new Size(area.Width * 4 / 5, area.Height * 4 / 5);
         AllowDrop = true;
+
+        // Sizes are given at 96 DPI and the font is the default one: Windows Forms scales
+        // both to the monitor the window opens on, and again on every DpiChanged when the
+        // window goes to a monitor with another DPI.
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        AutoScaleMode = AutoScaleMode.Dpi;
 
         var menu = BuildMenu();
         var status = new StatusStrip { ShowItemToolTips = true };
@@ -73,8 +78,19 @@ internal sealed partial class MainForm : Form
         Controls.Add(_tabs);
         Controls.Add(_emptyLabel);
         Controls.Add(status);
+        ResumeLayout(false);
+        PerformLayout();
+
+        // After the first auto scaling: the menu bar already takes its padding from the
+        // DPI when it is created, and would be scaled a second time.
         Controls.Add(menu);
         MainMenuStrip = menu;
+
+        // In pixels of the monitor the window opens on, so after the auto scaling above;
+        // set again in OnLoad.
+        StartPosition = FormStartPosition.Manual;
+        _initialBounds = InitialBounds();
+        Bounds = _initialBounds;
         _tabs.SelectedIndexChanged += (_, _) => OnActiveTabChanged();
 
         ClientLog.Info("Main form created.");
@@ -147,6 +163,24 @@ internal sealed partial class MainForm : Form
         ActiveSession?.ProcessDragLeave();
     }
 
+    /// <summary>
+    /// A window created on a monitor whose DPI differs from the system DPI is scaled once
+    /// more by Windows Forms. Its first bounds are already pixels of that
+    /// monitor, so they are set again.
+    /// </summary>
+    protected override void OnLoad(EventArgs e)
+    {
+        if (Bounds != _initialBounds)
+        {
+            ClientLog.Info(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"Window created at {DeviceDpi} DPI; bounds {Bounds} set back to {_initialBounds}."));
+            Bounds = _initialBounds;
+        }
+
+        base.OnLoad(e);
+    }
+
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         ClientLog.Info("Form closed.");
@@ -171,6 +205,18 @@ internal sealed partial class MainForm : Form
             Name = "Exit watchdog",
         };
         watchdog.Start();
+    }
+
+    /// <summary>
+    /// Four fifths of the working area of the monitor under the mouse, centered on it,
+    /// where CenterScreen would put the window, in pixels of that monitor.
+    /// </summary>
+    private static Rectangle InitialBounds()
+    {
+        var area = Screen.FromPoint(Cursor.Position).WorkingArea;
+        var width = area.Width * 4 / 5;
+        var height = area.Height * 4 / 5;
+        return new Rectangle(area.X + ((area.Width - width) / 2), area.Y + ((area.Height - height) / 2), width, height);
     }
 
     private static SessionView? SessionOf(TabPage? page) =>

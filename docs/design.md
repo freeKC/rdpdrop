@@ -1442,3 +1442,18 @@ time of one run of 0.4.3 did not.
 There is no protocol change. The client summaries need a 0.4.4 client, the
 agent summaries a 0.4.4 agent; both sides at 0.4.4 give the full picture.
 A 0.4.4 client works with a 0.4.1 to 0.4.3 agent and the other way round.
+## Display scaling of the client
+
+The client is per monitor DPI aware (PerMonitorV2). The main window, the drop
+window and the drop banner use `AutoScaleMode.Dpi` with sizes given at 96 DPI,
+so Windows Forms scales them to the monitor they open on and again at each
+`DpiChanged` when they go to a monitor with another DPI. The menus and the
+status bar take the font of the form through the runtime option
+`System.Windows.Forms.ApplyParentFontToMenus`: their own default font kept the
+size of the DPI the window opened on. The main window opens on the monitor
+under the mouse, at four fifths of its working area. The drop window sets its
+client area from its 96 DPI size after each change of DPI, and stays on a
+monitor it was taken to. A change of DPI does not reconnect a session: the
+next connection takes the scale factor that Auto gives on the new monitor, and
+the status bar says so when the session uses Auto. Drop points stay in
+physical pixels on every monitor.
