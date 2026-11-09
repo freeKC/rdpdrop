@@ -37,6 +37,9 @@ internal sealed partial class SessionView : UserControl
     private LocalText _connectionText = LocalText.Of(nameof(Strings.ConnectionNotConnected));
     private LocalText _dropText = LocalText.Empty;
 
+    /// <summary>The notice shown after a change of monitor DPI, while it is the drop text.</summary>
+    private LocalText? _scaleNotice;
+
     /// <summary>
     /// Creates the view for <paramref name="file"/>, read from <paramref name="rdpPath"/>.
     /// The display choices start from <paramref name="settings"/>; the keys of the .rdp
@@ -276,6 +279,33 @@ internal sealed partial class SessionView : UserControl
 
         // The base constructor resizes the view before the controller exists.
         _display?.OnWindowResized();
+    }
+
+    /// <summary>
+    /// The window went to a monitor with another DPI. The menu shows the new Auto factor
+    /// at once; an open session that uses Auto is told that it applies at the next
+    /// connection. Nothing reconnects by itself.
+    /// </summary>
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        if (_display is null || _closeRequested)
+        {
+            return;
+        }
+
+        if (_display.OnDpiChanged(connected: State != SessionState.Disconnected))
+        {
+            _scaleNotice = LocalText.Of(nameof(Strings.SettingAppliesNextConnection), LocalText.Of(nameof(Strings.SettingScaleFactor)));
+            ShowDropStatus(_scaleNotice);
+        }
+        else if (_dropText == _scaleNotice)
+        {
+            // Back on a monitor where Auto gives the factor of the session.
+            ShowDropStatus(LocalText.Empty);
+        }
+
+        RaiseStateChanged();
     }
 
     private void ReportClosed()

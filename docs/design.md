@@ -1228,3 +1228,19 @@ The client and the agent should both run 0.4.3. A 0.4.1 or 0.4.2 agent works
 with a 0.4.3 client, since several lines in one call were always allowed; it
 only reports a lost `fileBegin` as "Data was lost or damaged on the way." A
 0.4.3 agent works with a 0.4.1 or 0.4.2 client.
+
+## Display scaling of the client
+
+The client is per monitor DPI aware (PerMonitorV2). The main window, the drop
+window and the drop banner use `AutoScaleMode.Dpi` with sizes given at 96 DPI,
+so Windows Forms scales them to the monitor they open on and again at each
+`DpiChanged` when they go to a monitor with another DPI. The menus and the
+status bar take the font of the form through the runtime option
+`System.Windows.Forms.ApplyParentFontToMenus`: their own default font kept the
+size of the DPI the window opened on. The main window opens on the monitor
+under the mouse, at four fifths of its working area. The drop window sets its
+client area from its 96 DPI size after each change of DPI, and stays on a
+monitor it was taken to. A change of DPI does not reconnect a session: the
+next connection takes the scale factor that Auto gives on the new monitor, and
+the status bar says so when the session uses Auto. Drop points stay in
+physical pixels on every monitor.

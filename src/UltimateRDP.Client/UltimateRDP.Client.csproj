@@ -17,6 +17,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Menus and status bar take the font of the form, which Windows Forms scales on
+         every change of monitor DPI. Their own default font keeps the size it had for
+         the DPI of the monitor the window opened on. -->
+    <RuntimeHostConfigurationOption Include="System.Windows.Forms.ApplyParentFontToMenus" Value="true" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\UltimateRDP.Core\UltimateRDP.Core.csproj" />
   </ItemGroup>
 

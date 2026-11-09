@@ -34,6 +34,8 @@ internal sealed class DisplayController : IDisposable
     private Size _requested;
     private int _desktopScale = SessionDisplay.DefaultScaleFactor;
     private int _deviceScale = SessionDisplay.DefaultScaleFactor;
+    private bool _autoScale;
+    private int _dpi;
     private bool _multimon;
 
     public DisplayController(RdpControl control, Control owner, DisplayMode mode)
@@ -60,6 +62,8 @@ internal sealed class DisplayController : IDisposable
     {
         _desktopScale = scaleChoice ?? AutoScaleFactor;
         _deviceScale = SessionDisplay.DeviceScaleFor(_desktopScale);
+        _autoScale = scaleChoice is null;
+        _dpi = _owner.DeviceDpi;
         _multimon = useMultimon;
         _updateRefused = false;
         _loggedOn = false;
@@ -111,6 +115,21 @@ internal sealed class DisplayController : IDisposable
             _timer.Stop();
             _timer.Start();
         }
+    }
+
+    /// <summary>
+    /// The window went to a monitor with another DPI. The open session keeps its scale
+    /// factor, since the control only reads it when connecting; the size updates that
+    /// follow the resize carry the new DPI. Returns true when the session uses Auto and
+    /// Auto now gives another factor, which the next connection takes.
+    /// </summary>
+    public bool OnDpiChanged(bool connected)
+    {
+        var auto = AutoScaleFactor;
+        ClientLog.Info(connected
+            ? Invariant($"Monitor of the view now at {_owner.DeviceDpi} DPI: Auto gives {auto} %; the session was opened at {_dpi} DPI with {_desktopScale} %")
+            : Invariant($"Monitor of the view now at {_owner.DeviceDpi} DPI: Auto gives {auto} %"));
+        return connected && _autoScale && auto != _desktopScale;
     }
 
     public void OnFullScreenChanged(bool fullScreen)
