@@ -61,16 +61,12 @@ public sealed class TransferProgress
     public TransferProgress(long totalBytes, long startMilliseconds)
     {
         TotalBytes = Math.Max(0, totalBytes);
-        StartMilliseconds = startMilliseconds;
         LastSample = (startMilliseconds, 0);
         _samples.Enqueue(LastSample);
     }
 
     /// <summary>Bytes of the whole transfer.</summary>
     public long TotalBytes { get; }
-
-    /// <summary>When the transfer started.</summary>
-    public long StartMilliseconds { get; }
 
     /// <summary>Bytes done, as last reported.</summary>
     public long DoneBytes { get; private set; }

@@ -37,6 +37,10 @@ public class TransferPathsTests
     [InlineData(@"Photos\a.jpg")]
     [InlineData(@"Photos\2026\.hidden")]
     [InlineData(@"Photos\a b\c..d.txt")]
+    [InlineData(@"Photos\COM10.txt")]
+    [InlineData(@"Photos\CONSOLE")]
+    [InlineData(@"Photos\LPT")]
+    [InlineData(@"Photos\nul2.txt")]
     public void Allowed_paths(string path)
     {
         Assert.True(TransferPaths.IsAllowed(path, Items));
@@ -68,6 +72,14 @@ public class TransferPathsTests
     [InlineData(@"Photos\nul.txt")]
     [InlineData(@"Photos\COM1.log")]
     [InlineData(@"Photos\LPT9")]
+    [InlineData(@"Photos\COM0")]
+    [InlineData(@"Photos\lpt0.txt")]
+    [InlineData(@"Photos\COM¹")]
+    [InlineData(@"Photos\lpt³.log")]
+    [InlineData(@"Photos\CONIN$")]
+    [InlineData(@"Photos\conout$.txt")]
+    [InlineData(@"Photos\a.txt:hidden")]
+    [InlineData(@"Photos\a.txt::$DATA")]
     public void Refused_paths(string? path)
     {
         Assert.False(TransferPaths.IsAllowed(path, Items));
