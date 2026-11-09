@@ -301,7 +301,9 @@ Behaviour:
 1. Channel loop on a background thread:
    `WTSVirtualChannelOpen(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, "ULTRDP")`,
    then `WTSVirtualChannelRead` with a short timeout, so that the loop can
-   stop or restart without closing a handle under a pending read. Detect the
+   stop or restart without closing a handle under a pending read (or, with
+   the `channelRead` setting at `file`, `ReadFile` on the file handle of the
+   channel, see "Version 0.4.4"). Detect the
    byte model from the first two bytes, convert chunks to text with
    `ChannelTextCodec`, feed a `LineReader`, dispatch messages, write replies
    with `WTSVirtualChannelWrite` in the same byte model. On any error
@@ -337,8 +339,8 @@ Behaviour:
    dialog with the version, the publisher APROGSYS and its web site, and the
    project page, as links. Settings in
    `%LOCALAPPDATA%\UltimateRDP\agent.json` (`stageFiles`, `fastTransfer`,
-   and `fastTransferMinBytes`, `logLevel` and `trayIcon` which are only
-   editable in the file). Logs in
+   and `fastTransferMinBytes`, `logLevel`, `trayIcon` and `channelRead`
+   which are only editable in the file). Logs in
    `%LOCALAPPDATA%\UltimateRDP\logs\agent-<date>.log`, rotated by day, kept
    fourteen days.
 7. Command line:
@@ -523,6 +525,13 @@ the fallback for anything missing.
   few megabytes through the ASCII line codec in both byte models, with a lost
   chunk, a damaged chunk and a cancel. A test sends 100 MB through the whole
   codec path and fails beyond a minute; it takes under a second.
+* The measures of version 0.4.4: the `channelRead` setting, the channel
+  headers of the file handle (detection, chunks one per read and several
+  per read, a last chunk followed by the next message, every inconsistency,
+  and lines read back through the decoder and the line reader), the read
+  counters and their summary, the call counters and the acknowledgement
+  round trips of the client, the window bounds and its raise above the
+  acknowledgement interval, and whole transfers with other windows.
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -834,7 +843,8 @@ Messages, agent to client:
 Flow control and checks:
 
 * The client keeps at most 4 MiB sent and not acknowledged, measured with the
-  `fileAck` messages (`TransferSender` in Core). With 15 ms of latency this
+  `fileAck` messages (`TransferSender` in Core); since 0.4.4 the setting
+  `transferWindowBytes` changes it. With 15 ms of latency this
   keeps the link busy far beyond the measured rate.
 * The agent checks the order of the messages, that each chunk starts where
   the previous one ended (a lost chunk is detected there), the base64, that a
@@ -1228,3 +1238,168 @@ The client and the agent should both run 0.4.3. A 0.4.1 or 0.4.2 agent works
 with a 0.4.3 client, since several lines in one call were always allowed; it
 only reports a lost `fileBegin` as "Data was lost or damaged on the way." A
 0.4.3 agent works with a 0.4.1 or 0.4.2 client.
+
+
+## Version 0.4.4
+
+Measured in production with 0.4.3: 2.1 to 2.6 MB/s of file data, about
+3.5 MB/s of base64 on the channel, with chunks of 32 KiB as with chunks of
+128 KiB, on a link that carries at least 12 MB/s. The codec handles 100 MB
+in about two seconds in the tests, so it is not the limit. Three places can
+be: the calls of the client to the control, the reads and the processing of
+the agent, or the flow control of the Remote Desktop connection between the
+two. Version 0.4.4 measures each of them and changes nothing in the
+protocol; it does not make the transfer faster by itself.
+
+### What is measured
+
+Client, during each transfer, from the deferred drop to its end
+(`ChannelCallStats` and `AckRoundTrips` in Core, kept by `AgentLink`):
+
+* the time inside every call of `SendOnVirtualChannel`, with
+  `Stopwatch.GetTimestamp` around the call itself, on the path of the hand
+  written interface and on the interop path alike;
+* for every acknowledgement of the agent, the time since the call that
+  carried its last byte returned, and the bytes handed to the control and
+  not yet acknowledged at that moment.
+
+Agent, for every read of the channel thread (`ChannelReadStats` in Core,
+kept by `ChannelLoop`):
+
+* the bytes of the read, sorted in three counts: exactly 1600 bytes
+  (CHANNEL_CHUNK_LENGTH), fewer, more;
+* the time blocked inside the read call, with or without data;
+* the time from the return of the read to the next call, which is the
+  processing of the data: decoding, line reader and the handling of the
+  messages, of which the handling alone (JSON, base64, checksum, file
+  write) is counted apart.
+
+A read costs two calls of `Stopwatch.GetTimestamp` and a few additions. A
+transfer of the agent takes a snapshot of these counters when its receiver
+is created at the deferred drop and logs the difference at its end, with
+the traffic counters of the session from `WTSSessionInfoEx` when Windows
+gives them (`ChannelMeter` in the agent).
+
+Once per connection, when the client first speaks on the channel, the agent
+logs the client address (`WTSClientAddress`), the name of the connection
+and the session flags and counters of `WTSSessionInfoEx`. Windows does not
+tell a process of the session whether the connection uses UDP; the
+connection bar of the client shows it (the signal icon, then "Connection
+information").
+
+### The window of the client
+
+The client setting `transferWindowBytes` in `client.json` replaces the fixed
+window of 4 MiB: 4194304 by default, from 1048576 (1 MiB) to 33554432
+(32 MiB), brought within these bounds. The agent acknowledges every 2 MiB
+and at the end of each file, so a window below 2 MiB plus one chunk would
+wait for an acknowledgement that never comes: such a window is raised to
+2 MiB plus one chunk (`TransferSender.EffectiveWindow`), and the start line
+of the transfer gives the window used and the setting. The strings kept for
+the control (see "Version 0.4.3") may take four times the window, 64 MiB at
+least, so that a large window does not free them early. The queue of the
+agent for the messages that come before the deferred drop now allows twice
+the upper bound of the window, 32 MiB, in base64.
+
+### The two read modes of the agent
+
+The agent setting `channelRead` in `agent.json` is `wts` (the default) or
+`file`, read at startup:
+
+* `wts`: `WTSVirtualChannelRead` with a timeout of 500 ms and a buffer of
+  64 KiB, as before. Each read gives at most one chunk of 1600 bytes.
+* `file`: the agent gets the file handle of the channel with
+  `WTSVirtualChannelQuery(WTSVirtualFileHandle)`, duplicates it, and reads
+  it with `ReadFile` and a buffer of 64 KiB (`ChannelFileReader`). The
+  handle is opened for overlapped operations, so each read is an overlapped
+  one: the channel thread waits for it 500 ms at a time and checks its stop
+  and restart flags in between, as in `wts` mode; when the channel closes,
+  the pending read is cancelled with `CancelIoEx` and waited for before its
+  buffer is freed. Writes still use `WTSVirtualChannelWrite`. The question
+  is whether one read can then return more than one chunk, and whether the
+  rate changes.
+
+Reads through the file handle of a static channel may put a
+CHANNEL_PDU_HEADER of 8 bytes before each chunk: the total length of the
+message the chunk belongs to (one `SendOnVirtualChannel` call of the
+client, in bytes), then the flags, little endian, with CHANNEL_FLAG_FIRST
+(1) on the first chunk of a message and CHANNEL_FLAG_LAST (2) on its last
+one. `ChannelPduFraming` in Core finds out on the first block of a
+connection which case applies: a block that starts with `{` holds the data
+itself and every later block passes through unchanged; a block whose first
+8 bytes read as the header of a first chunk followed by `{` holds headers,
+which are then taken out of every block. A block may hold several chunks: a
+chunk that is not the last one ends with the block, unless a header of the
+same message follows it exactly 1600 bytes later; a last chunk takes the
+bytes its message still misses, and the header of the next message may
+follow. The agent logs once per connection which framing it found.
+
+Any inconsistency stops the file handle for the rest of the connection: a
+first block that is neither data nor a header, flags other than first,
+last, show protocol and shadow persistent (suspend, resume or compression),
+a length that changes inside a message, a first chunk inside a message, a
+chunk without the first flag outside a message, a last chunk too short, a
+chunk without the last flag that completes its message, or a block that
+ends inside a header; a failure of `WTSVirtualChannelQuery`,
+`DuplicateHandle` or `ReadFile` too. The agent then logs a warning with the
+reason, drops the block that did not fit, and reads with
+`WTSVirtualChannelRead` until the channel closes; the next connection tries
+the file handle again. A line cut by the dropped block fails the transfer in
+progress, which the user starts again. The rules are unit tested; this
+development computer has no Remote Desktop session, so the file handle
+itself was not exercised.
+
+### Logs
+
+Client, at the info level, at the start and at the end of each transfer (the
+end covers a result of the agent, a failure, a cancel and a disconnection):
+
+```
+Transfer <id> of drag <id>: started with 1 item(s), chunks of 32768 bytes, window of 4194304 bytes (setting 4194304).
+Transfer <id> channel calls: 2410 calls, 482000000 characters, 9100 ms inside SendOnVirtualChannel, 3.78 ms per call on average, 41.20 ms at most; 5 % of the 190000 ms from the first call to the last, 5 % of the 193000 ms of the transfer.
+Transfer <id> acknowledgements: 237 matched a call, round trip 1480 ms on average, 20 ms at least, 1900 ms at most; 3700000 bytes in flight on average when one came, 4194304 at most, 88 % of the window of 4194304 bytes.
+```
+
+At the debug level the line of each call of the control gives the time
+inside it ("3.12 ms in the call"), and each acknowledgement gets a line with
+its round trip and the bytes in flight.
+
+Agent, at the info level, once per connection and at the end of each
+transfer:
+
+```
+Session connection: client address 192.0.2.10, connection RDP-Tcp#3, session flags 1; counters from WTSSessionInfoEx: 0 bytes and 0 frames in, 0 compressed bytes in, 0 bytes out.
+Transfer <id> channel reads: 302000 reads with data and 12 empty, 482000000 bytes, 1596 bytes per read on average; 301000 of 1600 bytes, 1000 shorter, 0 longer; blocked in the read 178000 ms, processing 14000 ms (9000 ms handling messages), over 193000 ms; read mode wts.
+Transfer <id> session counters: 0 bytes, 0 frames and 0 compressed bytes in, 0 bytes out, from WTSSessionInfoEx (zero when Windows does not count them).
+```
+
+The numbers above only show the format. How to read them:
+
+* The client spends a large share of the time from the first call to the
+  last inside `SendOnVirtualChannel` (well above half): the UI thread is
+  busy in the control, and the control limits the transfer. A larger
+  `transferBatchCharacters` or chunk only helps if the time per call does
+  not grow with the size.
+* The agent spends nearly all of the transfer processing (processing close
+  to the elapsed time, blocked time small): the agent limits the transfer, and the
+  handling time says whether JSON, base64 and the file write are the cost.
+* The client calls take a small share, the agent is blocked in the read for
+  nearly all of the transfer, and the reads are full chunks of 1600 bytes: neither end
+  is busy, and the data waits between the control and the agent. When the
+  bytes in flight stay near the window and the round trip is close to the
+  window divided by the rate, the pipe is full: run a transfer with
+  `transferWindowBytes` at 16777216. If the rate stays and the round trip
+  grows four times, the window is not the limit and the flow control of the
+  Remote Desktop connection is; only another transport helps. If the rate
+  grows, the latency was the limit and a larger window is the remedy.
+* The bytes in flight stay well below the window: the client does not fill
+  it, and the sending thread (file read, base64) or the UI thread is the
+  limit, which the share of the calls then tells apart.
+* In `file` mode, reads counted as longer than 1600 bytes, or several
+  channel headers per read, mean that one read returned several chunks.
+
+### Versions
+
+There is no protocol change. The client summaries need a 0.4.4 client, the
+agent summaries a 0.4.4 agent; both sides at 0.4.4 give the full picture.
+A 0.4.4 client works with a 0.4.1 to 0.4.3 agent and the other way round.

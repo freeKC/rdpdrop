@@ -145,6 +145,7 @@ The client sends the files in chunks of 32 KiB. The setting `transferChunkBytes`
 {
   "transferChunkBytes": 32768,
   "transferBatchCharacters": 200000,
+  "transferWindowBytes": 4194304,
   "logLevel": "info"
 }
 ```
@@ -152,6 +153,34 @@ The client sends the files in chunks of 32 KiB. The setting `transferChunkBytes`
 The client sends its messages to the agent together, at most `transferBatchCharacters` characters in one call to the Remote Desktop control: 200000 by default, from 50000 to 1048576. A value outside these bounds is brought back within them. Leave it alone unless a transfer fails at its start.
 
 The setting `logLevel` of the same file is `info` by default. Set it to `debug` to log every message the client sends to the agent and every call it makes to the Remote Desktop control, then restart the client.
+
+The client keeps at most `transferWindowBytes` bytes of a transfer sent and not yet acknowledged by the agent: 4194304 (4 MiB) by default, from 1048576 (1 MiB) to 33554432 (32 MiB). A value outside these bounds is brought back within them. The agent acknowledges every 2 MiB, so a window below 2 MiB plus one chunk is raised to that; the log gives the window used at the start of each transfer. Change it only to find out what limits a slow transfer, see below.
+
+#### Measuring a slow transfer
+
+From version 0.4.4 both logs end each transfer with summary lines that say where the time went. Install 0.4.4 on both sides for the full picture; with an older client or agent, the other side still logs its own lines.
+
+The client log has two lines:
+
+```
+Transfer <id> channel calls: 2410 calls, 482000000 characters, 9100 ms inside SendOnVirtualChannel, 3.78 ms per call on average, 41.20 ms at most; 5 % of the 190000 ms from the first call to the last, 5 % of the 193000 ms of the transfer.
+Transfer <id> acknowledgements: 237 matched a call, round trip 1480 ms on average, 20 ms at least, 1900 ms at most; 3700000 bytes in flight on average when one came, 4194304 at most, 88 % of the window of 4194304 bytes.
+```
+
+The agent log has one line per connection about the connection, and two lines per transfer:
+
+```
+Transfer <id> channel reads: 302000 reads with data and 12 empty, 482000000 bytes, 1596 bytes per read on average; 301000 of 1600 bytes, 1000 shorter, 0 longer; blocked in the read 178000 ms, processing 14000 ms (9000 ms handling messages), over 193000 ms; read mode wts.
+Transfer <id> session counters: 0 bytes, 0 frames and 0 compressed bytes in, 0 bytes out, from WTSSessionInfoEx (zero when Windows does not count them).
+```
+
+How to read them:
+
+- **The client spends well over half of the time inside SendOnVirtualChannel.** The Remote Desktop control limits the transfer on your computer.
+- **The agent spends nearly all of the time processing, and little blocked in the read.** The agent limits the transfer; the time handling messages covers the JSON, the base64, the checksum and the file write.
+- **The client calls take a small share and the agent waits in the read nearly all of the time.** The data waits between the two, in the Remote Desktop connection. When the bytes in flight stay near the window, try a transfer with `transferWindowBytes` at 16777216. If the rate does not change and the round trip grows four times, the flow control of the connection is the limit. If the rate grows, keep the larger window.
+
+Whether the connection uses UDP shows in the connection bar of the Remote Desktop session: click the signal icon for the connection information.
 
 ### Status bar messages
 
@@ -265,7 +294,8 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
   "stageFiles": false,
   "fastTransfer": "auto",
   "fastTransferMinBytes": 10485760,
-  "trayIcon": "auto"
+  "trayIcon": "auto",
+  "channelRead": "wts"
 }
 ```
 
@@ -276,6 +306,7 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
 | `fastTransferMinBytes` | a number of bytes | `10485760` (10 MiB) | The size from which `auto` sends the files through the channel, counted over all the dropped items. Only editable in the file. |
 | `logLevel` | `debug`, `info`, `warn`, `error` | `info` | The lowest level written to the log. Only editable in the file. |
 | `trayIcon` | `auto`, `always`, `never` | `auto` | `auto` shows the tray icon only while an UltimateRDP client is connected to the session. `always` shows it from the start of the agent. `never` never shows it: the agent is then controlled with `--uninstall` and its `Run` entry only. Only editable in the file. |
+| `channelRead` | `wts`, `file` | `wts` | How the agent reads the channel. `wts` reads it with WTSVirtualChannelRead, 1600 bytes at a time. `file` is an experiment: the agent reads the file handle of the channel with a buffer of 64 KiB, takes out the channel headers it may find, logs which framing it found, and goes back to `wts` for the connection at the first inconsistency, with a warning. Only editable in the file. |
 
 An unknown value gives the default and a warning in the log. Restart the agent after editing the file by hand.
 
@@ -309,7 +340,7 @@ Messages are JSON objects sent as ASCII lines, and each side detects at run time
 - **The texts are in the wrong language.** Choose the language in View, Language. A message from the agent follows the language the client announced at connection time; after a language change, the next message uses the new one.
 - **Drops are refused because of the drives.** Turn on drive redirection in the .rdp file, under Local Resources, More, Drives. On the server, check the policy "Do not allow drive redirection".
 - **The drop lands on the wrong window.** Coordinate scaling after a window resize, or full screen over several monitors, can be the cause. Please report it with both logs.
-- **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s. The client log also gives the length of the first chunk line it sent, and the agent log has a line for the first chunk of each file it received. When the status bar says "The agent did not acknowledge the first data of the transfer.", the data did not get through: the client log then gives the byte model, the chunk size, the length of the lines and the number of lines sent. A smaller `transferChunkBytes` may help, see "Large files". To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
+- **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s, then with the lines described under "Measuring a slow transfer". The client log also gives the length of the first chunk line it sent, and the agent log has a line for the first chunk of each file it received. When the status bar says "The agent did not acknowledge the first data of the transfer.", the data did not get through: the client log then gives the byte model, the chunk size, the length of the lines and the number of lines sent. A smaller `transferChunkBytes` may help, see "Large files". To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
 - **A transfer fails with "A message of the transfer was lost on the way".** A line sent to the agent did not arrive, which versions before 0.4.3 could cause; drop the files again, and if it happens with 0.4.3, report it with both logs taken with `logLevel` set to `debug` on both sides.
 - **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
 
@@ -343,7 +374,7 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 
 ## Status
 
-Version 0.4.3 is a test release.
+Version 0.4.4 is a test release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -351,7 +382,7 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 - The transfer through drive redirection to the remote desktop.
 - The live drag into a remote application.
 
-The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client. Version 0.4.3 fixes short messages that the Remote Desktop control sometimes lost just before a large one, which failed some transfers at their start.
+The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client. Version 0.4.3 fixes short messages that the Remote Desktop control sometimes lost just before a large one, which failed some transfers at their start. Version 0.4.4 measures where the time of a transfer goes, on both sides, and adds the settings `transferWindowBytes` and `channelRead` to test what limits it.
 
 Feedback that helps:
 
