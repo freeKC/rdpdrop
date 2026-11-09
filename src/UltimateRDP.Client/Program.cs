@@ -20,6 +20,7 @@ internal static class Program
 
         // The language comes first: the open dialog below already shows texts.
         var settings = ClientSettings.Load(ClientSettings.DefaultPath);
+        ClientLog.DebugEnabled = settings.DebugLog;
         ClientLog.Info($"Settings: {settings}.");
         UiLanguage.Apply(settings.Language);
 

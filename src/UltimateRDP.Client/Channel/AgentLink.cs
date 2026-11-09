@@ -31,6 +31,15 @@ namespace UltimateRDP.Client.Channel;
 /// The model detected on the reply of the agent only tells how to read what the control
 /// delivers; it is kept for the rest of the connection.
 /// </para>
+/// <para>
+/// Every line goes into a <see cref="SendQueue"/> first. The queue is sent at the end of
+/// the current message of the UI thread, or at once when more than 1 MiB of characters
+/// wait, in as few calls of the control as the 1 MiB limit per call allows, and each
+/// string handed to the control stays allocated until the agent received it
+/// (<see cref="OwnedChannelData"/>). A short line is therefore never alone in a call just
+/// before a large one, the case where the control lost lines in production. A call that
+/// fails empties the queue and raises <see cref="SendFailed"/> with the lines lost.
+/// </para>
 /// </remarks>
 internal sealed class AgentLink : IDisposable
 {
@@ -41,14 +50,19 @@ internal sealed class AgentLink : IDisposable
     private readonly RdpControl _control;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = HelloIntervalMilliseconds };
     private readonly ChannelReceiver _receiver = new();
+    private readonly SendQueue _queue = new();
+    private readonly OwnedChannelData _data;
 
     private DateTime _discoveryDeadline;
     private int _hellosSent;
     private bool _connected;
+    private bool _flushPosted;
+    private long _channelCalls;
 
     public AgentLink(RdpControl control)
     {
         _control = control;
+        _data = new OwnedChannelData(control);
         _control.OnChannelReceivedData += OnChannelReceivedData;
         _timer.Tick += (_, _) => OnTimer();
     }
@@ -71,6 +85,12 @@ internal sealed class AgentLink : IDisposable
     /// <summary>Raised for every transferResult message.</summary>
     public event EventHandler<TransferResultMessage>? TransferResultReceived;
 
+    /// <summary>
+    /// Raised when the control refused a call: the lines of that call and every line still
+    /// waiting are lost, in their order.
+    /// </summary>
+    public event EventHandler<IReadOnlyList<QueuedLine>>? SendFailed;
+
     public AgentState State { get; private set; } = AgentState.NotConnected;
 
     /// <summary>Version reported by the agent, or null before it answers.</summary>
@@ -81,6 +101,12 @@ internal sealed class AgentLink : IDisposable
 
     /// <summary>Byte model of the strings received, locked when the agent answered, Unknown before.</summary>
     public ChannelByteModel Model => _receiver.LockedModel;
+
+    /// <summary>
+    /// Finds out, once, how strings are handed to the control, and logs it. Called before
+    /// the control connects, so that the log says it even when the connection fails.
+    /// </summary>
+    public void PrepareChannel() => _data.Prepare();
 
     /// <summary>
     /// Starts agent discovery. Called on OnConnected.
@@ -146,8 +172,9 @@ internal sealed class AgentLink : IDisposable
 
     /// <summary>
     /// Sends a live drag message (dragEnter, dragMove, drop or dragLeave). Moves are not
-    /// logged one by one: about thirty go out every second. Returns false when the agent
-    /// is not ready or the control refused the data.
+    /// logged one by one at the info level: about thirty go out every second. Returns false
+    /// when the agent is not ready or the message cannot be encoded; a refusal of the
+    /// control comes later, through <see cref="SendFailed"/>.
     /// </summary>
     public bool SendDrag(Message message, string id)
     {
@@ -156,12 +183,12 @@ internal sealed class AgentLink : IDisposable
             return false;
         }
 
-        return Send(message, $"{message.Type} {id}", log: message is not DragMoveMessage);
+        return Send(message, id, $"{message.Type} {id}", log: message is not DragMoveMessage);
     }
 
     /// <summary>
-    /// Sends the log off request. Returns false when the agent is not ready or the control
-    /// refused the data.
+    /// Sends the log off request. Returns false when the agent is not ready or the message
+    /// cannot be encoded.
     /// </summary>
     public bool SendLogoff(LogoffMessage message)
     {
@@ -170,13 +197,14 @@ internal sealed class AgentLink : IDisposable
             return false;
         }
 
-        return Send(message, $"logoff {message.Id}");
+        return Send(message, message.Id, $"logoff {message.Id}");
     }
 
     /// <summary>
-    /// Sends a message of a transfer. transferBegin and transferCancel are logged; the
-    /// messages of each file are not, since a folder may hold thousands of files. Returns
-    /// false when the agent is not ready or the control refused the data.
+    /// Sends a message of a transfer. transferBegin and transferCancel are logged at the
+    /// info level, the messages of each file at the debug level, since a folder may hold
+    /// thousands of files. Returns false when the agent is not ready or the message cannot
+    /// be encoded; a refusal of the control comes later, through <see cref="SendFailed"/>.
     /// </summary>
     public bool SendTransfer(Message message, string transferId)
     {
@@ -185,31 +213,35 @@ internal sealed class AgentLink : IDisposable
             return false;
         }
 
-        return Send(message, $"{message.Type} {transferId}", log: message is TransferBeginMessage or TransferCancelMessage);
+        return Send(message, transferId, Describe(message, transferId), log: message is TransferBeginMessage or TransferCancelMessage);
     }
 
     /// <summary>
-    /// Sends a line built by <see cref="Core.Transfer.TransferSender.EncodeChunk"/>, without a
-    /// log line. Returns false when the agent is not ready or the control refused the data.
+    /// Sends a line built by <see cref="Core.Transfer.TransferSender.EncodeChunk"/>, logged at
+    /// the debug level only. <paramref name="transferPosition"/> is the bytes of the transfer
+    /// sent once this chunk is counted. Returns false when the agent is not ready.
     /// </summary>
-    public bool SendTransferLine(string line, string transferId)
+    public bool SendTransferLine(string line, string transferId, int fileIndex, long transferPosition)
     {
         if (State != AgentState.Ready || Model == ChannelByteModel.Unknown)
         {
             return false;
         }
 
-        try
+        if (ClientLog.DebugEnabled)
         {
-            _control.SendOnVirtualChannel(ProtocolConstants.ChannelName, line);
-            return true;
+            ClientLog.Debug(Invariant($"Sent {MessageTypes.FileChunk} {transferId} file {fileIndex}, {transferPosition} bytes of the transfer, {line.Length} characters."));
         }
-        catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
-        {
-            ClientLog.Error(Invariant($"SendOnVirtualChannel failed for a chunk of transfer {transferId}, {line.Length} characters."), ex);
-            return false;
-        }
+
+        Enqueue(new QueuedLine(line, MessageTypes.FileChunk, transferId, transferPosition));
+        return true;
     }
+
+    /// <summary>
+    /// The agent acknowledged the first <paramref name="acknowledgedBytes"/> of a transfer:
+    /// the strings of the calls that it surely received in full are freed.
+    /// </summary>
+    public void OnTransferAcknowledged(string transferId, long acknowledgedBytes) => _data.OnAcknowledged(transferId, acknowledgedBytes);
 
     /// <summary>
     /// Sends a hello with the current user interface language, after the user changed it,
@@ -231,10 +263,18 @@ internal sealed class AgentLink : IDisposable
     {
         _timer.Dispose();
         _control.OnChannelReceivedData -= OnChannelReceivedData;
+        _queue.Clear();
+        _data.Dispose();
     }
 
     private void ResetProtocol()
     {
+        var dropped = _queue.Clear();
+        if (dropped.Count > 0)
+        {
+            ClientLog.Info(Invariant($"{dropped.Count} line(s) waiting to be sent were dropped: the connection ended. The first one: {dropped[0].Type} {dropped[0].Subject}."));
+        }
+
         _receiver.Reset();
         _hellosSent = 0;
         AgentVersion = null;
@@ -263,10 +303,12 @@ internal sealed class AgentLink : IDisposable
     private void SendHello()
     {
         _hellosSent++;
-        Send(HelloMessage.FromClient(AppInfo.Version, UiLanguage.CurrentCode), Invariant($"hello #{_hellosSent}"));
+        var what = Invariant($"hello #{_hellosSent}");
+        Send(HelloMessage.FromClient(AppInfo.Version, UiLanguage.CurrentCode), what, what);
     }
 
-    private bool Send(Message message, string what, bool log = true)
+    /// <summary>Encodes the message and queues its line. False when it cannot be encoded.</summary>
+    private bool Send(Message message, string subject, string what, bool log = true)
     {
         string line;
         try
@@ -279,22 +321,95 @@ internal sealed class AgentLink : IDisposable
             return false;
         }
 
+        // The line leaves with the queue, at the end of the current UI message at the latest.
+        if (log)
+        {
+            ClientLog.Info(Invariant($"Sent {what}, {line.Length} characters."));
+        }
+        else if (ClientLog.DebugEnabled)
+        {
+            ClientLog.Debug(Invariant($"Sent {what}, {line.Length} characters."));
+        }
+
+        Enqueue(new QueuedLine(line, message.Type, subject));
+        return true;
+    }
+
+    /// <summary>
+    /// Queues a line. More than 1 MiB of characters waiting go out at once in full calls;
+    /// the rest goes out at the end of the current UI message.
+    /// </summary>
+    private void Enqueue(QueuedLine line)
+    {
+        _queue.Enqueue(line);
+        while (_queue.IsOverLimit)
+        {
+            if (!SendBatch(_queue.TakeBatch()!))
+            {
+                return;
+            }
+        }
+
+        if (_queue.Count == 0 || _flushPosted)
+        {
+            return;
+        }
+
+        if (!_control.IsHandleCreated)
+        {
+            // Nothing would run a posted flush without a handle; the control reports the failure.
+            Flush();
+            return;
+        }
+
+        _flushPosted = true;
+        _control.BeginInvoke(Flush);
+    }
+
+    /// <summary>Sends every line waiting, in calls of at most 1 MiB of characters.</summary>
+    private void Flush()
+    {
+        _flushPosted = false;
+        while (_queue.TakeBatch() is { } batch)
+        {
+            if (!SendBatch(batch))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>One call of the control. On a failure, the queue is emptied and <see cref="SendFailed"/> raised.</summary>
+    private bool SendBatch(SendBatch batch)
+    {
+        var first = batch.Lines[0];
         try
         {
-            _control.SendOnVirtualChannel(ProtocolConstants.ChannelName, line);
-            if (log)
+            _data.Send(ProtocolConstants.ChannelName, batch.Text, batch.FirstChunk);
+            _channelCalls++;
+            if (ClientLog.DebugEnabled)
             {
-                ClientLog.Info(Invariant($"Sent {what}, {line.Length} characters."));
+                ClientLog.Debug(Invariant($"Channel call {_channelCalls}: {batch.Lines.Count} line(s), {batch.Text.Length} characters, first {first.Type} {first.Subject}; {_data.RetainedCount} string(s) of {_data.RetainedBytes} bytes kept."));
             }
 
             return true;
         }
-        catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
+        catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException or InvalidComObjectException)
         {
-            ClientLog.Error($"SendOnVirtualChannel failed for {what}.", ex);
+            ClientLog.Error(Invariant($"SendOnVirtualChannel failed for {batch.Lines.Count} line(s), {batch.Text.Length} characters, first {first.Type} {first.Subject}."), ex);
+            List<QueuedLine> lost = [.. batch.Lines, .. _queue.Clear()];
+            SendFailed?.Invoke(this, lost);
             return false;
         }
     }
+
+    /// <summary>The message and what it is about, for the log: the file of fileBegin and fileEnd.</summary>
+    private static string Describe(Message message, string transferId) => message switch
+    {
+        FileBeginMessage file => Invariant($"{message.Type} {transferId} file {file.FileIndex}, {file.Size} bytes"),
+        FileEndMessage end => Invariant($"{message.Type} {transferId} file {end.FileIndex}"),
+        _ => $"{message.Type} {transferId}",
+    };
 
     private void OnChannelReceivedData(object? sender, IMsTscAxEvents_OnChannelReceivedDataEvent e)
     {

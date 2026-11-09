@@ -49,6 +49,30 @@ internal sealed partial class SessionView
     {
         _agent.FileAckReceived += (_, ack) => OnFileAck(ack);
         _agent.TransferResultReceived += (_, result) => OnTransferResult(result);
+        _agent.SendFailed += (_, lines) => OnSendFailed(lines);
+    }
+
+    /// <summary>
+    /// A call of the control failed: a transfer whose lines were lost stops, and a drop whose
+    /// line was lost shows that it was not sent. A lost dragEnter or logoff is caught by the
+    /// wait for its answer.
+    /// </summary>
+    private void OnSendFailed(IReadOnlyList<QueuedLine> lines)
+    {
+        if (_upload is { } upload && lines.Any(line => line.Subject == upload.TransferId || line.Subject == upload.DragId))
+        {
+            upload.OnSendFailed();
+            return;
+        }
+
+        if (_pendingDropId is { } dropId && lines.Any(line => line.Type == MessageTypes.Drop && line.Subject == dropId))
+        {
+            ClientLog.Warn($"Drop {dropId}: its line was not sent.");
+            _pendingDropId = null;
+            var reason = LocalText.Of(nameof(Strings.DropFailedNotSent));
+            ShowDropStatus(reason);
+            ShowDropResultInWindow(dropId, reason, failed: true);
+        }
     }
 
     private void StartTransfer(string dragId, string transferId, IReadOnlyList<DropItem> items)
@@ -61,7 +85,7 @@ internal sealed partial class SessionView
             _transferChunkBytes,
             _agent.Model,
             message => _agent.SendTransfer(message, transferId),
-            line => _agent.SendTransferLine(line, transferId));
+            (line, fileIndex, position) => _agent.SendTransferLine(line, transferId, fileIndex, position));
         upload.Planned += OnTransferPlanned;
         upload.Failed += OnUploadFailed;
         _upload = upload;
@@ -90,7 +114,11 @@ internal sealed partial class SessionView
             return;
         }
 
-        upload.OnAck(ack);
+        if (upload.OnAck(ack) is { } acknowledged)
+        {
+            _agent.OnTransferAcknowledged(upload.TransferId, acknowledged);
+        }
+
         if (upload.Progress?.TryRefresh(Environment.TickCount64) == true)
         {
             ShowTransferProgress(upload);

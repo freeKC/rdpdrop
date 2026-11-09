@@ -26,6 +26,18 @@ internal static class ClientLog
         "UltimateRDP",
         "logs");
 
+    /// <summary>True when the <c>logLevel</c> setting is <c>debug</c>: the debug lines are written too.</summary>
+    public static bool DebugEnabled { get; set; }
+
+    /// <summary>A line written only when <see cref="DebugEnabled"/> is true.</summary>
+    public static void Debug(string message)
+    {
+        if (DebugEnabled)
+        {
+            Write("DEBUG", message);
+        }
+    }
+
     public static void Info(string message) => Write("INFO ", message);
 
     public static void Warn(string message) => Write("WARN ", message);

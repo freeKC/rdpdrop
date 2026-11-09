@@ -276,14 +276,20 @@ internal sealed class SimulatedTransfer
     /// <summary>Most bytes in flight seen before a chunk.</summary>
     public long MostInFlight { get; private set; }
 
+    /// <summary>
+    /// When set, the lines go through this queue and leave in batches, as the client of
+    /// 0.4.3 sends them: full batches at once, the rest before the client waits.
+    /// </summary>
+    public SendQueue? Batching { get; set; }
+
     /// <summary>Runs the transfer; <paramref name="cancelAfterChunks"/> stops it with transferCancel.</summary>
     public void Run(int? cancelAfterChunks = null)
     {
         var chunks = 0;
-        Channel.SendFromClient(Sender.Begin());
+        Send(Sender.Begin());
         foreach (var (_, data) in Files)
         {
-            Channel.SendFromClient(Sender.BeginFile());
+            Send(Sender.BeginFile());
             for (var offset = 0; offset < data.Length; offset += Sender.ChunkSize)
             {
                 if (Result is not null)
@@ -294,6 +300,7 @@ internal sealed class SimulatedTransfer
                 var count = Math.Min(Sender.ChunkSize, data.Length - offset);
                 while (!Sender.CanSend(count))
                 {
+                    Flush();
                     WindowWaits++;
                     if (Channel.DeliverToClient() == 0)
                     {
@@ -309,20 +316,47 @@ internal sealed class SimulatedTransfer
 
                 if (cancelAfterChunks == chunks)
                 {
-                    Channel.SendFromClient(Sender.Cancel("The user cancelled the transfer."));
+                    Send(Sender.Cancel("The user cancelled the transfer."));
+                    Flush();
                     Channel.DeliverToClient();
                     return;
                 }
 
                 MostInFlight = Math.Max(MostInFlight, Sender.InFlightBytes + count);
-                Channel.SendFromClient(Sender.EncodeChunk(data.AsSpan(offset, count)));
+                Send(Sender.EncodeChunk(data.AsSpan(offset, count)));
                 chunks++;
             }
 
-            Channel.SendFromClient(Sender.EndFile());
+            Send(Sender.EndFile());
         }
 
+        Flush();
         Channel.DeliverToClient();
+    }
+
+    private void Send(Message message) => Send(LineFraming.EncodeLine(message), message.Type);
+
+    private void Send(string line, string type = MessageTypes.FileChunk)
+    {
+        if (Batching is null)
+        {
+            Channel.SendFromClient(line);
+            return;
+        }
+
+        Batching.Enqueue(new QueuedLine(line, type, "t1"));
+        while (Batching.IsOverLimit)
+        {
+            Channel.SendFromClient(Batching.TakeBatch()!.Text);
+        }
+    }
+
+    private void Flush()
+    {
+        while (Batching?.TakeBatch() is { } batch)
+        {
+            Channel.SendFromClient(batch.Text);
+        }
     }
 
     /// <summary>A file of <paramref name="size"/> bytes of repeatable random data.</summary>

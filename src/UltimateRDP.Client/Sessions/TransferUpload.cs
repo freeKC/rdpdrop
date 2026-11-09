@@ -44,7 +44,7 @@ internal sealed class TransferUpload
 
     private readonly Control _owner;
     private readonly Func<Message, bool> _sendMessage;
-    private readonly Func<string, bool> _sendLine;
+    private readonly Func<string, int, long, bool> _sendLine;
     private readonly IReadOnlyList<DropItem> _items;
     private readonly int _chunkSize;
     private readonly ChannelByteModel _model;
@@ -62,8 +62,11 @@ internal sealed class TransferUpload
     /// <param name="chunkSize">Raw bytes per chunk, within the bounds of <see cref="TransferSender"/>.</param>
     /// <param name="model">Byte model detected on the data received from the agent, for the log.</param>
     /// <param name="sendMessage">Sends a message on the UI thread; false when it failed.</param>
-    /// <param name="sendLine">Sends a ready line on the UI thread; false when it failed.</param>
-    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, ChannelByteModel model, Func<Message, bool> sendMessage, Func<string, bool> sendLine)
+    /// <param name="sendLine">
+    /// Sends a ready chunk line on the UI thread, with its file and the bytes of the transfer
+    /// sent once it is counted; false when it failed.
+    /// </param>
+    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, ChannelByteModel model, Func<Message, bool> sendMessage, Func<string, int, long, bool> sendLine)
     {
         _owner = owner;
         DragId = dragId;
@@ -157,8 +160,11 @@ internal sealed class TransferUpload
         thread.Start();
     }
 
-    /// <summary>An acknowledgement of the agent. UI thread.</summary>
-    public void OnAck(FileAckMessage ack)
+    /// <summary>
+    /// An acknowledgement of the agent. UI thread. Returns the bytes of the transfer
+    /// acknowledged so far, or null when the acknowledgement was ignored.
+    /// </summary>
+    public long? OnAck(FileAckMessage ack)
     {
         long acknowledged;
         lock (_gate)
@@ -166,7 +172,7 @@ internal sealed class TransferUpload
             if (_sender is null || !_sender.OnAck(ack))
             {
                 ClientLog.Warn(Invariant($"Transfer {TransferId}: unexpected acknowledgement of {ack.Received} bytes of file {ack.FileIndex}. Ignored."));
-                return;
+                return null;
             }
 
             acknowledged = _sender.AcknowledgedBytes;
@@ -175,7 +181,11 @@ internal sealed class TransferUpload
         }
 
         Progress?.Report(Environment.TickCount64, acknowledged);
+        return acknowledged;
     }
+
+    /// <summary>A call of the control that carried lines of this transfer failed. UI thread.</summary>
+    public void OnSendFailed() => Fail(LocalText.Of(nameof(Strings.TransferNotSent)));
 
     /// <summary>Stops reading and sending. Sends nothing. Callable from any thread.</summary>
     public void Stop()
@@ -317,12 +327,15 @@ internal sealed class TransferUpload
                 }
 
                 string line;
+                long position;
                 lock (_gate)
                 {
                     line = _sender!.EncodeChunk(buffer.AsSpan(0, count));
+                    position = _sender.SentBytes;
                 }
 
-                Post(() => SendLine(line));
+                var fileIndex = begin.FileIndex;
+                Post(() => SendLine(line, fileIndex, position));
                 remaining -= count;
             }
 
@@ -436,14 +449,14 @@ internal sealed class TransferUpload
     }
 
     /// <summary>Sends a chunk line on the UI thread; a refusal of the control fails the transfer.</summary>
-    private void SendLine(string line)
+    private void SendLine(string line, int fileIndex, long position)
     {
         if (_stopped)
         {
             return;
         }
 
-        if (!_sendLine(line))
+        if (!_sendLine(line, fileIndex, position))
         {
             Fail(LocalText.Of(nameof(Strings.TransferNotSent)));
             return;

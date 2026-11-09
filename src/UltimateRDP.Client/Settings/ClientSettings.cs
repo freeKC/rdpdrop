@@ -17,6 +17,9 @@ internal sealed class ClientSettings
     /// <summary>Keyboard hook mode of mstsc: Windows keys go to the session in full screen only.</summary>
     public const int DefaultKeyboardHookMode = 2;
 
+    private const string InfoLevel = "info";
+    private const string DebugLevel = "debug";
+
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
     /// <summary>Path of the settings file.</summary>
@@ -49,6 +52,16 @@ internal sealed class ClientSettings
     /// Only editable in the file, so that it can be tuned without a new release.
     /// </summary>
     public int TransferChunkBytes { get; set; } = TransferSender.DefaultChunkSize;
+
+    /// <summary>
+    /// <c>info</c> by default, or <c>debug</c> to also log every message sent to the agent
+    /// and every call of the control. Only editable in the file.
+    /// </summary>
+    public string LogLevel { get; set; } = InfoLevel;
+
+    /// <summary>True when <see cref="LogLevel"/> asks for the debug lines.</summary>
+    [JsonIgnore]
+    public bool DebugLog => string.Equals(LogLevel, DebugLevel, StringComparison.Ordinal);
 
     public static ClientSettings Load(string path)
     {
@@ -91,7 +104,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, log level {LogLevel}";
 
     private ClientSettings Normalized()
     {
@@ -112,6 +125,7 @@ internal sealed class ClientSettings
 
         Language = UiLanguages.NormalizeChoice(Language);
         TransferChunkBytes = TransferSender.ClampChunkSize(TransferChunkBytes);
+        LogLevel = string.Equals(LogLevel?.Trim(), DebugLevel, StringComparison.OrdinalIgnoreCase) ? DebugLevel : InfoLevel;
         RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;
     }

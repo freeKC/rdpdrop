@@ -87,6 +87,55 @@ public class SimulatedTransferTests(ITestOutputHelper output)
         Assert.Empty(storage.Files);
     }
 
+    /// <summary>The second failure seen in production: the fileBegin line before the first chunk was lost.</summary>
+    [Theory]
+    [MemberData(nameof(Models))]
+    public void A_lost_fileBegin_line_is_named_in_the_failure(ChannelByteModel model)
+    {
+        var storage = new MemoryTransferStorage();
+        var transfer = new SimulatedTransfer(model, FolderAndFile, SampleFiles(), storage);
+
+        transfer.Channel.LostLines.Add(1);
+        transfer.Run();
+
+        Assert.Equal(DropStatus.Error, transfer.Result?.Status);
+        Assert.Equal(TransferFailure.MessageLost, transfer.Receiver.Failure);
+        Assert.Equal(MessageTypes.FileBegin, transfer.Receiver.LostMessage);
+        Assert.Equal(0, transfer.Receiver.LostFileIndex);
+        Assert.Equal(0, transfer.Result?.Bytes);
+        Assert.Empty(storage.Files);
+    }
+
+    /// <summary>
+    /// The lines leave in batches of at most 1 MiB of characters, as the client of 0.4.3
+    /// sends them, and the agent splits them back into the same messages.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ModelsAndChunkSizes))]
+    public void A_transfer_sent_in_batches_arrives_intact(ChannelByteModel model, int chunkSize)
+    {
+        var storage = new MemoryTransferStorage();
+        var files = SampleFiles();
+        var transfer = new SimulatedTransfer(model, FolderAndFile, files, storage, chunkSize) { Batching = new SendQueue() };
+        var longest = 0;
+        transfer.Channel.Tamper = (_, text) =>
+        {
+            longest = Math.Max(longest, text.Length);
+            return text;
+        };
+
+        transfer.Run();
+
+        Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
+        foreach (var (file, data) in files)
+        {
+            Assert.Equal(data, storage.Content(file.RelativePath));
+        }
+
+        Assert.InRange(longest, 1, SendQueue.DefaultMaxBatchCharacters);
+        Assert.True(transfer.Channel.LinesSent < transfer.Sender.ChunkLines, $"{transfer.Channel.LinesSent} calls for {transfer.Sender.ChunkLines} chunk lines.");
+    }
+
     [Theory]
     [MemberData(nameof(Models))]
     public void Damaged_data_fails_on_the_checksum(ChannelByteModel model)

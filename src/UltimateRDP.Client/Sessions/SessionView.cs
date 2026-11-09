@@ -173,6 +173,7 @@ internal sealed partial class SessionView : UserControl
             _channelCreated = true;
             SetConnection(SessionState.Connecting, LocalText.Of(nameof(Strings.ConnectingTo), Host));
             ClientLog.Info($"Connecting to {Host} with {RdpPath}, control version {SafeControlVersion()}");
+            _agent.PrepareChannel();
             _rdp.Connect();
         }
         catch (Exception ex) when (ex is COMException or ArgumentException or InvalidOperationException or AxHost.InvalidActiveXStateException)
