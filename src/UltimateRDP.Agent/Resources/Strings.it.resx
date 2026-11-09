@@ -61,6 +61,12 @@
   <data name="AgentStopped" xml:space="preserve">
     <value>L'agente in esecuzione è stato arrestato.</value>
   </data>
+  <data name="AlreadyInstalledForAllUsers" xml:space="preserve">
+    <value>L'agente si avvia già con ogni sessione utente, da
+{0}
+
+Non è stato modificato nulla.</value>
+  </data>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>l'agente si sta arrestando</value>
   </data>
@@ -123,6 +129,9 @@
   <data name="InputRefused" xml:space="preserve">
     <value>La sessione non accetta input simulato; potrebbe essere bloccata o mostrare un desktop protetto.</value>
   </data>
+  <data name="InstallPathUnderProfile" xml:space="preserve">
+    <value>{0} si trova in un profilo utente. Gli altri utenti potrebbero non riuscire a leggerlo, e il proprietario del profilo può sostituirlo. Copia l'agente in una cartella leggibile da tutti gli utenti, come {1}, poi esegui --install-all-users da lì.</value>
+  </data>
   <data name="InstalledForAllUsers" xml:space="preserve">
     <value>Ora l'agente si avvia con ogni sessione utente, da
 {0}
@@ -183,6 +192,9 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   <data name="ProtocolMismatch" xml:space="preserve">
     <value>L'agente UltimateRDP nella sessione usa il protocollo {0} e il client usa il protocollo {1}. Installa la stessa versione di UltimateRDP su entrambi i lati.</value>
   </data>
+  <data name="RemovedUserRunValue" xml:space="preserve">
+    <value>Il valore del tuo account è stato rimosso da {0}, così l'agente non si avvia due volte nella tua sessione.</value>
+  </data>
   <data name="RunElevated" xml:space="preserve">
     <value>Esegui di nuovo questo comando da un prompt con privilegi elevati (Esegui come amministratore).</value>
   </data>
@@ -194,6 +206,39 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   </data>
   <data name="StartingDrag" xml:space="preserve">
     <value>Avvio del trascinamento nella sessione...</value>
+  </data>
+  <data name="StatusExecutable" xml:space="preserve">
+    <value>Eseguibile: {0}</value>
+  </data>
+  <data name="StatusLogs" xml:space="preserve">
+    <value>Log: {0}</value>
+  </data>
+  <data name="StatusNotRunning" xml:space="preserve">
+    <value>Agente in esecuzione in questa sessione ({0}): no</value>
+  </data>
+  <data name="StatusNotSet" xml:space="preserve">
+    <value>non impostato</value>
+  </data>
+  <data name="StatusRunAllUsers" xml:space="preserve">
+    <value>Avvio per tutti gli utenti ({0}): {1}</value>
+  </data>
+  <data name="StatusRunCurrentUser" xml:space="preserve">
+    <value>Avvio per l'utente corrente ({0}): {1}</value>
+  </data>
+  <data name="StatusRunning" xml:space="preserve">
+    <value>Agente in esecuzione in questa sessione ({0}): sì</value>
+  </data>
+  <data name="StatusSettings" xml:space="preserve">
+    <value>Impostazioni: {0}</value>
+  </data>
+  <data name="StatusSettingsAbsent" xml:space="preserve">
+    <value>Impostazioni: {0} (assente, valori predefiniti in uso)</value>
+  </data>
+  <data name="StatusTrayIcon" xml:space="preserve">
+    <value>Icona nell'area di notifica: {0}</value>
+  </data>
+  <data name="StatusVersion" xml:space="preserve">
+    <value>Versione: {0}</value>
   </data>
   <data name="StillInstalledForAllUsers" xml:space="preserve">
     <value>L'agente è ancora impostato per avviarsi per tutti gli utenti, in HKEY_LOCAL_MACHINE. Esegui --uninstall da un prompt con privilegi elevati per rimuovere anche questa impostazione.</value>
@@ -251,6 +296,9 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Esegui l'agente nell'area di notifica.</value>
+  </data>
+  <data name="UsageStatus" xml:space="preserve">
+    <value>Mostra la versione, le voci di avvio e se l'agente è in esecuzione in questa sessione.</value>
   </data>
   <data name="UsageTitle" xml:space="preserve">
     <value>Utilizzo: {0} [opzione]</value>

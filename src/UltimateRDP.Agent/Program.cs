@@ -8,6 +8,7 @@ using UltimateRDP.Agent.Resources;
 using UltimateRDP.Agent.Settings;
 using UltimateRDP.Agent.Setup;
 using UltimateRDP.Agent.Tray;
+using UltimateRDP.Core.Agent;
 
 namespace UltimateRDP.Agent;
 
@@ -58,6 +59,9 @@ internal static class Program
             case "--install-all-users":
                 return InstallAllUsers(logger);
 
+            case "--status":
+                return Status(logger);
+
             case "--help" or "-h" or "/?":
                 CommandLineOutput.Info(Usage());
                 return 0;
@@ -80,6 +84,7 @@ internal static class Program
             ("--install", Strings.UsageInstall),
             ("--uninstall", Strings.UsageUninstall),
             ("--install-all-users", Strings.UsageInstallAllUsers),
+            ("--status", Strings.UsageStatus),
             ("--help", Strings.UsageHelp),
         ];
 
@@ -179,20 +184,98 @@ internal static class Program
         return Run(logger);
     }
 
+    /// <summary>
+    /// Writes the Run value under HKEY_LOCAL_MACHINE. Running it again changes nothing.
+    /// Refuses an executable inside a user profile, and removes the Run value of the
+    /// current user, which would start a second copy.
+    /// </summary>
     private static int InstallAllUsers(FileLogger logger)
     {
-        var error = StartupRegistration.Register(Registry.LocalMachine);
-        if (error is not null)
+        var path = StartupRegistration.ExecutablePath;
+        if (InstallLocation.IsUnderAny(path, StartupRegistration.ProfileRoots()))
         {
-            CommandLineOutput.Error(
-                LocalText.Of(nameof(Strings.CannotWriteKey), RunKey(LocalMachineRoot), error).ForUser()
-                + "\n\n" + Strings.RunElevated);
+            logger.Warn($"Install for all users refused: {path} is inside a user profile.");
+            CommandLineOutput.Error(LocalText.Of(nameof(Strings.InstallPathUnderProfile), path, InstallLocation.SuggestedFolder).ForUser());
             return 1;
         }
 
-        logger.Info($"Installed for all users: {StartupRegistration.Command}.");
-        CommandLineOutput.Info(LocalText.Of(nameof(Strings.InstalledForAllUsers), StartupRegistration.ExecutablePath).ForUser());
+        var messages = new List<LocalText>();
+        if (string.Equals(StartupRegistration.Read(Registry.LocalMachine), StartupRegistration.Command, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.Info($"Install for all users: already registered with {StartupRegistration.Command}.");
+            messages.Add(LocalText.Of(nameof(Strings.AlreadyInstalledForAllUsers), path));
+        }
+        else
+        {
+            var error = StartupRegistration.Register(Registry.LocalMachine);
+            if (error is not null)
+            {
+                CommandLineOutput.Error(
+                    LocalText.Of(nameof(Strings.CannotWriteKey), RunKey(LocalMachineRoot), error).ForUser()
+                    + "\n\n" + Strings.RunElevated);
+                return 1;
+            }
+
+            logger.Info($"Installed for all users: {StartupRegistration.Command}.");
+            messages.Add(LocalText.Of(nameof(Strings.InstalledForAllUsers), path));
+        }
+
+        if (StartupRegistration.IsRegistered(Registry.CurrentUser))
+        {
+            var userError = StartupRegistration.Unregister(Registry.CurrentUser);
+            var message = userError is null
+                ? LocalText.Of(nameof(Strings.RemovedUserRunValue), RunKey(CurrentUserRoot))
+                : LocalText.Of(nameof(Strings.CannotRemoveValue), RunKey(CurrentUserRoot), userError);
+            logger.Info($"Install for all users: {message}");
+            messages.Add(message);
+        }
+
+        CommandLineOutput.Info(string.Join("\n\n", messages.Select(message => message.ForUser())));
         return 0;
+    }
+
+    /// <summary>Prints the version, the Run values, the files and whether an agent runs in this session.</summary>
+    private static int Status(FileLogger logger)
+    {
+        var notSet = LocalText.Of(nameof(Strings.StatusNotSet));
+        var settingsExist = AgentSettings.FileExists(AgentInfo.SettingsPath);
+        var trayIcon = settingsExist ? AgentSettings.Load(AgentInfo.SettingsPath, logger).TrayIcon : TrayIconMode.Auto;
+        var session = SessionId();
+
+        LocalText[] lines =
+        [
+            LocalText.Of(nameof(Strings.StatusVersion), AgentInfo.Version),
+            LocalText.Of(nameof(Strings.StatusExecutable), Environment.ProcessPath ?? string.Empty),
+            LocalText.Of(nameof(Strings.StatusRunCurrentUser), RunKey(CurrentUserRoot), (object?)StartupRegistration.Read(Registry.CurrentUser) ?? notSet),
+            LocalText.Of(nameof(Strings.StatusRunAllUsers), RunKey(LocalMachineRoot), (object?)StartupRegistration.Read(Registry.LocalMachine) ?? notSet),
+            LocalText.Of(settingsExist ? nameof(Strings.StatusSettings) : nameof(Strings.StatusSettingsAbsent), AgentInfo.SettingsPath),
+            LocalText.Of(nameof(Strings.StatusTrayIcon), TrayIconModes.ToSetting(trayIcon)),
+            LocalText.Of(nameof(Strings.StatusLogs), AgentInfo.LogDirectory),
+            LocalText.Of(IsRunningInThisSession() ? nameof(Strings.StatusRunning) : nameof(Strings.StatusNotRunning), session),
+        ];
+
+        CommandLineOutput.Info(AgentInfo.ProductName + "\n" + string.Join("\n", lines.Select(line => line.ForUser())));
+        return 0;
+    }
+
+    /// <summary>True when the single instance mutex of this session exists.</summary>
+    private static bool IsRunningInThisSession()
+    {
+        try
+        {
+            if (Mutex.TryOpenExisting(AgentInfo.InstanceMutexName, out var mutex))
+            {
+                mutex.Dispose();
+                return true;
+            }
+
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // It exists, but belongs to someone else.
+            return true;
+        }
     }
 
     private static int Uninstall(FileLogger logger)

@@ -62,16 +62,53 @@ internal static class StartupRegistration
     }
 
     /// <summary>True when the Run value exists in <paramref name="hive"/>.</summary>
-    public static bool IsRegistered(RegistryKey hive)
+    public static bool IsRegistered(RegistryKey hive) => Read(hive) is not null;
+
+    /// <summary>The command stored in the Run value of <paramref name="hive"/>, or null when there is none.</summary>
+    public static string? Read(RegistryKey hive)
     {
         try
         {
             using var key = hive.OpenSubKey(AgentInfo.RunKeyPath, writable: false);
-            return key?.GetValue(AgentInfo.RunValueName) is not null;
+            return key?.GetValue(AgentInfo.RunValueName)?.ToString();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or SecurityException or IOException)
         {
-            return false;
+            return null;
         }
+    }
+
+    /// <summary>
+    /// Folders that hold user profiles: the profile of the current user and the folder of
+    /// every profile, as Windows records it. An executable inside them must not be
+    /// registered for every user.
+    /// </summary>
+    public static IReadOnlyList<string> ProfileRoots()
+    {
+        var roots = new List<string>();
+        var own = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrEmpty(own))
+        {
+            roots.Add(own);
+            if (Path.GetDirectoryName(own) is { Length: > 0 } parent)
+            {
+                roots.Add(parent);
+            }
+        }
+
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList", writable: false);
+            if (key?.GetValue("ProfilesDirectory") is string profiles && profiles.Length > 0)
+            {
+                roots.Add(Environment.ExpandEnvironmentVariables(profiles));
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or SecurityException or IOException)
+        {
+            // The two folders above are enough.
+        }
+
+        return roots;
     }
 }

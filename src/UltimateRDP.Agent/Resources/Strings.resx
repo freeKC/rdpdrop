@@ -64,6 +64,13 @@
   <data name="AgentStopped" xml:space="preserve">
     <value>The running agent was stopped.</value>
   </data>
+  <data name="AlreadyInstalledForAllUsers" xml:space="preserve">
+    <value>The agent already starts with every user session, from
+{0}
+
+Nothing was changed.</value>
+    <comment>{0} is the path of the executable.</comment>
+  </data>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>the agent is stopping</value>
     <comment>Lower case: used as {0} in DragCancelledReason.</comment>
@@ -140,6 +147,10 @@
   <data name="InputRefused" xml:space="preserve">
     <value>The session does not accept simulated input; it may be locked or showing a secure desktop.</value>
   </data>
+  <data name="InstallPathUnderProfile" xml:space="preserve">
+    <value>{0} is inside a user profile. Other users may not be able to read it, and the owner of the profile can replace it. Copy the agent to a folder that every user can read, such as {1}, then run --install-all-users from there.</value>
+    <comment>{0} is the path of the executable, {1} the suggested folder.</comment>
+  </data>
   <data name="InstalledForAllUsers" xml:space="preserve">
     <value>The agent now starts with every user session, from
 {0}
@@ -210,6 +221,10 @@ Keep the executable in a folder that every user can read, such as Program Files.
     <value>The UltimateRDP agent in the session speaks protocol {0} and the client speaks protocol {1}. Install the same version of UltimateRDP on both sides.</value>
     <comment>{0} and {1} are numbers.</comment>
   </data>
+  <data name="RemovedUserRunValue" xml:space="preserve">
+    <value>The value for your own account was removed from {0}, so that the agent does not start twice in your session.</value>
+    <comment>{0} is the registry key of the current user.</comment>
+  </data>
   <data name="RunElevated" xml:space="preserve">
     <value>Run this command again from an elevated prompt (Run as administrator).</value>
   </data>
@@ -223,6 +238,44 @@ Keep the executable in a folder that every user can read, such as Program Files.
   </data>
   <data name="StartingDrag" xml:space="preserve">
     <value>Starting the drag in the session...</value>
+  </data>
+  <data name="StatusExecutable" xml:space="preserve">
+    <value>Executable: {0}</value>
+  </data>
+  <data name="StatusLogs" xml:space="preserve">
+    <value>Logs: {0}</value>
+  </data>
+  <data name="StatusNotRunning" xml:space="preserve">
+    <value>Agent running in this session ({0}): no</value>
+    <comment>{0} is the session number.</comment>
+  </data>
+  <data name="StatusNotSet" xml:space="preserve">
+    <value>not set</value>
+  </data>
+  <data name="StatusRunAllUsers" xml:space="preserve">
+    <value>Start for all users ({0}): {1}</value>
+    <comment>{0} is the registry key, {1} the command or StatusNotSet.</comment>
+  </data>
+  <data name="StatusRunCurrentUser" xml:space="preserve">
+    <value>Start for the current user ({0}): {1}</value>
+    <comment>{0} is the registry key, {1} the command or StatusNotSet.</comment>
+  </data>
+  <data name="StatusRunning" xml:space="preserve">
+    <value>Agent running in this session ({0}): yes</value>
+    <comment>{0} is the session number.</comment>
+  </data>
+  <data name="StatusSettings" xml:space="preserve">
+    <value>Settings: {0}</value>
+  </data>
+  <data name="StatusSettingsAbsent" xml:space="preserve">
+    <value>Settings: {0} (absent, defaults in use)</value>
+  </data>
+  <data name="StatusTrayIcon" xml:space="preserve">
+    <value>Tray icon: {0}</value>
+    <comment>{0} is the setting value: auto, always or never. Not translated.</comment>
+  </data>
+  <data name="StatusVersion" xml:space="preserve">
+    <value>Version: {0}</value>
   </data>
   <data name="StillInstalledForAllUsers" xml:space="preserve">
     <value>The agent is still set to start for all users, under HKEY_LOCAL_MACHINE. Run --uninstall from an elevated prompt to remove that too.</value>
@@ -287,6 +340,9 @@ Keep the executable in a folder that every user can read, such as Program Files.
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Run the agent in the tray.</value>
+  </data>
+  <data name="UsageStatus" xml:space="preserve">
+    <value>Show the version, the start entries and whether the agent runs in this session.</value>
   </data>
   <data name="UsageTitle" xml:space="preserve">
     <value>Usage: {0} [option]</value>

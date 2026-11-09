@@ -61,6 +61,12 @@
   <data name="AgentStopped" xml:space="preserve">
     <value>De actieve agent is gestopt.</value>
   </data>
+  <data name="AlreadyInstalledForAllUsers" xml:space="preserve">
+    <value>De agent start al met elke gebruikerssessie, vanuit
+{0}
+
+Er is niets gewijzigd.</value>
+  </data>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>de agent wordt gestopt</value>
   </data>
@@ -123,6 +129,9 @@
   <data name="InputRefused" xml:space="preserve">
     <value>De sessie accepteert geen gesimuleerde invoer; mogelijk is ze vergrendeld of wordt een beveiligd bureaublad weergegeven.</value>
   </data>
+  <data name="InstallPathUnderProfile" xml:space="preserve">
+    <value>{0} staat in een gebruikersprofiel. Andere gebruikers kunnen het bestand mogelijk niet lezen, en de eigenaar van het profiel kan het vervangen. Kopieer de agent naar een map die elke gebruiker kan lezen, zoals {1}, en voer daar --install-all-users uit.</value>
+  </data>
   <data name="InstalledForAllUsers" xml:space="preserve">
     <value>De agent start nu met elke gebruikerssessie, vanuit
 {0}
@@ -183,6 +192,9 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   <data name="ProtocolMismatch" xml:space="preserve">
     <value>De UltimateRDP-agent in de sessie gebruikt protocol {0} en de client gebruikt protocol {1}. Installeer aan beide kanten dezelfde versie van UltimateRDP.</value>
   </data>
+  <data name="RemovedUserRunValue" xml:space="preserve">
+    <value>De waarde voor uw eigen account is verwijderd uit {0}, zodat de agent niet twee keer start in uw sessie.</value>
+  </data>
   <data name="RunElevated" xml:space="preserve">
     <value>Voer deze opdracht opnieuw uit vanaf een opdrachtprompt met verhoogde bevoegdheden (Als administrator uitvoeren).</value>
   </data>
@@ -194,6 +206,39 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   </data>
   <data name="StartingDrag" xml:space="preserve">
     <value>Het slepen in de sessie starten...</value>
+  </data>
+  <data name="StatusExecutable" xml:space="preserve">
+    <value>Uitvoerbaar bestand: {0}</value>
+  </data>
+  <data name="StatusLogs" xml:space="preserve">
+    <value>Logboeken: {0}</value>
+  </data>
+  <data name="StatusNotRunning" xml:space="preserve">
+    <value>Agent actief in deze sessie ({0}): nee</value>
+  </data>
+  <data name="StatusNotSet" xml:space="preserve">
+    <value>niet ingesteld</value>
+  </data>
+  <data name="StatusRunAllUsers" xml:space="preserve">
+    <value>Start voor alle gebruikers ({0}): {1}</value>
+  </data>
+  <data name="StatusRunCurrentUser" xml:space="preserve">
+    <value>Start voor de huidige gebruiker ({0}): {1}</value>
+  </data>
+  <data name="StatusRunning" xml:space="preserve">
+    <value>Agent actief in deze sessie ({0}): ja</value>
+  </data>
+  <data name="StatusSettings" xml:space="preserve">
+    <value>Instellingen: {0}</value>
+  </data>
+  <data name="StatusSettingsAbsent" xml:space="preserve">
+    <value>Instellingen: {0} (ontbreekt, standaardwaarden in gebruik)</value>
+  </data>
+  <data name="StatusTrayIcon" xml:space="preserve">
+    <value>Pictogram in het systeemvak: {0}</value>
+  </data>
+  <data name="StatusVersion" xml:space="preserve">
+    <value>Versie: {0}</value>
   </data>
   <data name="StillInstalledForAllUsers" xml:space="preserve">
     <value>De agent is nog ingesteld om voor alle gebruikers te starten, onder HKEY_LOCAL_MACHINE. Voer --uninstall uit vanaf een opdrachtprompt met verhoogde bevoegdheden om dat ook te verwijderen.</value>
@@ -251,6 +296,9 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>De agent in het systeemvak uitvoeren.</value>
+  </data>
+  <data name="UsageStatus" xml:space="preserve">
+    <value>De versie, de opstartvermeldingen en de status van de agent in deze sessie tonen.</value>
   </data>
   <data name="UsageTitle" xml:space="preserve">
     <value>Gebruik: {0} [option]</value>

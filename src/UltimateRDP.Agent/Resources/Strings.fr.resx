@@ -61,6 +61,12 @@
   <data name="AgentStopped" xml:space="preserve">
     <value>L'agent en cours d'exécution a été arrêté.</value>
   </data>
+  <data name="AlreadyInstalledForAllUsers" xml:space="preserve">
+    <value>L'agent démarre déjà avec chaque session utilisateur, depuis
+{0}
+
+Rien n'a été modifié.</value>
+  </data>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>l'agent s'arrête</value>
   </data>
@@ -123,6 +129,9 @@
   <data name="InputRefused" xml:space="preserve">
     <value>La session n'accepte pas les entrées simulées ; elle est peut-être verrouillée ou affiche un bureau sécurisé.</value>
   </data>
+  <data name="InstallPathUnderProfile" xml:space="preserve">
+    <value>{0} se trouve dans un profil utilisateur. Les autres utilisateurs risquent de ne pas pouvoir le lire, et le propriétaire du profil peut le remplacer. Copiez l'agent dans un dossier que tous les utilisateurs peuvent lire, comme {1}, puis exécutez --install-all-users depuis ce dossier.</value>
+  </data>
   <data name="InstalledForAllUsers" xml:space="preserve">
     <value>L'agent démarre désormais avec chaque session utilisateur, depuis
 {0}
@@ -183,6 +192,9 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   <data name="ProtocolMismatch" xml:space="preserve">
     <value>L'agent UltimateRDP de la session utilise le protocole {0} et le client le protocole {1}. Installez la même version d'UltimateRDP des deux côtés.</value>
   </data>
+  <data name="RemovedUserRunValue" xml:space="preserve">
+    <value>La valeur propre à votre compte a été supprimée de {0}, pour que l'agent ne démarre pas deux fois dans votre session.</value>
+  </data>
   <data name="RunElevated" xml:space="preserve">
     <value>Exécutez de nouveau cette commande depuis une invite de commandes élevée (Exécuter en tant qu'administrateur).</value>
   </data>
@@ -194,6 +206,39 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   </data>
   <data name="StartingDrag" xml:space="preserve">
     <value>Démarrage du glisser dans la session...</value>
+  </data>
+  <data name="StatusExecutable" xml:space="preserve">
+    <value>Exécutable : {0}</value>
+  </data>
+  <data name="StatusLogs" xml:space="preserve">
+    <value>Journaux : {0}</value>
+  </data>
+  <data name="StatusNotRunning" xml:space="preserve">
+    <value>Agent en cours d'exécution dans cette session ({0}) : non</value>
+  </data>
+  <data name="StatusNotSet" xml:space="preserve">
+    <value>non défini</value>
+  </data>
+  <data name="StatusRunAllUsers" xml:space="preserve">
+    <value>Démarrage pour tous les utilisateurs ({0}) : {1}</value>
+  </data>
+  <data name="StatusRunCurrentUser" xml:space="preserve">
+    <value>Démarrage pour l'utilisateur actuel ({0}) : {1}</value>
+  </data>
+  <data name="StatusRunning" xml:space="preserve">
+    <value>Agent en cours d'exécution dans cette session ({0}) : oui</value>
+  </data>
+  <data name="StatusSettings" xml:space="preserve">
+    <value>Paramètres : {0}</value>
+  </data>
+  <data name="StatusSettingsAbsent" xml:space="preserve">
+    <value>Paramètres : {0} (absent, valeurs par défaut utilisées)</value>
+  </data>
+  <data name="StatusTrayIcon" xml:space="preserve">
+    <value>Icône dans la zone de notification : {0}</value>
+  </data>
+  <data name="StatusVersion" xml:space="preserve">
+    <value>Version : {0}</value>
   </data>
   <data name="StillInstalledForAllUsers" xml:space="preserve">
     <value>L'agent est toujours configuré pour démarrer pour tous les utilisateurs, sous HKEY_LOCAL_MACHINE. Exécutez --uninstall depuis une invite de commandes élevée pour retirer aussi ce réglage.</value>
@@ -251,6 +296,9 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Lancer l'agent dans la zone de notification.</value>
+  </data>
+  <data name="UsageStatus" xml:space="preserve">
+    <value>Afficher la version, les entrées de démarrage et si l'agent fonctionne dans cette session.</value>
   </data>
   <data name="UsageTitle" xml:space="preserve">
     <value>Utilisation : {0} [option]</value>

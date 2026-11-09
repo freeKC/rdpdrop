@@ -61,6 +61,12 @@
   <data name="AgentStopped" xml:space="preserve">
     <value>Se detuvo el agente en ejecución.</value>
   </data>
+  <data name="AlreadyInstalledForAllUsers" xml:space="preserve">
+    <value>El agente ya se inicia con la sesión de cada usuario, desde
+{0}
+
+No se ha cambiado nada.</value>
+  </data>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>el agente se está deteniendo</value>
   </data>
@@ -123,6 +129,9 @@
   <data name="InputRefused" xml:space="preserve">
     <value>La sesión no acepta entradas simuladas; puede estar bloqueada o mostrando un escritorio seguro.</value>
   </data>
+  <data name="InstallPathUnderProfile" xml:space="preserve">
+    <value>{0} está dentro de un perfil de usuario. Es posible que los demás usuarios no puedan leerlo, y el propietario del perfil puede reemplazarlo. Copie el agente en una carpeta que todos los usuarios puedan leer, como {1}, y ejecute --install-all-users desde allí.</value>
+  </data>
   <data name="InstalledForAllUsers" xml:space="preserve">
     <value>El agente se inicia ahora con la sesión de cada usuario, desde
 {0}
@@ -183,6 +192,9 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   <data name="ProtocolMismatch" xml:space="preserve">
     <value>El agente de UltimateRDP de la sesión usa el protocolo {0} y el cliente usa el protocolo {1}. Instale la misma versión de UltimateRDP en ambos lados.</value>
   </data>
+  <data name="RemovedUserRunValue" xml:space="preserve">
+    <value>Se ha quitado de {0} el valor de su propia cuenta, para que el agente no se inicie dos veces en su sesión.</value>
+  </data>
   <data name="RunElevated" xml:space="preserve">
     <value>Vuelva a ejecutar este comando desde un símbolo del sistema con privilegios elevados (Ejecutar como administrador).</value>
   </data>
@@ -194,6 +206,39 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   </data>
   <data name="StartingDrag" xml:space="preserve">
     <value>Iniciando el arrastre en la sesión...</value>
+  </data>
+  <data name="StatusExecutable" xml:space="preserve">
+    <value>Ejecutable: {0}</value>
+  </data>
+  <data name="StatusLogs" xml:space="preserve">
+    <value>Registros: {0}</value>
+  </data>
+  <data name="StatusNotRunning" xml:space="preserve">
+    <value>Agente en ejecución en esta sesión ({0}): no</value>
+  </data>
+  <data name="StatusNotSet" xml:space="preserve">
+    <value>no definido</value>
+  </data>
+  <data name="StatusRunAllUsers" xml:space="preserve">
+    <value>Inicio para todos los usuarios ({0}): {1}</value>
+  </data>
+  <data name="StatusRunCurrentUser" xml:space="preserve">
+    <value>Inicio para el usuario actual ({0}): {1}</value>
+  </data>
+  <data name="StatusRunning" xml:space="preserve">
+    <value>Agente en ejecución en esta sesión ({0}): sí</value>
+  </data>
+  <data name="StatusSettings" xml:space="preserve">
+    <value>Configuración: {0}</value>
+  </data>
+  <data name="StatusSettingsAbsent" xml:space="preserve">
+    <value>Configuración: {0} (no existe, se usan los valores predeterminados)</value>
+  </data>
+  <data name="StatusTrayIcon" xml:space="preserve">
+    <value>Icono del área de notificación: {0}</value>
+  </data>
+  <data name="StatusVersion" xml:space="preserve">
+    <value>Versión: {0}</value>
   </data>
   <data name="StillInstalledForAllUsers" xml:space="preserve">
     <value>El agente sigue configurado para iniciarse para todos los usuarios, en HKEY_LOCAL_MACHINE. Ejecute --uninstall desde un símbolo del sistema con privilegios elevados para quitarlo también.</value>
@@ -251,6 +296,9 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Ejecuta el agente en el área de notificación.</value>
+  </data>
+  <data name="UsageStatus" xml:space="preserve">
+    <value>Muestra la versión, las entradas de inicio y si el agente se ejecuta en esta sesión.</value>
   </data>
   <data name="UsageTitle" xml:space="preserve">
     <value>Uso: {0} [opción]</value>

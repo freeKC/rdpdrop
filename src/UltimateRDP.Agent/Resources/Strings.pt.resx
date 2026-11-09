@@ -61,6 +61,12 @@
   <data name="AgentStopped" xml:space="preserve">
     <value>O agente em execução foi parado.</value>
   </data>
+  <data name="AlreadyInstalledForAllUsers" xml:space="preserve">
+    <value>O agente já inicia com a sessão de cada usuário, a partir de
+{0}
+
+Nada foi alterado.</value>
+  </data>
   <data name="CancelAgentStopping" xml:space="preserve">
     <value>o agente está sendo encerrado</value>
   </data>
@@ -123,6 +129,9 @@
   <data name="InputRefused" xml:space="preserve">
     <value>A sessão não aceita entrada simulada; ela pode estar bloqueada ou exibindo uma área de trabalho segura.</value>
   </data>
+  <data name="InstallPathUnderProfile" xml:space="preserve">
+    <value>{0} está dentro de um perfil de usuário. Os outros usuários talvez não consigam lê-lo, e o dono do perfil pode substituí-lo. Copie o agente para uma pasta que todos os usuários possam ler, como {1}, e execute --install-all-users a partir dela.</value>
+  </data>
   <data name="InstalledForAllUsers" xml:space="preserve">
     <value>O agente agora inicia com a sessão de cada usuário, a partir de
 {0}
@@ -183,6 +192,9 @@ Mantenha o executável em uma pasta que todos os usuários possam ler, como Prog
   <data name="ProtocolMismatch" xml:space="preserve">
     <value>O agente UltimateRDP na sessão usa o protocolo {0} e o cliente usa o protocolo {1}. Instale a mesma versão do UltimateRDP nos dois lados.</value>
   </data>
+  <data name="RemovedUserRunValue" xml:space="preserve">
+    <value>O valor da sua própria conta foi removido de {0}, para que o agente não inicie duas vezes na sua sessão.</value>
+  </data>
   <data name="RunElevated" xml:space="preserve">
     <value>Execute este comando novamente em um prompt elevado (Executar como administrador).</value>
   </data>
@@ -194,6 +206,39 @@ Mantenha o executável em uma pasta que todos os usuários possam ler, como Prog
   </data>
   <data name="StartingDrag" xml:space="preserve">
     <value>Iniciando o arrasto na sessão...</value>
+  </data>
+  <data name="StatusExecutable" xml:space="preserve">
+    <value>Executável: {0}</value>
+  </data>
+  <data name="StatusLogs" xml:space="preserve">
+    <value>Logs: {0}</value>
+  </data>
+  <data name="StatusNotRunning" xml:space="preserve">
+    <value>Agente em execução nesta sessão ({0}): não</value>
+  </data>
+  <data name="StatusNotSet" xml:space="preserve">
+    <value>não definido</value>
+  </data>
+  <data name="StatusRunAllUsers" xml:space="preserve">
+    <value>Início para todos os usuários ({0}): {1}</value>
+  </data>
+  <data name="StatusRunCurrentUser" xml:space="preserve">
+    <value>Início para o usuário atual ({0}): {1}</value>
+  </data>
+  <data name="StatusRunning" xml:space="preserve">
+    <value>Agente em execução nesta sessão ({0}): sim</value>
+  </data>
+  <data name="StatusSettings" xml:space="preserve">
+    <value>Configurações: {0}</value>
+  </data>
+  <data name="StatusSettingsAbsent" xml:space="preserve">
+    <value>Configurações: {0} (ausente, valores padrão em uso)</value>
+  </data>
+  <data name="StatusTrayIcon" xml:space="preserve">
+    <value>Ícone na área de notificação: {0}</value>
+  </data>
+  <data name="StatusVersion" xml:space="preserve">
+    <value>Versão: {0}</value>
   </data>
   <data name="StillInstalledForAllUsers" xml:space="preserve">
     <value>O agente ainda está configurado para iniciar para todos os usuários, em HKEY_LOCAL_MACHINE. Execute --uninstall em um prompt elevado para remover isso também.</value>
@@ -251,6 +296,9 @@ Mantenha o executável em uma pasta que todos os usuários possam ler, como Prog
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Executa o agente na área de notificação.</value>
+  </data>
+  <data name="UsageStatus" xml:space="preserve">
+    <value>Mostra a versão, as entradas de inicialização e se o agente está em execução nesta sessão.</value>
   </data>
   <data name="UsageTitle" xml:space="preserve">
     <value>Uso: {0} [opção]</value>
