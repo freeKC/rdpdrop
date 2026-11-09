@@ -1,6 +1,6 @@
 # UltimateRDP design
 
-Date: 2026-11-05, updated on 2026-11-09 for version 0.3.0.
+Date: 2026-11-05, updated on 2026-11-09 for version 0.4.0.
 
 ## Goal
 
@@ -9,7 +9,9 @@ into a Remote Desktop session, on the application under the cursor when the
 button is released. The application receives them as a normal drop. When
 nothing under the cursor accepts them, the drop is ignored.
 The transfer uses the standard RDP drive redirection; UltimateRDP only adds the
-"drop" gesture on top of it.
+"drop" gesture on top of it. Since version 0.4, large files travel instead
+through the UltimateRDP channel before the drop, which is faster; see
+"Version 0.4" below.
 
 Scope:
 
@@ -112,6 +114,9 @@ Pure logic shared by the two apps and covered by tests.
   choice or a Windows language into one of them.
 * `TrayIconModes`, `ChannelRetryPolicy`, `IdleReport` and `InstallLocation`:
   rules of the agent, described under "Production behaviour of the agent".
+* `FastTransferPolicy`, `TransferSender`, `TransferReceiver`, `TransferLines`,
+  `TransferPaths`, `TransferHash` and `TransferProgress`: the fast transfer of
+  large files, described under "Version 0.4".
 
 ### Protocol
 
@@ -125,27 +130,31 @@ Client to agent:
 * `hello` : `{ "type": "hello", "version": 1, "clientVersion": "0.3.0",
   "clientLanguage": "fr" }`
 * `dragEnter` : `{ "type": "dragEnter", "id": "<guid>", "x": 412, "y": 300,
-  "items": [ { "clientPath": "C:\\Users\\me\\a.txt", "isDirectory": false } ],
-  "keyState": 0 }`
+  "items": [ { "clientPath": "C:\\Users\\me\\a.txt", "isDirectory": false,
+  "size": 52428800 } ], "keyState": 0 }`
 * `dragMove` : `{ "type": "dragMove", "id": "<guid>", "x": 420, "y": 310,
   "keyState": 0 }`
 * `drop` : `{ "type": "drop", "id": "<guid>", "x": 420, "y": 310,
-  "keyState": 0 }`
+  "keyState": 0, "deferred": true }`
 * `dragLeave` : `{ "type": "dragLeave", "id": "<guid>" }`
 * `logoff` : `{ "type": "logoff", "id": "<guid>" }`
+* `transferBegin`, `fileBegin`, `fileChunk`, `fileEnd` and `transferCancel`:
+  the fast transfer, described under "Version 0.4".
 
 Agent to client:
 
 * `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.3.0",
   "driveRedirectionAvailable": true }`
 * `dragAck` : `{ "type": "dragAck", "id": "<guid>", "accepted": true,
-  "message": "optional text" }`
+  "message": "optional text", "transfer": true, "transferId": "<guid>" }`
 * `dropResult` : `{ "type": "dropResult", "id": "<guid>",
   "status": "ok" | "error" | "cancelled", "effect": "copy" | "link" | "none",
   "message": "human readable text", "targetWindow": { "className": "CabinetWClass",
   "title": "Documents", "childClassName": "DirectUIHWND", "processName": "explorer" } }`
 * `logoffResult` : `{ "type": "logoffResult", "id": "<guid>", "accepted": true,
   "message": "human readable text" }`
+* `fileAck` and `transferResult`: the fast transfer, described under
+  "Version 0.4".
 
 Field notes:
 
@@ -174,6 +183,9 @@ Field notes:
   agent answers `logoffResult` with `accepted: true` before the session
   closes. If Windows refuses, a second `logoffResult` with the same id and
   `accepted: false` gives the reason in `message`.
+* `size` of an item, `deferred` of `drop`, and `transfer` and `transferId` of
+  `dragAck` belong to the fast transfer of version 0.4. They are not written
+  when they have no value, and an older peer ignores them.
 
 Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
@@ -268,7 +280,8 @@ Behaviour:
    work.
 8. Status bar at the bottom: connection state, agent state, last drop
    result. Menus: File (with Log off the remote session, see "Version 0.3"
-   below), Session (Connect, Disconnect, Look for the agent again), View
+   below), Session (Connect, Disconnect, Look for the agent again, Cancel the
+   transfer, see "Version 0.4" below), View
    (with Language) and Help (About, Project page, Open log folder). About
    is a task dialog with the version, the publisher APROGSYS and its web
    site, and the project page; both addresses are links.
@@ -316,11 +329,13 @@ Behaviour:
    fails, a second `logoffResult` with `accepted: false` carries the Windows
    error text.
 6. Tray icon, shown as the `trayIcon` setting says (see below), with its
-   menu: Stage files in the session before the drop, Open log folder,
-   About, Exit. About is a task dialog with the version, the publisher
-   APROGSYS and its web site, and the project page, as links. Settings in
-   `%LOCALAPPDATA%\UltimateRDP\agent.json` (`stageFiles`, and `logLevel`
-   and `trayIcon` which are only editable in the file). Logs in
+   menu: Stage files in the session before the drop, Fast transfer of large
+   files (Auto, Always, Never), Open log folder, About, Exit. About is a task
+   dialog with the version, the publisher APROGSYS and its web site, and the
+   project page, as links. Settings in
+   `%LOCALAPPDATA%\UltimateRDP\agent.json` (`stageFiles`, `fastTransfer`,
+   and `fastTransferMinBytes`, `logLevel` and `trayIcon` which are only
+   editable in the file). Logs in
    `%LOCALAPPDATA%\UltimateRDP\logs\agent-<date>.log`, rotated by day, kept
    fourteen days.
 7. Command line:
@@ -458,18 +473,26 @@ the fallback for anything missing.
   connection kept.
 * No `logoffResult` within five seconds of a `logoff`: the client shows "The
   agent did not answer the log off request." and enables the command again.
+* The errors of the fast transfer are listed under "Version 0.4".
 
 ## Security notes
 
 * The agent only reads from `\\tsclient\`, that is from the drives the client
   user chose to share. It writes only to its own staging folder in the
-  session, when staging is on. Where the dropped files go is decided by the
-  application that accepts the drop. The agent does not run as a service and
-  has no privilege beyond the user's own.
+  session, when staging is on or when files come through the channel. Where
+  the dropped files go is decided by the application that accepts the drop.
+  The agent does not run as a service and has no privilege beyond the user's
+  own.
+* A file that comes through the channel is written below the folder of its
+  transfer only: the agent refuses a relative path that does not start with
+  the name of a dropped item, that holds `..`, a device name or a character
+  that Windows refuses, and checks again that the full path stays in the
+  folder.
 * Simulated input happens only inside the user's own session, only during a
   drag, and only with the left button. See "Step 2" for the details.
-* Messages carry file names, coordinates, modifier key flags and window names
-  only. No file content transits through the channel.
+* Messages carry file names, coordinates, modifier key flags and window names.
+  File contents go through the channel only for a fast transfer, inside the
+  RDP connection like any other channel data.
 * The client never writes credentials. It reads the generic credential
   `TERMSRV/<host>` when one exists; other credential prompts come from the
   Microsoft control.
@@ -487,6 +510,14 @@ the fallback for anything missing.
   the language rules, and the agent rules: the `trayIcon` setting and its
   visibility, the retry waits of the channel, the spacing of the waiting log
   line and the folders refused by `--install-all-users`.
+* The fast transfer is covered without a server: the new messages and their
+  rejection when malformed, the `fastTransfer` setting and its decision, the
+  free space rule, the relative paths, the sender (window, acknowledgements,
+  checksums) and the receiver (order, offsets, sizes, checksums, names,
+  cancel, write errors), the progress text rules, and whole transfers of a
+  few megabytes through the ASCII line codec in both byte models, with a lost
+  chunk, a damaged chunk and a cancel. A test sends 100 MB through the whole
+  codec path and fails beyond a minute; it takes under a second.
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -691,4 +722,163 @@ under "Names" above replace the old ones: `RdpDrop.Client.exe` and
 value `RdpDrop`. Since the channel name changed, a 0.2.1 agent never hears a
 0.3.0 client: it must be exited and replaced, and its `Run` value removed.
 The settings and logs of the old folder are not carried over.
+
+## Version 0.4
+
+### Fast transfer of large files
+
+Decided on 2026-11-09 after a measurement in production: the remote
+application read a dropped file through drive redirection at 3.6 MB/s, while
+the link carried at least 9.7 MB/s upstream. Drive redirection reads in
+blocks of 64 KB with one round trip per block, so 15 ms of latency caps it. A
+continuous stream over the UltimateRDP channel has no round trip per block.
+In this section MB means a million bytes.
+
+Decision, on the agent. The setting `fastTransfer` is `auto` (the default),
+`always` or `never`; `fastTransferMinBytes` is the threshold of `auto`,
+10485760 bytes (10 MiB) by default. The tray menu "Fast transfer of large
+files" offers Auto, Always and Never and saves the choice; the threshold is
+only editable in the file. In `auto` the files are transferred when the
+total size of the items of the `dragEnter` is at least the threshold;
+`always` transfers every drop; `never` keeps the behaviour of version 0.3.
+The client gives `size` for each item: the length of a file, or the total
+length of the files of a folder, counted for at most 250 ms when the drag
+starts, so a very large folder may report less than its real size. The rule
+is `FastTransferPolicy` in Core. When it transfers, the agent checks that the
+volume of the staging folder has the total size plus 10 percent free, and
+refuses the drag otherwise with "There is not enough free space in the
+session: N MB needed, M MB free." Two items with the same name are not
+transferred: their files are read through drive redirection. When staging is
+on and the files are transferred, the transfer replaces the staging copy.
+
+Flow:
+
+1. The drag starts as before: `dragEnter` with the sizes, the agent checks
+   the items through drive redirection and starts the live drag over the
+   `\\tsclient` paths. Its accepted `dragAck` carries `transfer: true` and a
+   new `transferId`. When a provisional `dragAck` went out before the
+   decision, the agent sends a second accepted one that carries them.
+2. The drag over the session goes on as today: live cursor, feedback from the
+   target.
+3. On the local drop the client sends `drop` with the point and
+   `deferred: true`. The agent cancels the live drag (the button is released,
+   nothing is dropped), keeps the point and creates the receiver of the
+   transfer. A client that drops before the `dragAck` arrived sends a normal
+   `drop`, and the files are dropped through drive redirection as before.
+4. The client sends the files into
+   `%LOCALAPPDATA%\UltimateRDP\staging\<transferId>\` on the agent, with the
+   messages below.
+5. When every file arrived and was checked, the agent sends `transferResult`
+   with status `ok`, then drops the copies at the kept point with a short
+   drag: it presses on its proxy window there, calls `DoDragDrop` with the
+   local paths of the copies, and releases as soon as the target answered a
+   `DragOver` there, or after 300 ms, as the live drag does for its final
+   point. The usual `dropResult` follows, including effect `none` when
+   nothing accepted the files. The copies are deleted one hour after the
+   drop, like staged copies.
+
+Messages, client to agent:
+
+* `transferBegin` : `{ "type": "transferBegin", "transferId": "<guid>",
+  "files": 3, "bytes": 157286400 }`, sent once before the first file. The
+  agent checks the free space again with this exact total, and knows when the
+  last file arrived.
+* `fileBegin` : `{ "type": "fileBegin", "transferId": "<guid>",
+  "fileIndex": 0, "relativePath": "Photos\\2026\\a.jpg", "size": 5242880,
+  "modified": "2026-11-09T10:30:00Z" }`. Files are numbered from zero and sent
+  one after the other. The first segment of `relativePath` is the name of the
+  dropped item: the file itself, or the dropped folder that holds it, whose
+  files follow with their paths in the folder. `modified` is the last write
+  time in UTC, which the copy keeps.
+* `fileChunk` : `{ "type": "fileChunk", "transferId": "<guid>",
+  "fileIndex": 0, "offset": 262144, "data": "<base64>" }`, at most 256 KiB of
+  raw bytes, about 350 000 characters of base64, within the line limit of
+  1 MiB. The base64 stays inside the JSON string, so the ASCII line protocol
+  is unchanged.
+* `fileEnd` : `{ "type": "fileEnd", "transferId": "<guid>", "fileIndex": 0,
+  "sha256": "<64 hexadecimal digits in lower case>" }`.
+* `transferCancel` : `{ "type": "transferCancel", "transferId": "<guid>",
+  "reason": "The user cancelled the transfer." }`, the reason in English for
+  the log of the agent.
+
+Messages, agent to client:
+
+* `fileAck` : `{ "type": "fileAck", "transferId": "<guid>", "fileIndex": 0,
+  "received": 2097152 }`, the bytes of the file received and written so far,
+  sent every time 2 MiB more arrived and at the end of each file.
+* `transferResult` : `{ "type": "transferResult", "transferId": "<guid>",
+  "status": "ok" | "error" | "cancelled", "message": "text", "bytes": 157286400,
+  "seconds": 16.2 }`, with the time measured by the agent from
+  `transferBegin` to the end.
+
+Flow control and checks:
+
+* The client keeps at most 4 MiB sent and not acknowledged, measured with the
+  `fileAck` messages (`TransferSender` in Core). With 15 ms of latency this
+  keeps the link busy far beyond the measured rate.
+* The agent checks the order of the messages, that each chunk starts where
+  the previous one ended (a lost chunk is detected there), the base64, that a
+  file never goes past its size, the size and the SHA-256 at `fileEnd`, that
+  the sizes of the files fit in the total of `transferBegin`, and at the end
+  that every dropped file arrived (`TransferReceiver` in Core). Any failure
+  ends the whole transfer with an `error` result whose message says what
+  happened, and deletes what was written at once.
+* A transfer that receives nothing for 60 seconds stops with an error. A new
+  `dragEnter` cancels the transfer in progress, as it cancels a drag. When
+  the agent exits, it cancels the transfer.
+* After the end of a transfer, the chunks still on their way are dropped
+  without an answer. A message for a transfer the agent never started gets
+  one `error` result.
+
+Client:
+
+* After the deferred drop, a background thread lists the files of the items
+  (folders file by file, hidden and system files included, junctions and
+  symbolic links to folders skipped), reads each file with a 1 MiB
+  `FileStream` buffer, computes its SHA-256 and builds each `fileChunk` line
+  directly from the bytes, without a copy of the whole file. Each send is
+  handed to the UI thread, where the control lives, in order; the thread
+  waits while the window is full. The UI stays responsive.
+* The status bar shows "Preparing the transfer of 2 item(s)...", then
+  "Transferring 3 file(s): 42 % (12.3 MB/s, 1 min left)" from the
+  acknowledgements, at most four times a second, with the rate measured over
+  the last five seconds and the time left rounded up. Once the agent has
+  every file: "Transferred 3 file(s) at 12.3 MB/s, dropping...", then the
+  usual "Dropped on ...".
+* Session, Cancel the transfer is enabled during a transfer. It stops the
+  thread, sends `transferCancel` and shows "Transfer cancelled.". A file that
+  cannot be read, a send that the control refuses, or no acknowledgement for
+  60 seconds while the window is full also send `transferCancel`, with the
+  reason in the status bar.
+* One transfer at a time: while one runs, a new drag over the session is
+  refused with "A transfer is in progress. Wait for its end, or cancel it
+  from the Session menu."
+* A disconnection ends the transfer: "The transfer stopped: the session was
+  disconnected." The agent deletes what it received after 60 seconds without
+  data.
+* The log of each side gets one line at the start and a summary at the end
+  (files, bytes, seconds, MB/s), and nothing per chunk. The client no longer
+  logs the strings it receives when they only hold acknowledgements.
+
+Limits:
+
+* Drive redirection is still needed: the live drag offers the `\\tsclient`
+  paths, and the agent checks the items through it before the drag starts.
+* base64 adds a third to the data: the file rate can reach about three
+  quarters of the upstream capacity of the channel, unless the compression of
+  the RDP connection wins some of it back.
+* Empty folders inside a dropped folder are not created; an empty dropped
+  folder is.
+* The drop happens where the button was released, after the transfer: a
+  window moved in the meantime may no longer be under that point.
+
+Measured without a server, in the tests: 100 MB go through the whole codec
+path (chunk lines, channel bytes in blocks of 1600, model detection, line
+reader, JSON, base64, checksums on both sides) in under a second in
+each byte model, so the codec is far from limiting the transfer.
+
+The client and the agent must both run 0.4.0 for the fast transfer. A 0.3.0
+client sends no sizes and never defers its drops, and a 0.3.0 agent never
+asks for a transfer: in both cases the files are read through drive
+redirection as before.
 

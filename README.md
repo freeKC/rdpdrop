@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/freeKC/ultimaterdp/actions/workflows/ci.yml/badge.svg)](https://github.com/freeKC/ultimaterdp/actions/workflows/ci.yml)
 
-UltimateRDP lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. UltimateRDP is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection for the transfer itself.
+UltimateRDP lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. UltimateRDP is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection. Large files travel through the virtual channel before the drop, which is faster than drive redirection.
 
 ## Why
 
@@ -10,7 +10,7 @@ The Microsoft Remote Desktop client rejects drops on its window, because RDP has
 
 While you drag over the client window, the agent replays the same drag inside the session as a real OLE drag and drop. Any remote application that accepts dropped files therefore accepts them from UltimateRDP, and shows its own drop feedback while you move. When nothing under the cursor accepts the drop, the drop is ignored: nothing is copied anywhere.
 
-The file bytes travel through drive redirection, never through the UltimateRDP channel.
+Small files travel through drive redirection. Large files travel through the UltimateRDP channel before the drop: see "Large files" below.
 
 ## What you need
 
@@ -91,7 +91,7 @@ Each session opens in its own tab. The status bar and the menus follow the activ
 - **Forget saved credentials**: see "Saved credentials" below.
 - **Quit**: disconnects every session and closes the window.
 
-The Session menu holds Connect, Disconnect and Look for the agent again.
+The Session menu holds Connect, Disconnect, Look for the agent again and Cancel the transfer. See "Large files" below.
 
 ### Ending the session
 
@@ -102,7 +102,7 @@ To really end the session, use File, Log off the remote session. The entry is av
 ### Dragging into the session
 
 1. Start the client. It connects with the settings of the .rdp file. Log on as usual.
-2. Watch the status bar at the bottom of the window. The agent label goes from "Agent: waiting" to "Agent ready (v0.3.0)".
+2. Watch the status bar at the bottom of the window. The agent label goes from "Agent: waiting" to "Agent ready (v0.4.0)".
 3. Drag files or folders from Explorer onto the session. A blue banner at the top of the session says "Drop here to send the files into the session".
 4. Move over the remote application you want. It shows its own drop feedback, for example a highlighted folder or an attachment area.
 5. Release the button on the target. The remote application receives the files as a normal drop.
@@ -112,6 +112,28 @@ If nothing under the cursor accepts the drop, the drop is ignored and the status
 When the target is Explorer, Explorer shows its usual Windows copy dialog in the session. It shows the progress and asks what to do when a file already exists.
 
 UltimateRDP only offers copy and link to the remote application. It never offers a move. Ctrl, Shift and Alt are not passed to the session during a drag.
+
+### Large files
+
+A remote application reads a file through drive redirection in small blocks, with one round trip over the network per block. On a connection with some latency this is slow: in one measurement, 3.6 MB/s on a link that carried 9.7 MB/s. For large files UltimateRDP therefore sends the files through its own channel, in a continuous stream, before the drop.
+
+By default this happens when the dropped files and folders hold 10 MiB or more. The agent setting "Fast transfer of large files" changes it, see "Agent tray menu and settings" below.
+
+What you see:
+
+1. The drag over the session works as usual: the remote application shows its drop feedback.
+2. When you release the button, the drag ends in the session without a drop, and the status bar shows the progress: "Transferring 3 file(s): 42 % (12.3 MB/s, 1 min left)".
+3. Once every file is in the session, the agent drops the copies where you released the button, and the status bar says "Dropped on ..." as usual.
+
+The copies go to `%LOCALAPPDATA%\UltimateRDP\staging` in the session and are deleted one hour after the drop. The agent checks the size and the SHA-256 checksum of every file. If anything goes wrong, nothing is dropped and the status bar says why. Session, Cancel the transfer stops it; the agent then deletes what it received.
+
+Things to know:
+
+- One transfer at a time. While one runs, a new drag over the session is refused.
+- Drive redirection must still be on: the drag over the session uses it.
+- If you release the button very quickly, before the agent answered the start of the drag, the files go through drive redirection as before.
+- Empty folders inside a dropped folder are not created in the session.
+- The client and the agent must both run version 0.4.0. With an older client or agent, every drop goes through drive redirection.
 
 ### Status bar messages
 
@@ -126,6 +148,19 @@ Messages of a drag:
 - **"Drop refused"** followed by the reason from the agent. For example "Drop refused: The previous drop is still being delivered in the session. Try again once it is done."
 - **"Drop refused: the drag did not start in the session. Drag the files again."**: the client got the drop without a drag in progress for the same files.
 - **"Cancelled"** followed by the reason, for example "Cancelled: The drag was cancelled: Escape was pressed in the session."
+
+Messages of a transfer of large files:
+
+- **"Preparing the transfer of 2 item(s)..."**: the client lists the files to send.
+- **"Transferring 3 file(s): 42 % (12.3 MB/s, 1 min left)"**: the files are on their way. The rate covers the last five seconds; MB means a million bytes.
+- **"Transferred 3 file(s) at 12.3 MB/s, dropping..."**: every file is in the session, and the agent drops the copies.
+- **"Transfer cancelled."**: you cancelled the transfer from the Session menu.
+- **"A transfer is in progress. Wait for its end, or cancel it from the Session menu."**: a new drag was refused during a transfer.
+- **"Transfer failed"** followed by the reason from the agent, for example "Transfer failed: Data was lost or damaged on the way. Try again."
+- **"Drop refused: There is not enough free space in the session: 1,234 MB needed, 800 MB free."**: the disk of the session cannot hold the files.
+- **"Cannot read"** followed by a file name and the Windows reason: the client could not read a file on your computer.
+- **"The agent stopped answering during the transfer."**: no acknowledgement for a minute.
+- **"The transfer stopped: the session was disconnected."**: the connection ended during the transfer.
 
 Messages of the connection:
 
@@ -194,7 +229,8 @@ File, Forget saved credentials deletes both kinds of credential for the host of 
 
 By default the tray icon of the agent is visible only while an UltimateRDP client is connected to the session. Its menu holds:
 
-- **Stage files in the session before the drop**: off by default. When on, the agent copies the files into the session before the drag starts, and the remote application receives local paths instead of `\\tsclient` paths. Turn it on for applications that refuse network paths. Large files take time to copy before the drag starts.
+- **Stage files in the session before the drop**: off by default. When on, the agent copies the files into the session before the drag starts, and the remote application receives local paths instead of `\\tsclient` paths. Turn it on for applications that refuse network paths. Large files take time to copy before the drag starts. When the files come through the channel, see below, they arrive as local copies anyway.
+- **Fast transfer of large files**: Auto, Always or Never. Auto, the default, sends the files through the UltimateRDP channel before the drop when they hold 10 MiB or more. Always does it for every drop, Never for none: the remote application then reads the files through drive redirection, as in version 0.3.
 - **Open log folder**, **About** and **Exit**.
 
 The menu follows the display language of Windows on the server.
@@ -207,6 +243,8 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
 {
   "logLevel": "debug",
   "stageFiles": false,
+  "fastTransfer": "auto",
+  "fastTransferMinBytes": 10485760,
   "trayIcon": "auto"
 }
 ```
@@ -214,6 +252,8 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
 | Setting | Values | When absent | Meaning |
 | --- | --- | --- | --- |
 | `stageFiles` | `true`, `false` | `false` | The tray menu entry "Stage files in the session before the drop". |
+| `fastTransfer` | `auto`, `always`, `never` | `auto` | The tray menu entry "Fast transfer of large files". |
+| `fastTransferMinBytes` | a number of bytes | `10485760` (10 MiB) | The size from which `auto` sends the files through the channel, counted over all the dropped items. Only editable in the file. |
 | `logLevel` | `debug`, `info`, `warn`, `error` | `info` | The lowest level written to the log. Only editable in the file. |
 | `trayIcon` | `auto`, `always`, `never` | `auto` | `auto` shows the tray icon only while an UltimateRDP client is connected to the session. `always` shows it from the start of the agent. `never` never shows it: the agent is then controlled with `--uninstall` and its `Run` entry only. Only editable in the file. |
 
@@ -221,7 +261,7 @@ An unknown value gives the default and a warning in the log. Restart the agent a
 
 ## How it works
 
-The client hosts the Microsoft Remote Desktop ActiveX control and registers itself as a drop target on its windows. The agent runs in your session and listens on a static virtual channel named `ULTRDP`. The client never sends file contents. It sends the local paths and the cursor position, and the session reads the files from the redirected drives.
+The client hosts the Microsoft Remote Desktop ActiveX control and registers itself as a drop target on its windows. The agent runs in your session and listens on a static virtual channel named `ULTRDP`. For small files the client sends the local paths and the cursor position, and the session reads the files from the redirected drives. Large files are sent through the channel, as described after the steps below.
 
 1. When the drag first moves over the session, the client converts the cursor position to remote desktop coordinates and sends `dragEnter` with the paths.
 2. The agent opens an invisible proxy window over the whole remote screen. It moves the remote cursor to the point and simulates a left button press on that window. The press starts a real OLE drag inside the session, with the files as `\\tsclient\<drive>\...` paths, or as staged copies.
@@ -231,6 +271,8 @@ The client hosts the Microsoft Remote Desktop ActiveX control and registers itse
 6. The agent reports `dropResult` with the effect: `copy` or `link` when the target accepted, or `none` when nothing under the cursor accepted the files. With `none`, the drop is ignored. The client shows the result in the status bar.
 
 The drag offers copy and link only, never move. Modifier keys are recorded in the logs but not injected.
+
+For large files, the `dragEnter` carries the size of each item, and the agent answers `dragAck` with `transfer: true` when they must come through the channel. At step 5 the client then sends `drop` with `deferred: true`: the agent cancels the drag in the session and keeps the point. The client sends the files as base64 chunks of 256 KiB with at most 4 MiB not yet acknowledged, the agent writes them into its staging folder and checks the size and SHA-256 of each one, answers `transferResult`, then drops the copies at the kept point with a short drag, and reports `dropResult` as in step 6.
 
 To log off, the client sends `logoff`. The agent answers `logoffResult`, waits half a second so that the answer reaches the client, then asks Windows to log off the session. It never forces applications that have unsaved work.
 
@@ -247,6 +289,7 @@ Messages are JSON objects sent as ASCII lines, and each side detects at run time
 - **The texts are in the wrong language.** Choose the language in View, Language. A message from the agent follows the language the client announced at connection time; after a language change, the next message uses the new one.
 - **Drops are refused because of the drives.** Turn on drive redirection in the .rdp file, under Local Resources, More, Drives. On the server, check the policy "Do not allow drive redirection".
 - **The drop lands on the wrong window.** Coordinate scaling after a window resize, or full screen over several monitors, can be the cause. Please report it with both logs.
+- **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s. To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
 - **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
 
 ## Build from source
@@ -271,15 +314,15 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 
 ## Security notes
 
-- The agent only reads from `\\tsclient\`, that is from the drives you chose to share. The agent itself only writes to its staging folder in your session, when staging is on. The application you drop on decides where the files go. The agent does not run as a service and has no privilege beyond your own.
+- The agent only reads from `\\tsclient\`, that is from the drives you chose to share. The agent itself only writes to its staging folder in your session, when staging is on or when files come through the channel. It refuses any file name that would leave that folder. The application you drop on decides where the files go. The agent does not run as a service and has no privilege beyond your own.
 - The agent simulates input only inside your own session, and only between the start and the end of a drag. It only uses the left mouse button. It injects the press only once its own proxy window is under the cursor, so the press never reaches another application. To cancel, it posts Escape to its proxy window instead of simulating a key.
 - The agent never offers a move. A move accepted in the session could delete the file on your local disk through the redirected drive.
-- Messages carry file paths, coordinates, modifier key flags and window names only. No file content goes through the channel.
+- Messages carry file paths, coordinates, modifier key flags and window names. File contents go through the channel only for a transfer of large files, inside the encrypted Remote Desktop connection.
 - The client never writes credentials and never logs them. It reads the generic credential `TERMSRV/<host>` when one exists, and hands it to the Microsoft control. Other credential prompts come from the Microsoft control.
 
 ## Status
 
-Version 0.3.0 is a test release.
+Version 0.4.0 is a test release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -287,12 +330,13 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 - The transfer through drive redirection to the remote desktop.
 - The live drag into a remote application.
 
-The log off command and the translations are new in 0.3.0 and not yet verified against a real server.
+The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0 and not yet verified against a real server.
 
 Feedback that helps:
 
 - Whether the live drag works in your session, and with which applications.
 - Whether the log off works for you, and the wording of your language.
+- The rate of a transfer of large files on your connection, from the summary line of both logs.
 
 - How long the first drop on Explorer takes.
 - Whether drops land in the right place in full screen, with one monitor or all monitors.
