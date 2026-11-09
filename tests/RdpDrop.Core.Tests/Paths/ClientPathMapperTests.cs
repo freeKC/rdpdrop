@@ -126,4 +126,46 @@ public class ClientPathMapperTests
     {
         Assert.Equal(@"\\tsclient\", ClientPathMapper.TsClientRoot);
     }
+
+    [Theory]
+    [InlineData(@"C:\Users\me\a.txt", PathRejection.None)]
+    [InlineData(@"\\?\C:\a", PathRejection.None)]
+    [InlineData(null, PathRejection.Empty)]
+    [InlineData(" ", PathRejection.Empty)]
+    [InlineData(@"\\.\C:\a.txt", PathRejection.DevicePath)]
+    [InlineData(@"\\server\share\a.txt", PathRejection.NetworkPath)]
+    [InlineData(@"\\?\UNC\server\share\a.txt", PathRejection.NetworkPath)]
+    [InlineData(@"folder\a.txt", PathRejection.RelativePath)]
+    [InlineData(@"C:a.txt", PathRejection.DriveRelativePath)]
+    [InlineData(@"C:\a\..\b", PathRejection.DotSegment)]
+    [InlineData(@"C:\a\b?c", PathRejection.InvalidCharacters)]
+    public void Rejections_are_classified(string? clientPath, PathRejection expected)
+    {
+        Assert.Equal(expected, ClientPathMapper.Classify(clientPath, out var mapped));
+        Assert.Equal(expected == PathRejection.None, mapped.Length > 0);
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\me\a.txt")]
+    [InlineData(@"\\server\share\a.txt")]
+    [InlineData(@"C:a.txt")]
+    [InlineData(@"\\?\d:x")]
+    [InlineData(@"C:\a\..\b")]
+    [InlineData("")]
+    public void Classify_and_try_map_agree(string clientPath)
+    {
+        var rejection = ClientPathMapper.Classify(clientPath, out var classified);
+        var ok = ClientPathMapper.TryMapToTsClient(clientPath, out var mapped, out var reason);
+
+        Assert.Equal(rejection == PathRejection.None, ok);
+        Assert.Equal(classified, mapped);
+        Assert.Equal(ok ? null : ClientPathMapper.Describe(rejection, clientPath), reason);
+    }
+
+    [Fact]
+    public void Drive_relative_reason_names_the_drive_after_a_long_path_prefix()
+    {
+        Assert.Contains("drive D:", ClientPathMapper.Describe(PathRejection.DriveRelativePath, @"\\?\d:x"));
+        Assert.Equal(string.Empty, ClientPathMapper.Describe(PathRejection.None, @"C:\a"));
+    }
 }

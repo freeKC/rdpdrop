@@ -14,6 +14,8 @@ namespace RdpDrop.Core.Protocol;
 [JsonDerivedType(typeof(DragMoveMessage), MessageTypes.DragMove)]
 [JsonDerivedType(typeof(DragLeaveMessage), MessageTypes.DragLeave)]
 [JsonDerivedType(typeof(DragAckMessage), MessageTypes.DragAck)]
+[JsonDerivedType(typeof(LogoffMessage), MessageTypes.Logoff)]
+[JsonDerivedType(typeof(LogoffResultMessage), MessageTypes.LogoffResult)]
 public abstract record Message
 {
     /// <summary>
@@ -61,28 +63,39 @@ public static class MessageTypes
 
     /// <summary>Type of <see cref="DragAckMessage"/>.</summary>
     public const string DragAck = "dragAck";
+
+    /// <summary>Type of <see cref="LogoffMessage"/>.</summary>
+    public const string Logoff = "logoff";
+
+    /// <summary>Type of <see cref="LogoffResultMessage"/>.</summary>
+    public const string LogoffResult = "logoffResult";
 }
 
 /// <summary>
-/// Sent by both sides. The client fills <see cref="ClientVersion"/>; the agent fills
-/// <see cref="AgentVersion"/> and <see cref="DriveRedirectionAvailable"/>. Fields left
-/// null are not written.
+/// Sent by both sides. The client fills <see cref="ClientVersion"/> and
+/// <see cref="ClientLanguage"/>; the agent fills <see cref="AgentVersion"/> and
+/// <see cref="DriveRedirectionAvailable"/>. Fields left null are not written.
 /// </summary>
 /// <param name="Version">Protocol version, see <see cref="ProtocolConstants.ProtocolVersion"/>.</param>
 /// <param name="ClientVersion">Version of the client, in the hello of the client.</param>
 /// <param name="AgentVersion">Version of the agent, in the hello of the agent.</param>
 /// <param name="DriveRedirectionAvailable">Whether the agent sees a redirected drive.</param>
+/// <param name="ClientLanguage">
+/// Two letter code of the language of the client, in the hello of the client. The agent
+/// writes the texts it sends for that language; see <see cref="Localization.UiLanguages"/>.
+/// </param>
 public sealed record HelloMessage(
     int Version,
     string? ClientVersion = null,
     string? AgentVersion = null,
-    bool? DriveRedirectionAvailable = null) : Message(MessageTypes.Hello)
+    bool? DriveRedirectionAvailable = null,
+    string? ClientLanguage = null) : Message(MessageTypes.Hello)
 {
     /// <summary>
     /// Builds the hello sent by the client.
     /// </summary>
-    public static HelloMessage FromClient(string clientVersion) =>
-        new(ProtocolConstants.ProtocolVersion, ClientVersion: clientVersion);
+    public static HelloMessage FromClient(string clientVersion, string? clientLanguage = null) =>
+        new(ProtocolConstants.ProtocolVersion, ClientVersion: clientVersion, ClientLanguage: clientLanguage);
 
     /// <summary>
     /// Builds the hello sent by the agent.
@@ -219,6 +232,28 @@ public sealed record DragLeaveMessage(string Id) : Message(MessageTypes.DragLeav
 /// <param name="Accepted">True when the drag runs inside the session.</param>
 /// <param name="Message">Why the drag was refused, or a note such as a long staging.</param>
 public sealed record DragAckMessage(string Id, bool Accepted, string? Message = null) : Message(MessageTypes.DragAck)
+{
+    internal override bool IsValid() => !string.IsNullOrEmpty(Id);
+}
+
+/// <summary>
+/// Sent by the client to log off the Windows session on the server. The agent answers
+/// with a <see cref="LogoffResultMessage"/> before the session closes.
+/// </summary>
+/// <param name="Id">Identifier of the request, repeated by its results.</param>
+public sealed record LogoffMessage(string Id) : Message(MessageTypes.Logoff)
+{
+    internal override bool IsValid() => !string.IsNullOrEmpty(Id);
+}
+
+/// <summary>
+/// Sent by the agent in answer to a <see cref="LogoffMessage"/>: once when the log off is
+/// accepted, then again with <see cref="Accepted"/> false when Windows refused it.
+/// </summary>
+/// <param name="Id">Identifier of the request.</param>
+/// <param name="Accepted">True when the session is about to log off.</param>
+/// <param name="Message">Human readable text, in the language of the client.</param>
+public sealed record LogoffResultMessage(string Id, bool Accepted, string? Message = null) : Message(MessageTypes.LogoffResult)
 {
     internal override bool IsValid() => !string.IsNullOrEmpty(Id);
 }
