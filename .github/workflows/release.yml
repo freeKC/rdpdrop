@@ -1,23 +1,28 @@
 name: Release
 
+# A tag v* builds, signs and publishes a release. A manual run builds and signs only,
+# and keeps the signed executables as workflow artifacts, to test the signing.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
-permissions:
-  contents: write
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
+    permissions:
+      contents: read
     env:
-      DOTNET_NOLOGO: true
-      DOTNET_CLI_TELEMETRY_OPTOUT: true
       TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Check release notes
+        if: github.event_name == 'push'
         shell: pwsh
         run: |
           $notes = "docs/releases/$env:TAG.md"
@@ -58,9 +63,96 @@ jobs:
             Write-Host "$folder holds $($files[0].Name) ($($files[0].Length) bytes)"
           }
 
+      - name: Upload unsigned executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned
+          path: artifacts/
+          retention-days: 1
+          if-no-files-found: error
+
+  # The only job that sees the signing secrets. It signs the two executables with the
+  # APROGSYS certificate through Azure Artifact Signing, then checks each signature.
+  sign:
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned
+          path: artifacts
+
+      - name: Sign the executables
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://weu.codesigning.azure.net/
+          signing-account-name: APROGSYS
+          certificate-profile-name: APROGSYS-PublicTrust
+          files-folder: ${{ github.workspace }}\artifacts
+          files-folder-filter: exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Check the signatures
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { Write-Error 'signtool.exe not found on the runner'; exit 1 }
+          Write-Host "Using $signtool"
+          $failed = $false
+          foreach ($file in Get-ChildItem artifacts -Recurse -Filter *.exe) {
+            & $signtool verify /pa /v $file.FullName
+            if ($LASTEXITCODE -ne 0) { Write-Error "Signature check failed for $($file.Name)"; $failed = $true }
+            $sig = Get-AuthenticodeSignature $file.FullName
+            Write-Host "$($file.Name): $($sig.Status), signer $($sig.SignerCertificate.Subject), timestamp $($sig.TimeStamperCertificate.Subject)"
+            if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'CN=APROGSYS' -or -not $sig.TimeStamperCertificate) {
+              Write-Error "$($file.Name) is not validly signed by APROGSYS with a timestamp"; $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Upload signed executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push'
+    needs: sign
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed
+          path: artifacts
+
       - name: Zip
         shell: pwsh
         run: |
+          foreach ($folder in 'artifacts/RdpDrop.Client', 'artifacts/RdpDrop.Agent') {
+            $files = @(Get-ChildItem -Path $folder -Recurse -File)
+            if ($files.Count -ne 1 -or $files[0].Extension -ne '.exe') {
+              Write-Error "$folder must hold exactly one executable"
+              exit 1
+            }
+          }
           Compress-Archive -Path artifacts/RdpDrop.Client/* -DestinationPath "RdpDrop.Client-$env:TAG-win-x64.zip"
           Compress-Archive -Path artifacts/RdpDrop.Agent/* -DestinationPath "RdpDrop.Agent-$env:TAG-win-x64.zip"
 
