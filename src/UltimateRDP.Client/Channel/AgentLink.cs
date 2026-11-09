@@ -35,6 +35,7 @@ namespace UltimateRDP.Client.Channel;
 internal sealed class AgentLink : IDisposable
 {
     private const int HelloIntervalMilliseconds = 2000;
+    private const string FileAckPrefix = "{\"type\":\"" + MessageTypes.FileAck + "\"";
     private static readonly TimeSpan DiscoveryPeriod = TimeSpan.FromSeconds(60);
 
     private readonly RdpControl _control;
@@ -63,6 +64,12 @@ internal sealed class AgentLink : IDisposable
 
     /// <summary>Raised for every logoffResult message.</summary>
     public event EventHandler<LogoffResultMessage>? LogoffResultReceived;
+
+    /// <summary>Raised for every fileAck message, without a log line: several come every second during a transfer.</summary>
+    public event EventHandler<FileAckMessage>? FileAckReceived;
+
+    /// <summary>Raised for every transferResult message.</summary>
+    public event EventHandler<TransferResultMessage>? TransferResultReceived;
 
     public AgentState State { get; private set; } = AgentState.NotConnected;
 
@@ -146,6 +153,44 @@ internal sealed class AgentLink : IDisposable
         }
 
         return Send(message, $"logoff {message.Id}");
+    }
+
+    /// <summary>
+    /// Sends a message of a transfer. transferBegin and transferCancel are logged; the
+    /// messages of each file are not, since a folder may hold thousands of files. Returns
+    /// false when the agent is not ready or the control refused the data.
+    /// </summary>
+    public bool SendTransfer(Message message, string transferId)
+    {
+        if (State != AgentState.Ready || Model == ChannelByteModel.Unknown)
+        {
+            return false;
+        }
+
+        return Send(message, $"{message.Type} {transferId}", log: message is TransferBeginMessage or TransferCancelMessage);
+    }
+
+    /// <summary>
+    /// Sends a line built by <see cref="Core.Transfer.TransferSender.EncodeChunk"/>, without a
+    /// log line. Returns false when the agent is not ready or the control refused the data.
+    /// </summary>
+    public bool SendTransferLine(string line, string transferId)
+    {
+        if (State != AgentState.Ready || Model == ChannelByteModel.Unknown)
+        {
+            return false;
+        }
+
+        try
+        {
+            _control.SendOnVirtualChannel(ProtocolConstants.ChannelName, line);
+            return true;
+        }
+        catch (Exception ex) when (ex is COMException or AxHost.InvalidActiveXStateException)
+        {
+            ClientLog.Error(Invariant($"SendOnVirtualChannel failed for a chunk of transfer {transferId}, {line.Length} characters."), ex);
+            return false;
+        }
     }
 
     /// <summary>
@@ -241,8 +286,15 @@ internal sealed class AgentLink : IDisposable
         }
 
         var data = e.data ?? string.Empty;
-        ClientLog.Info(Invariant($"Received {data.Length} string units on {e.chanName}, first: {FirstUnitsHex(data)}"));
-        foreach (var line in _receiver.Receive(data))
+        var lines = _receiver.Receive(data);
+
+        // The acknowledgements of a transfer come several times a second; they are not logged.
+        if (lines.Count == 0 || !lines.TrueForAll(line => line.Text.StartsWith(FileAckPrefix, StringComparison.Ordinal)))
+        {
+            ClientLog.Info(Invariant($"Received {data.Length} string units on {e.chanName}, first: {FirstUnitsHex(data)}"));
+        }
+
+        foreach (var line in lines)
         {
             HandleLine(line);
         }
@@ -267,13 +319,22 @@ internal sealed class AgentLink : IDisposable
                 break;
 
             case DragAckMessage ack:
-                ClientLog.Info($"Drag ack {ack.Id}: accepted {ack.Accepted}, message \"{ack.Message}\"");
+                ClientLog.Info($"Drag ack {ack.Id}: accepted {ack.Accepted}{(ack.Transfer == true ? ", transfer " + ack.TransferId : string.Empty)}, message \"{ack.Message}\"");
                 DragAckReceived?.Invoke(this, ack);
                 break;
 
             case LogoffResultMessage logoff:
                 ClientLog.Info($"Log off result {logoff.Id}: accepted {logoff.Accepted}, message \"{logoff.Message}\"");
                 LogoffResultReceived?.Invoke(this, logoff);
+                break;
+
+            case FileAckMessage fileAck:
+                FileAckReceived?.Invoke(this, fileAck);
+                break;
+
+            case TransferResultMessage transfer:
+                ClientLog.Info(Invariant($"Transfer result {transfer.TransferId}: {transfer.Status}, {transfer.Bytes} bytes in {transfer.Seconds:0.0} s, message \"{transfer.Message}\""));
+                TransferResultReceived?.Invoke(this, transfer);
                 break;
 
             case null:

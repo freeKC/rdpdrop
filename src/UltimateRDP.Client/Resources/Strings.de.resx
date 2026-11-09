@@ -209,6 +209,9 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Alle &amp;Monitore verwenden</value>
   </data>
+  <data name="MenuCancelTransfer" xml:space="preserve">
+    <value>Übertragung a&amp;bbrechen</value>
+  </data>
   <data name="MenuClearRecent" xml:space="preserve">
     <value>Liste &amp;leeren</value>
   </data>
@@ -363,6 +366,54 @@ Jetzt neu verbinden?</value>
   </data>
   <data name="TabDisconnected" xml:space="preserve">
     <value>{0} (getrennt)</value>
+  </data>
+  <data name="TimeLeftHours" xml:space="preserve">
+    <value>noch {0} h {1} min</value>
+  </data>
+  <data name="TimeLeftMinutes" xml:space="preserve">
+    <value>noch {0} min</value>
+  </data>
+  <data name="TimeLeftSeconds" xml:space="preserve">
+    <value>noch {0} s</value>
+  </data>
+  <data name="TransferAgentSilent" xml:space="preserve">
+    <value>Der Agent hat während der Übertragung nicht mehr geantwortet.</value>
+  </data>
+  <data name="TransferBusy" xml:space="preserve">
+    <value>Eine Übertragung läuft. Warten Sie auf ihr Ende oder brechen Sie sie im Menü Sitzung ab.</value>
+  </data>
+  <data name="TransferCancelledByUser" xml:space="preserve">
+    <value>Übertragung abgebrochen.</value>
+  </data>
+  <data name="TransferDropping" xml:space="preserve">
+    <value>{0} Datei(en) mit {1:0.0} MB/s übertragen, wird abgelegt...</value>
+  </data>
+  <data name="TransferFailedNoDetail" xml:space="preserve">
+    <value>Übertragung fehlgeschlagen.</value>
+  </data>
+  <data name="TransferFailedReason" xml:space="preserve">
+    <value>Übertragung fehlgeschlagen: {0}</value>
+  </data>
+  <data name="TransferFileChanged" xml:space="preserve">
+    <value>{0} hat sich während des Sendens geändert. Versuchen Sie es erneut.</value>
+  </data>
+  <data name="TransferInterrupted" xml:space="preserve">
+    <value>Die Übertragung wurde beendet: Die Sitzung wurde getrennt.</value>
+  </data>
+  <data name="TransferNotSent" xml:space="preserve">
+    <value>Übertragung fehlgeschlagen: Die Daten konnten nicht an den Agent gesendet werden.</value>
+  </data>
+  <data name="TransferPreparing" xml:space="preserve">
+    <value>Übertragung von {0} Element(en) wird vorbereitet...</value>
+  </data>
+  <data name="TransferProgress" xml:space="preserve">
+    <value>Übertragung von {0} Datei(en): {1} %</value>
+  </data>
+  <data name="TransferProgressRate" xml:space="preserve">
+    <value>Übertragung von {0} Datei(en): {1} % ({2:0.0} MB/s, {3})</value>
+  </data>
+  <data name="TransferReadFailed" xml:space="preserve">
+    <value>{0} kann nicht gelesen werden. {1}</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Ein unerwarteter Fehler ist aufgetreten.

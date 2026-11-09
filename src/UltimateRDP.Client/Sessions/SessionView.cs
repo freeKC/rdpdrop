@@ -77,6 +77,7 @@ internal sealed partial class SessionView : UserControl
         _agent.StateChanged += (_, _) => OnAgentStateChanged();
         _agent.DropResultReceived += (_, result) => OnDropResult(result);
         InitializeDrops();
+        InitializeTransfer();
         InitializeLogOff();
 
         ClientLog.Info($"Session view created for {Host} from {rdpPath}");

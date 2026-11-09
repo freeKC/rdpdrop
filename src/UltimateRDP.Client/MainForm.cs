@@ -33,6 +33,7 @@ internal sealed partial class MainForm : Form
     private readonly ToolStripMenuItem _connectItem = new();
     private readonly ToolStripMenuItem _disconnectItem = new();
     private readonly ToolStripMenuItem _findAgentItem = new();
+    private readonly ToolStripMenuItem _cancelTransferItem = new();
     private readonly ToolStripMenuItem _helpMenu = new();
     private readonly ToolStripMenuItem _aboutItem = new();
     private readonly ToolStripMenuItem _projectItem = new();
@@ -338,8 +339,9 @@ internal sealed partial class MainForm : Form
         _connectItem.Click += (_, _) => ActiveSession?.Connect();
         _disconnectItem.Click += (_, _) => ActiveSession?.Disconnect();
         _findAgentItem.Click += (_, _) => ActiveSession?.LookForAgent();
+        _cancelTransferItem.Click += (_, _) => ActiveSession?.CancelTransfer();
 
-        _sessionMenu.DropDownItems.AddRange([_connectItem, _disconnectItem, _findAgentItem]);
+        _sessionMenu.DropDownItems.AddRange([_connectItem, _disconnectItem, _findAgentItem, new ToolStripSeparator(), _cancelTransferItem]);
         _sessionMenu.DropDownOpening += (_, _) => UpdateMenu();
 
         _aboutItem.Click += (_, _) => ShowAbout();
@@ -365,6 +367,7 @@ internal sealed partial class MainForm : Form
         _connectItem.Text = Strings.MenuConnect;
         _disconnectItem.Text = Strings.MenuDisconnect;
         _findAgentItem.Text = Strings.MenuFindAgent;
+        _cancelTransferItem.Text = Strings.MenuCancelTransfer;
         _helpMenu.Text = Strings.MenuHelp;
         _aboutItem.Text = Strings.MenuAbout;
         _projectItem.Text = Strings.MenuProjectPage;
@@ -397,6 +400,7 @@ internal sealed partial class MainForm : Form
         _connectItem.Enabled = session is { State: SessionState.Disconnected, IsClosing: false };
         _disconnectItem.Enabled = session is { IsClosing: false } && session.State != SessionState.Disconnected;
         _findAgentItem.Enabled = session?.CanLookForAgent == true;
+        _cancelTransferItem.Enabled = session?.CanCancelTransfer == true;
         _fileMenu.ShowActiveSession(session is { IsClosing: false }, session?.CanLogOff == true);
         ShowViewChoices();
     }

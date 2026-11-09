@@ -232,6 +232,9 @@ The next connection asks for them again. The open session is not affected.</valu
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Use all &amp;monitors</value>
   </data>
+  <data name="MenuCancelTransfer" xml:space="preserve">
+    <value>Cancel the &amp;transfer</value>
+  </data>
   <data name="MenuClearRecent" xml:space="preserve">
     <value>&amp;Clear recent</value>
   </data>
@@ -404,6 +407,64 @@ Reconnect now?</value>
   <data name="TabDisconnected" xml:space="preserve">
     <value>{0} (disconnected)</value>
     <comment>{0} is a computer name, shown in a tab.</comment>
+  </data>
+  <data name="TimeLeftHours" xml:space="preserve">
+    <value>{0} h {1} min left</value>
+    <comment>{0} is a number of hours, {1} a number of minutes. Used as {3} in TransferProgressRate.</comment>
+  </data>
+  <data name="TimeLeftMinutes" xml:space="preserve">
+    <value>{0} min left</value>
+    <comment>{0} is a number of minutes. Used as {3} in TransferProgressRate.</comment>
+  </data>
+  <data name="TimeLeftSeconds" xml:space="preserve">
+    <value>{0} s left</value>
+    <comment>{0} is a number of seconds. Used as {3} in TransferProgressRate.</comment>
+  </data>
+  <data name="TransferAgentSilent" xml:space="preserve">
+    <value>The agent stopped answering during the transfer.</value>
+  </data>
+  <data name="TransferBusy" xml:space="preserve">
+    <value>A transfer is in progress. Wait for its end, or cancel it from the Session menu.</value>
+  </data>
+  <data name="TransferCancelledByUser" xml:space="preserve">
+    <value>Transfer cancelled.</value>
+  </data>
+  <data name="TransferDropping" xml:space="preserve">
+    <value>Transferred {0} file(s) at {1:0.0} MB/s, dropping...</value>
+    <comment>{0} is a number of files, {1} a rate in megabytes per second.</comment>
+  </data>
+  <data name="TransferFailedNoDetail" xml:space="preserve">
+    <value>Transfer failed.</value>
+  </data>
+  <data name="TransferFailedReason" xml:space="preserve">
+    <value>Transfer failed: {0}</value>
+    <comment>{0} is a text from the agent, already in the language of the client.</comment>
+  </data>
+  <data name="TransferFileChanged" xml:space="preserve">
+    <value>{0} changed while it was being sent. Try again.</value>
+    <comment>{0} is a file path.</comment>
+  </data>
+  <data name="TransferInterrupted" xml:space="preserve">
+    <value>The transfer stopped: the session was disconnected.</value>
+  </data>
+  <data name="TransferNotSent" xml:space="preserve">
+    <value>Transfer failed: the data could not be sent to the agent.</value>
+  </data>
+  <data name="TransferPreparing" xml:space="preserve">
+    <value>Preparing the transfer of {0} item(s)...</value>
+    <comment>{0} is a number of files and folders.</comment>
+  </data>
+  <data name="TransferProgress" xml:space="preserve">
+    <value>Transferring {0} file(s): {1} %</value>
+    <comment>{0} is a number of files, {1} a percentage.</comment>
+  </data>
+  <data name="TransferProgressRate" xml:space="preserve">
+    <value>Transferring {0} file(s): {1} % ({2:0.0} MB/s, {3})</value>
+    <comment>{0} is a number of files, {1} a percentage, {2} a rate in megabytes per second, {3} the text of TimeLeftSeconds, TimeLeftMinutes or TimeLeftHours.</comment>
+  </data>
+  <data name="TransferReadFailed" xml:space="preserve">
+    <value>Cannot read {0}. {1}</value>
+    <comment>{0} is a file path, {1} an error text from Windows.</comment>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>An unexpected error occurred.

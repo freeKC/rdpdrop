@@ -209,6 +209,9 @@ La prochaine connexion les demandera de nouveau. La session ouverte n'est pas to
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Utiliser &amp;tous les écrans</value>
   </data>
+  <data name="MenuCancelTransfer" xml:space="preserve">
+    <value>Annuler le &amp;transfert</value>
+  </data>
   <data name="MenuClearRecent" xml:space="preserve">
     <value>&amp;Effacer la liste</value>
   </data>
@@ -363,6 +366,54 @@ Se reconnecter maintenant ?</value>
   </data>
   <data name="TabDisconnected" xml:space="preserve">
     <value>{0} (déconnecté)</value>
+  </data>
+  <data name="TimeLeftHours" xml:space="preserve">
+    <value>{0} h {1} min restantes</value>
+  </data>
+  <data name="TimeLeftMinutes" xml:space="preserve">
+    <value>{0} min restantes</value>
+  </data>
+  <data name="TimeLeftSeconds" xml:space="preserve">
+    <value>{0} s restantes</value>
+  </data>
+  <data name="TransferAgentSilent" xml:space="preserve">
+    <value>L'agent a cessé de répondre pendant le transfert.</value>
+  </data>
+  <data name="TransferBusy" xml:space="preserve">
+    <value>Un transfert est en cours. Attendez sa fin ou annulez-le depuis le menu Session.</value>
+  </data>
+  <data name="TransferCancelledByUser" xml:space="preserve">
+    <value>Transfert annulé.</value>
+  </data>
+  <data name="TransferDropping" xml:space="preserve">
+    <value>{0} fichier(s) transféré(s) à {1:0.0} Mo/s, dépôt en cours...</value>
+  </data>
+  <data name="TransferFailedNoDetail" xml:space="preserve">
+    <value>Échec du transfert.</value>
+  </data>
+  <data name="TransferFailedReason" xml:space="preserve">
+    <value>Échec du transfert : {0}</value>
+  </data>
+  <data name="TransferFileChanged" xml:space="preserve">
+    <value>{0} a changé pendant son envoi. Réessayez.</value>
+  </data>
+  <data name="TransferInterrupted" xml:space="preserve">
+    <value>Le transfert s'est arrêté : la session a été déconnectée.</value>
+  </data>
+  <data name="TransferNotSent" xml:space="preserve">
+    <value>Échec du transfert : les données n'ont pas pu être envoyées à l'agent.</value>
+  </data>
+  <data name="TransferPreparing" xml:space="preserve">
+    <value>Préparation du transfert de {0} élément(s)...</value>
+  </data>
+  <data name="TransferProgress" xml:space="preserve">
+    <value>Transfert de {0} fichier(s) : {1} %</value>
+  </data>
+  <data name="TransferProgressRate" xml:space="preserve">
+    <value>Transfert de {0} fichier(s) : {1} % ({2:0.0} Mo/s, {3})</value>
+  </data>
+  <data name="TransferReadFailed" xml:space="preserve">
+    <value>Impossible de lire {0}. {1}</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Une erreur inattendue s'est produite.

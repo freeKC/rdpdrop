@@ -24,12 +24,19 @@ namespace UltimateRDP.Client.Sessions;
 /// the session and answers dragAck, moves follow as dragMove and the drag ends with drop
 /// or dragLeave.
 /// </para>
+/// <para>
+/// When the dragAck asks for a transfer, the drop is deferred and the files follow through
+/// the channel; see SessionView.Transfer.cs.
+/// </para>
 /// </remarks>
 internal sealed partial class SessionView
 {
     private const int AckTimeoutMilliseconds = 1000;
     private const int MoveIntervalMilliseconds = 33;
     private const int KeepAliveMilliseconds = 1000;
+
+    /// <summary>Longest time spent counting the size of a dropped folder when the drag starts.</summary>
+    private static readonly TimeSpan FolderSizeBudget = TimeSpan.FromMilliseconds(250);
 
     // Moving between the control, its child windows and the host window gives a leave
     // and an enter in a row; a leave only counts when no drag over follows it quickly.
@@ -81,17 +88,19 @@ internal sealed partial class SessionView
         _agent.DragAckReceived += (_, ack) => OnDragAck(ack);
     }
 
-    /// <summary>Forgets the current drag, after a disconnection.</summary>
+    /// <summary>Forgets the current drag and stops a transfer, after a disconnection.</summary>
     private void ResetDrops()
     {
         _pendingDropId = null;
         _live = null;
         StopDragTimers();
         HideBanner();
+        AbortTransfer();
     }
 
     private void DisposeDrops()
     {
+        _upload?.Stop();
         StopDragTimers();
         _ackTimer.Dispose();
         _moveTimer.Dispose();
@@ -108,6 +117,12 @@ internal sealed partial class SessionView
         if (State != SessionState.Connected)
         {
             return LocalText.Of(nameof(Strings.DropRefusedNotConnected));
+        }
+
+        if (_upload is not null)
+        {
+            // One transfer at a time: a new drag would end the one the agent is receiving.
+            return LocalText.Of(nameof(Strings.TransferBusy));
         }
 
         return _agent.State switch
@@ -294,8 +309,8 @@ internal sealed partial class SessionView
         }
 
         var remote = ToRemote(e.ClientPoint);
-        LogDrag(Invariant($"Drop after {live.Moves} move(s)"), live.Id, e, remote);
-        var drop = new DropMessage(live.Id, remote.X, remote.Y, e.KeyState);
+        LogDrag(Invariant($"Drop after {live.Moves} move(s){(live.TransferId is null ? string.Empty : ", deferred for transfer " + live.TransferId)}"), live.Id, e, remote);
+        var drop = new DropMessage(live.Id, remote.X, remote.Y, e.KeyState, Deferred: live.TransferId is null ? null : true);
         if (!_agent.SendDrag(drop, live.Id))
         {
             EndLiveDrag(sendLeave: true);
@@ -305,7 +320,15 @@ internal sealed partial class SessionView
 
         _pendingDropId = live.Id;
         EndLiveDrag(sendLeave: false);
-        ShowDropStatus(LocalText.Of(nameof(Strings.Dragging), live.Items.Count));
+        if (live.TransferId is { } transferId)
+        {
+            StartTransfer(live.Id, transferId, live.Items);
+        }
+        else
+        {
+            ShowDropStatus(LocalText.Of(nameof(Strings.Dragging), live.Items.Count));
+        }
+
         return DragDropEffects.Copy;
     }
 
@@ -320,6 +343,11 @@ internal sealed partial class SessionView
                 {
                     live.State = AckState.Accepted;
                     _ackTimer.Stop();
+                }
+
+                if (ack.Transfer == true && ack.TransferId is { Length: > 0 } transferId)
+                {
+                    live.TransferId = transferId;
                 }
 
                 if (!string.IsNullOrWhiteSpace(ack.Message))
@@ -401,11 +429,33 @@ internal sealed partial class SessionView
                 return null;
             }
 
-            items.Add(new DropItem(path, Directory.Exists(path)));
+            items.Add(MeasureItem(path));
         }
 
         problem = null;
         return items;
+    }
+
+    /// <summary>
+    /// The item with its size, which lets the agent decide whether to transfer the files
+    /// through the channel. A folder is counted for a short time only.
+    /// </summary>
+    private static DropItem MeasureItem(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                return new DropItem(path, true, TransferUpload.MeasureFolder(path, FolderSizeBudget));
+            }
+
+            var file = new FileInfo(path);
+            return new DropItem(path, false, file.Exists ? file.Length : null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or System.Security.SecurityException)
+        {
+            return new DropItem(path, Directory.Exists(path));
+        }
     }
 
     private Point ToRemote(Point clientPoint) =>
@@ -501,6 +551,9 @@ internal sealed partial class SessionView
         public long LastSent { get; set; }
 
         public (Point Point, int Keys)? Queued { get; set; }
+
+        /// <summary>Set when the agent asked for the files through the channel.</summary>
+        public string? TransferId { get; set; }
 
         public int Moves { get; set; }
     }

@@ -209,6 +209,9 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Alle &amp;monitoren gebruiken</value>
   </data>
+  <data name="MenuCancelTransfer" xml:space="preserve">
+    <value>&amp;Overdracht annuleren</value>
+  </data>
   <data name="MenuClearRecent" xml:space="preserve">
     <value>Lijst &amp;wissen</value>
   </data>
@@ -363,6 +366,54 @@ Nu opnieuw verbinden?</value>
   </data>
   <data name="TabDisconnected" xml:space="preserve">
     <value>{0} (verbinding verbroken)</value>
+  </data>
+  <data name="TimeLeftHours" xml:space="preserve">
+    <value>nog {0} u {1} min</value>
+  </data>
+  <data name="TimeLeftMinutes" xml:space="preserve">
+    <value>nog {0} min</value>
+  </data>
+  <data name="TimeLeftSeconds" xml:space="preserve">
+    <value>nog {0} s</value>
+  </data>
+  <data name="TransferAgentSilent" xml:space="preserve">
+    <value>De agent reageerde niet meer tijdens de overdracht.</value>
+  </data>
+  <data name="TransferBusy" xml:space="preserve">
+    <value>Er is een overdracht bezig. Wacht tot die klaar is, of annuleer die via het menu Sessie.</value>
+  </data>
+  <data name="TransferCancelledByUser" xml:space="preserve">
+    <value>Overdracht geannuleerd.</value>
+  </data>
+  <data name="TransferDropping" xml:space="preserve">
+    <value>{0} bestand(en) overgedragen met {1:0.0} MB/s, neerzetten...</value>
+  </data>
+  <data name="TransferFailedNoDetail" xml:space="preserve">
+    <value>Overdracht mislukt.</value>
+  </data>
+  <data name="TransferFailedReason" xml:space="preserve">
+    <value>Overdracht mislukt: {0}</value>
+  </data>
+  <data name="TransferFileChanged" xml:space="preserve">
+    <value>{0} is gewijzigd tijdens het verzenden. Probeer het opnieuw.</value>
+  </data>
+  <data name="TransferInterrupted" xml:space="preserve">
+    <value>De overdracht is gestopt: de verbinding met de sessie is verbroken.</value>
+  </data>
+  <data name="TransferNotSent" xml:space="preserve">
+    <value>Overdracht mislukt: de gegevens konden niet naar de agent worden verzonden.</value>
+  </data>
+  <data name="TransferPreparing" xml:space="preserve">
+    <value>Overdracht van {0} item(s) voorbereiden...</value>
+  </data>
+  <data name="TransferProgress" xml:space="preserve">
+    <value>{0} bestand(en) overdragen: {1} %</value>
+  </data>
+  <data name="TransferProgressRate" xml:space="preserve">
+    <value>{0} bestand(en) overdragen: {1} % ({2:0.0} MB/s, {3})</value>
+  </data>
+  <data name="TransferReadFailed" xml:space="preserve">
+    <value>{0} kan niet worden gelezen. {1}</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Er is een onverwachte fout opgetreden.
