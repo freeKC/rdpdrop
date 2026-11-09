@@ -1,6 +1,6 @@
 # RdpDrop design
 
-Date: 2026-11-05, updated on 2026-11-07 for version 0.2.1.
+Date: 2026-11-05, updated on 2026-11-09 for version 0.3.0.
 
 ## Goal
 
@@ -83,7 +83,9 @@ Pure logic shared by the two apps and covered by tests.
   and byte model detection, described under "Wire encoding" below.
 * `ClientPathMapper`: turns a local path such as `C:\Users\me\a.txt` into
   `\\tsclient\C\Users\me\a.txt`. Only paths with a drive letter are accepted.
-  UNC paths and relative paths are rejected with a clear reason.
+  UNC paths and relative paths are rejected with a `PathRejection` kind, which
+  each application words in the language of its user, and an English reason
+  for the logs.
 * `RdpFile`: parser for `.rdp` files (`key:type:value` lines, `s`, `i`, `b`
   types, UTF-16 with BOM or UTF-8, blank lines and comments ignored). Exposes
   typed getters with defaults.
@@ -92,6 +94,8 @@ Pure logic shared by the two apps and covered by tests.
 * `AccountName`: splits the user name of a saved Windows credential into the
   user name and domain that the control takes.
 * `RecentList`: rules of the list of recent connection files.
+* `UiLanguages`: the supported languages and the rules that turn a language
+  choice or a Windows language into one of them.
 
 ### Protocol
 
@@ -102,7 +106,8 @@ not written.
 
 Client to agent:
 
-* `hello` : `{ "type": "hello", "version": 1, "clientVersion": "0.2.1" }`
+* `hello` : `{ "type": "hello", "version": 1, "clientVersion": "0.3.0",
+  "clientLanguage": "fr" }`
 * `dragEnter` : `{ "type": "dragEnter", "id": "<guid>", "x": 412, "y": 300,
   "items": [ { "clientPath": "C:\\Users\\me\\a.txt", "isDirectory": false } ],
   "keyState": 0 }`
@@ -111,10 +116,11 @@ Client to agent:
 * `drop` : `{ "type": "drop", "id": "<guid>", "x": 420, "y": 310,
   "keyState": 0 }`
 * `dragLeave` : `{ "type": "dragLeave", "id": "<guid>" }`
+* `logoff` : `{ "type": "logoff", "id": "<guid>" }`
 
 Agent to client:
 
-* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.2.1",
+* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.3.0",
   "driveRedirectionAvailable": true }`
 * `dragAck` : `{ "type": "dragAck", "id": "<guid>", "accepted": true,
   "message": "optional text" }`
@@ -122,6 +128,8 @@ Agent to client:
   "status": "ok" | "error" | "cancelled", "effect": "copy" | "link" | "none",
   "message": "human readable text", "targetWindow": { "className": "CabinetWClass",
   "title": "Documents", "childClassName": "DirectUIHWND", "processName": "explorer" } }`
+* `logoffResult` : `{ "type": "logoffResult", "id": "<guid>", "accepted": true,
+  "message": "human readable text" }`
 
 Field notes:
 
@@ -142,6 +150,14 @@ Field notes:
   drag. Status `cancelled` means the drag was cancelled after the drop was
   sent, for example by Escape in the session.
 * `targetWindow` describes the window under the drop point, when known.
+* `clientLanguage` is the two letter code of the language of the client user
+  interface: `en`, `fr`, `de`, `es`, `it`, `pt` or `nl`. The agent writes every
+  `message` it sends in that language; an absent or unknown code gives
+  English. The client sends a new hello when the user changes the language.
+* `logoff` asks the agent to log off the Windows session it runs in. The
+  agent answers `logoffResult` with `accepted: true` before the session
+  closes. If Windows refuses, a second `logoffResult` with the same id and
+  `accepted: false` gives the reason in `message`.
 
 Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
@@ -235,8 +251,9 @@ Behaviour:
    redirected drive is reachable, the status bar says that drops will not
    work.
 8. Status bar at the bottom: connection state, agent state, last drop
-   result. Menus: File, Session (Connect, Disconnect, Look for the agent
-   again), View and Help (About, Project page, Open log folder).
+   result. Menus: File (with Log off the remote session, see "Version 0.3"
+   below), Session (Connect, Disconnect, Look for the agent again), View
+   (with Language) and Help (About, Project page, Open log folder).
 9. Disconnection shows the reason text from the control and keeps the window
    open so the user can reconnect.
 
@@ -273,18 +290,58 @@ Behaviour:
    accepts is ignored: the agent never copies files on its own. A `drop`
    whose id matches no live drag gets an error result, "No drag in progress
    for this drop.", and is logged.
-5. Tray menu: Stage files in the session before the drop, Open log folder,
+5. On `logoff`: reply `logoffResult` accepted, wait about 500 ms so that the
+   reply reaches the client, then call `ExitWindowsEx` with `EWX_LOGOFF` and
+   `EWX_FORCEIFHUNG`. Applications with unsaved work ask the user, as for a
+   log off from the Start menu; `EWX_FORCE` is never used. When the call
+   fails, a second `logoffResult` with `accepted: false` carries the Windows
+   error text.
+6. Tray menu: Stage files in the session before the drop, Open log folder,
    About, Exit. Settings in `%LOCALAPPDATA%\RdpDrop\agent.json` (`stageFiles`,
    and `logLevel` which is only editable in the file). Logs in
    `%LOCALAPPDATA%\RdpDrop\logs\agent-<date>.log`, rotated by day, kept
    fourteen days.
-6. Command line:
+7. Command line:
    * `--install`: add a `Run` value under `HKCU` so the agent starts with the
      user session, then start the agent.
    * `--uninstall`: remove that value and stop any running instance.
    * `--install-all-users`: same under `HKLM` (needs an elevated prompt).
    * `--help`: list the options.
    * no argument: run.
+
+### Localization
+
+The user interface of both applications exists in English, French, German,
+Spanish, Italian, Portuguese and Dutch. English is the source language and
+the fallback for anything missing.
+
+* Each application keeps its texts in `Resources/Strings.resx`, with one
+  `Strings.<code>.resx` per other language. The build generates a `Strings`
+  class from the English file, so a missing key fails the build. The
+  translations become satellite assemblies, which the single file publish
+  bundles into the executable.
+* Code never shows a literal: a text is a resource key with its arguments,
+  formatted with composite formatting. The client keeps the status texts in
+  that form, so that a change of language can write them again; the log
+  always gets the English form.
+* Client: the setting `language` in `client.json` holds `auto` (the default)
+  or a two letter code. `auto` follows the Windows display language of the
+  user, read when the client starts, mapped by its two letter code to a
+  supported language, English otherwise. The View menu has a Language
+  submenu: Automatic (Windows language), then each language named in its own
+  language. A choice applies at once: the client sets the user interface
+  culture of the process and writes every menu, status text, tab text and the
+  drop zone banner again through one `ApplyTexts` path. Dialogs opened later
+  use the new language. The buttons of the Windows message boxes and dialogs
+  follow the language of Windows.
+* Agent: the texts it sends to the client follow the `clientLanguage` field
+  of the client hello. Its tray menu, About dialog and command line output
+  follow the Windows display language of the session.
+* Texts that come from elsewhere stay as they are: the disconnection reason
+  of the Remote Desktop control and Windows error texts are in the language
+  of Windows; a text the agent already sent keeps its language until the next
+  one. Product names, file names, menu shortcuts and the logs stay in
+  English.
 
 ## Error handling
 
@@ -308,6 +365,8 @@ Behaviour:
   channel): logged once at warning level, then silent retries.
 * Protocol error (a line too long or bad JSON): logged, line reader reset,
   connection kept.
+* No `logoffResult` within five seconds of a `logoff`: the client shows "The
+  agent did not answer the log off request." and enables the command again.
 
 ## Security notes
 
@@ -328,12 +387,13 @@ Behaviour:
 
 * `RdpDrop.Core.Tests` covers: framing round trip, split and merged chunks,
   oversize lines, byte model detection and conversion in both directions,
-  JSON round trip of every message (hello, dragEnter, dragMove, drop,
-  dragLeave, dragAck, dropResult) and rejection of malformed ones, key state
-  flags, path mapping (drive letter case, UNC rejection, relative rejection),
-  `.rdp` parsing (UTF-16 and UTF-8, types, defaults), session display sizes
-  and scale factors, account names of saved credentials, and the recent
-  connections list.
+  JSON round trip of every message (hello with its language, dragEnter,
+  dragMove, drop, dragLeave, dragAck, dropResult, logoff, logoffResult) and
+  rejection of malformed ones, key state flags, path mapping (drive letter
+  case, UNC rejection, relative rejection, rejection kinds), `.rdp` parsing
+  (UTF-16 and UTF-8, types, defaults), session display sizes and scale
+  factors, account names of saved credentials, the recent connections list
+  and the language rules.
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -345,6 +405,12 @@ Behaviour:
   zip them as `RdpDrop.Client-vX.Y.Z-win-x64.zip` and
   `RdpDrop.Agent-vX.Y.Z-win-x64.zip`, create the GitHub release with
   `docs/releases/vX.Y.Z.md` as body and attach both zips.
+* Between the build and the release, a signing job signs both executables
+  with the APROGSYS code signing certificate through Azure Artifact Signing.
+  It is the only job that receives the Azure secrets.
+* The signing job verifies every signature before the release job zips the
+  files: `signtool verify /pa` must pass, the signer must be `CN=APROGSYS`,
+  and the signature must carry an RFC 3161 timestamp.
 * Self contained publishing means the user installs nothing, at the cost of a
   larger download.
 
@@ -499,3 +565,22 @@ Simplification decided on 2026-11-07:
 * The live drag is the only drop path. The `drop` message only ends a live
   drag and carries no items; the agent hello has no capability flag. The
   client and the agent must both run 0.2.1.
+
+## Version 0.3
+
+Two features, decided on 2026-11-09:
+
+* Log off the remote session. Quit, Close tab and Disconnect only disconnect,
+  as the Microsoft client does: the Windows session keeps running on the
+  server with its applications. File, Log off the remote session ends it.
+  The entry is enabled when the session is connected and the agent is ready.
+  After a Yes/No confirmation ("This closes your Windows session on the
+  server and ends the applications running there. Continue?"), the client
+  sends `logoff` and shows "Logging off the remote session..." in the status
+  bar; the disconnection that follows is reported by the control as usual.
+* Localization of both user interfaces, as described under "Localization"
+  above, with the `clientLanguage` field in the client hello.
+
+The client and the agent must both run 0.3.0: an older agent ignores the log
+off request and writes its texts in English.
+
