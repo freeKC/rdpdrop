@@ -126,6 +126,9 @@ Identifiants enregistrés : {0} n'enregistre jamais de mot de passe. Windows l'
   <data name="DropFailedReason" xml:space="preserve">
     <value>Échec du dépôt : {0}</value>
   </data>
+  <data name="DropInterrupted" xml:space="preserve">
+    <value>Le dépôt s'est arrêté : la session a été déconnectée.</value>
+  </data>
   <data name="DropRefused" xml:space="preserve">
     <value>Dépôt refusé.</value>
   </data>
@@ -146,6 +149,9 @@ Identifiants enregistrés : {0} n'enregistre jamais de mot de passe. Windows l'
   </data>
   <data name="DropRefusedReason" xml:space="preserve">
     <value>Dépôt refusé : {0}</value>
+  </data>
+  <data name="DropWindowDropping" xml:space="preserve">
+    <value>Dépôt dans la session...</value>
   </data>
   <data name="DropZoneBanner" xml:space="preserve">
     <value>Déposez ici pour envoyer les fichiers dans la session</value>

@@ -126,6 +126,9 @@ Credenciais salvas: o {0} nunca salva uma senha. O Windows a salva quando você 
   <data name="DropFailedReason" xml:space="preserve">
     <value>Falha no envio: {0}</value>
   </data>
+  <data name="DropInterrupted" xml:space="preserve">
+    <value>O envio parou: a sessão foi desconectada.</value>
+  </data>
   <data name="DropRefused" xml:space="preserve">
     <value>Envio recusado.</value>
   </data>
@@ -146,6 +149,9 @@ Credenciais salvas: o {0} nunca salva uma senha. O Windows a salva quando você 
   </data>
   <data name="DropRefusedReason" xml:space="preserve">
     <value>Envio recusado: {0}</value>
+  </data>
+  <data name="DropWindowDropping" xml:space="preserve">
+    <value>Enviando para a sessão...</value>
   </data>
   <data name="DropZoneBanner" xml:space="preserve">
     <value>Solte aqui para enviar os arquivos para a sessão</value>

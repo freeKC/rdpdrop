@@ -6,18 +6,18 @@ using UltimateRDP.Core.Transfer;
 namespace UltimateRDP.Client.Sessions;
 
 /// <summary>
-/// Small window that shows a transfer of large files from the drop to its end: the file
-/// being sent, a progress bar, the rate and the time left, the destination, and a button
-/// to cancel. Once the transfer ended it shows the result: after a success, the drop
-/// result, then it closes by itself; after a failure or a cancel, the reason in red, until
-/// the user closes it.
+/// Small window shown at every drop into the session, from the local drop to the result.
+/// It has three stages: preparing or dropping, with a bar that runs without a value; for a
+/// transfer of large files, the file being sent, the bar, the rate and the time left; and
+/// the result. After a successful drop it shows the drop result, then closes by itself;
+/// after a failure or a cancel it shows the reason in red, until the user closes it. It
+/// also gives the destination, and a button to cancel a transfer.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The window is owned by the main form, so it stays above it without being topmost, and
 /// it never takes the keyboard from the session: it is shown without activation and never
-/// activated by the code. The session view that runs the transfer drives it, on the UI
-/// thread.
+/// activated by the code. The session view of the drop drives it, on the UI thread.
 /// </para>
 /// <para>
 /// The sizes are given at 96 DPI and scaled to the DPI of the monitor, so the window
@@ -26,7 +26,7 @@ namespace UltimateRDP.Client.Sessions;
 /// <see cref="ApplyTexts"/> can write it again after a change of language.
 /// </para>
 /// </remarks>
-internal sealed class TransferProgressForm : Form
+internal sealed class DropProgressForm : Form
 {
     private const int TickMilliseconds = 250;
     private const int AutoCloseMilliseconds = 3000;
@@ -52,15 +52,16 @@ internal sealed class TransferProgressForm : Form
     private Func<string> _fileTip = () => string.Empty;
     private Func<string> _countText = () => string.Empty;
     private Func<string> _statusText = () => string.Empty;
-    private Func<string> _doneText = () => string.Empty;
+    /// <summary>"Transferred 3 file(s) in ...", once a transfer succeeded; null for a drop without transfer.</summary>
+    private Func<string>? _doneText;
     private long _noticeUntil;
     private long? _closeAt;
     private Rectangle _area;
     private bool _movedByUser;
 
-    /// <param name="dragId">The drag whose files are transferred.</param>
+    /// <param name="dragId">The drag whose files are dropped.</param>
     /// <param name="host">The host name of the session, shown as the destination.</param>
-    public TransferProgressForm(string dragId, string host)
+    public DropProgressForm(string dragId, string host)
     {
         DragId = dragId;
         _destination = LocalText.Of(nameof(Strings.TransferWindowDestination), host);
@@ -116,27 +117,30 @@ internal sealed class TransferProgressForm : Form
 
     private enum Stage
     {
-        /// <summary>The files are being listed.</summary>
+        /// <summary>The files of a transfer are being listed.</summary>
         Preparing,
 
-        /// <summary>The files are on their way.</summary>
+        /// <summary>The files of a transfer are on their way.</summary>
         Running,
 
-        /// <summary>The agent has every file and drops the copies.</summary>
+        /// <summary>The drop happens in the session, after a transfer or without one; its result is awaited.</summary>
         Dropping,
 
         /// <summary>The drop result arrived; the window closes by itself.</summary>
         Done,
 
-        /// <summary>The transfer failed or was cancelled; the window waits for the user.</summary>
+        /// <summary>The transfer or the drop failed, or was cancelled; the window waits for the user.</summary>
         Failed,
     }
 
-    /// <summary>The drag whose files are transferred.</summary>
+    /// <summary>The drag whose files are dropped.</summary>
     public string DragId { get; }
 
-    /// <summary>True until the transfer ended, one way or the other.</summary>
+    /// <summary>True while a transfer runs, until it ended one way or the other.</summary>
     public bool IsRunning => _stage is Stage.Preparing or Stage.Running;
+
+    /// <summary>True while the result of the drop is awaited.</summary>
+    public bool IsWaitingForDrop => _stage == Stage.Dropping;
 
     protected override bool ShowWithoutActivation => true;
 
@@ -177,10 +181,24 @@ internal sealed class TransferProgressForm : Form
     public void ShowPreparing(string firstItem, int itemCount)
     {
         _stage = Stage.Preparing;
-        _fileText = () => firstItem;
-        _fileTip = () => firstItem;
-        _countText = itemCount > 1 ? () => LocalText.Of(nameof(Strings.TransferWindowItemCount), itemCount).ToString() : () => string.Empty;
+        SetItems(firstItem, itemCount);
         _statusText = () => Strings.TransferWindowPreparing;
+        SetBar(marquee: true, 0);
+        Render();
+    }
+
+    /// <summary>
+    /// A drop without transfer went out: the remote application reads the files through
+    /// drive redirection. The bar runs without a value until the result.
+    /// </summary>
+    /// <param name="firstItem">Name of the first dropped item.</param>
+    /// <param name="itemCount">Number of dropped items.</param>
+    public void ShowDropping(string firstItem, int itemCount)
+    {
+        _stage = Stage.Dropping;
+        _doneText = null;
+        SetItems(firstItem, itemCount);
+        _statusText = () => Strings.DropWindowDropping;
         SetBar(marquee: true, 0);
         Render();
     }
@@ -207,8 +225,11 @@ internal sealed class TransferProgressForm : Form
         Render();
     }
 
-    /// <summary>The agent has every file: "Transferred 3 file(s) in 3 min 13 s at 2.6 MB/s, dropping into the session...".</summary>
-    public void ShowDropping(int fileCount, TimeSpan elapsed, double megabytesPerSecond)
+    /// <summary>
+    /// The agent has every file and drops the copies: "Transferred 3 file(s) in 3 min 13 s
+    /// at 2.6 MB/s, dropping into the session...". The bar runs without a value until the result.
+    /// </summary>
+    public void ShowTransferred(int fileCount, TimeSpan elapsed, double megabytesPerSecond)
     {
         if (!IsRunning)
         {
@@ -219,29 +240,38 @@ internal sealed class TransferProgressForm : Form
         _countText = () => LocalText.Of(nameof(Strings.TransferWindowFileOf), fileCount, fileCount).ToString();
         _statusText = () => Summary(Strings.TransferWindowDropping, fileCount, elapsed, megabytesPerSecond);
         _doneText = () => Summary(Strings.TransferWindowDone, fileCount, elapsed, megabytesPerSecond);
-        SetBar(marquee: false, BarMaximum);
+        SetBar(marquee: true, 0);
         Render();
     }
 
     /// <summary>
-    /// The drop of the copies is over, with <paramref name="result"/>: the window shows it
-    /// and closes three seconds later, once the mouse is not over it.
+    /// The drop is over, with <paramref name="result"/>. When it worked, or when nothing
+    /// under the cursor took the files, the window shows it, after the summary of the
+    /// transfer if there was one, and closes three seconds later, once the mouse is not
+    /// over it. When it <paramref name="failed"/>, the result is shown as a failure.
     /// </summary>
-    public void ShowDropResult(LocalText result)
+    public void ShowDropResult(LocalText result, bool failed)
     {
         if (_stage != Stage.Dropping)
         {
             return;
         }
 
+        if (failed)
+        {
+            ShowFailure(result);
+            return;
+        }
+
         _stage = Stage.Done;
         var done = _doneText;
-        _statusText = () => done() + Environment.NewLine + result;
+        _statusText = done is null ? result.ToString : () => done() + Environment.NewLine + result;
         _closeAt = Environment.TickCount64 + AutoCloseMilliseconds;
+        SetBar(marquee: false, BarMaximum);
         Render();
     }
 
-    /// <summary>The transfer failed or was cancelled: the reason in red, and a Close button.</summary>
+    /// <summary>The transfer or the drop failed, or was cancelled: the reason in red, and a Close button.</summary>
     public void ShowFailure(LocalText reason)
     {
         if (_stage is Stage.Failed or Stage.Done)
@@ -249,11 +279,13 @@ internal sealed class TransferProgressForm : Form
             return;
         }
 
+        // After a transfer that succeeded, the bar stays full: only the drop failed.
+        var value = _doneText is not null ? BarMaximum : _bar.Style == ProgressBarStyle.Marquee ? 0 : _bar.Value;
         _stage = Stage.Failed;
         _statusText = reason.ToString;
         _noticeUntil = 0;
         _closeAt = null;
-        SetBar(marquee: false, _bar.Style == ProgressBarStyle.Marquee ? 0 : _bar.Value);
+        SetBar(marquee: false, value);
         Render();
     }
 
@@ -307,6 +339,14 @@ internal sealed class TransferProgressForm : Form
         }
 
         base.Dispose(disposing);
+    }
+
+    /// <summary>The first dropped item, and "2 item(s)" when there are more.</summary>
+    private void SetItems(string firstItem, int itemCount)
+    {
+        _fileText = () => firstItem;
+        _fileTip = () => firstItem;
+        _countText = itemCount > 1 ? () => LocalText.Of(nameof(Strings.TransferWindowItemCount), itemCount).ToString() : () => string.Empty;
     }
 
     private static string FileName(string relativePath)

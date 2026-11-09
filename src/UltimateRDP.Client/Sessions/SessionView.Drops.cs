@@ -27,7 +27,8 @@ namespace UltimateRDP.Client.Sessions;
 /// </para>
 /// <para>
 /// When the dragAck asks for a transfer, the drop is deferred and the files follow through
-/// the channel; see SessionView.Transfer.cs.
+/// the channel; see SessionView.Transfer.cs. Every drop that goes out opens a
+/// <see cref="DropProgressForm"/>, which shows the drop until its result.
 /// </para>
 /// </remarks>
 internal sealed partial class SessionView
@@ -97,6 +98,7 @@ internal sealed partial class SessionView
         StopDragTimers();
         HideBanner();
         AbortTransfer();
+        AbortDropInWindow();
     }
 
     private void DisposeDrops()
@@ -332,6 +334,7 @@ internal sealed partial class SessionView
         else
         {
             ShowDropStatus(LocalText.Of(nameof(Strings.Dragging), live.Items.Count));
+            OpenProgressWindow(live.Id, live.Items, transfer: false);
         }
 
         return DragDropEffects.Copy;
@@ -512,7 +515,7 @@ internal sealed partial class SessionView
         }
         else
         {
-            ShowDropResultInWindow(result.Id, DescribeResult(result));
+            ShowDropResultInWindow(result.Id, DescribeResult(result), failed: result.Status != DropStatus.Ok);
         }
 
         if (_pendingDropId is not null && result.Id != _pendingDropId)

@@ -126,6 +126,9 @@ Opgeslagen referenties: {0} slaat nooit een wachtwoord op. Windows slaat het op 
   <data name="DropFailedReason" xml:space="preserve">
     <value>Neerzetten mislukt: {0}</value>
   </data>
+  <data name="DropInterrupted" xml:space="preserve">
+    <value>Het neerzetten is gestopt: de verbinding met de sessie is verbroken.</value>
+  </data>
   <data name="DropRefused" xml:space="preserve">
     <value>Neerzetten geweigerd.</value>
   </data>
@@ -146,6 +149,9 @@ Opgeslagen referenties: {0} slaat nooit een wachtwoord op. Windows slaat het op 
   </data>
   <data name="DropRefusedReason" xml:space="preserve">
     <value>Neerzetten geweigerd: {0}</value>
+  </data>
+  <data name="DropWindowDropping" xml:space="preserve">
+    <value>Neerzetten in de sessie...</value>
   </data>
   <data name="DropZoneBanner" xml:space="preserve">
     <value>Zet de bestanden hier neer om ze naar de sessie te sturen</value>

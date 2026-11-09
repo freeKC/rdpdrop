@@ -126,6 +126,9 @@ Gespeicherte Anmeldedaten: {0} speichert nie ein Kennwort. Windows speichert es,
   <data name="DropFailedReason" xml:space="preserve">
     <value>Ablegen fehlgeschlagen: {0}</value>
   </data>
+  <data name="DropInterrupted" xml:space="preserve">
+    <value>Das Ablegen wurde beendet: Die Sitzung wurde getrennt.</value>
+  </data>
   <data name="DropRefused" xml:space="preserve">
     <value>Ablegen abgelehnt.</value>
   </data>
@@ -146,6 +149,9 @@ Gespeicherte Anmeldedaten: {0} speichert nie ein Kennwort. Windows speichert es,
   </data>
   <data name="DropRefusedReason" xml:space="preserve">
     <value>Ablegen abgelehnt: {0}</value>
+  </data>
+  <data name="DropWindowDropping" xml:space="preserve">
+    <value>Wird in der Sitzung abgelegt...</value>
   </data>
   <data name="DropZoneBanner" xml:space="preserve">
     <value>Hier ablegen, um die Dateien in die Sitzung zu senden</value>

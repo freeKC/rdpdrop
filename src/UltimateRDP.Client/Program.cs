@@ -23,11 +23,11 @@ internal static class Program
         ClientLog.Info($"Settings: {settings}.");
         UiLanguage.Apply(settings.Language);
 
-        // Development aid: the transfer window with a simulated transfer, without a connection.
-        if (args is [TransferProgressDemo.Switch])
+        // Development aid: the drop window with simulated drops, without a connection.
+        if (args is [DropProgressDemo.Switch])
         {
             var demo = new MainForm(null, settings);
-            demo.Shown += (_, _) => TransferProgressDemo.Start(demo);
+            demo.Shown += (_, _) => DropProgressDemo.Start(demo);
             Application.Run(demo);
             return 0;
         }

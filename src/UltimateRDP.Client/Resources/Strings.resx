@@ -140,6 +140,10 @@ Saved credentials: {0} never saves a password. Windows saves it when you tick "R
     <value>Drop failed: {0}</value>
     <comment>{0} is a text from the agent, already in this language.</comment>
   </data>
+  <data name="DropInterrupted" xml:space="preserve">
+    <value>The drop stopped: the session was disconnected.</value>
+    <comment>Shown in the drop window when the session was disconnected before the result of a drop arrived.</comment>
+  </data>
   <data name="DropRefused" xml:space="preserve">
     <value>Drop refused.</value>
   </data>
@@ -161,6 +165,10 @@ Saved credentials: {0} never saves a password. Windows saves it when you tick "R
   <data name="DropRefusedReason" xml:space="preserve">
     <value>Drop refused: {0}</value>
     <comment>{0} is a text from the agent or from the client, already in this language.</comment>
+  </data>
+  <data name="DropWindowDropping" xml:space="preserve">
+    <value>Dropping into the session...</value>
+    <comment>Shown in the drop window after a drop without transfer, until its result arrives.</comment>
   </data>
   <data name="DropZoneBanner" xml:space="preserve">
     <value>Drop here to send the files into the session</value>
@@ -515,7 +523,7 @@ Reconnect now?</value>
   </data>
   <data name="TransferWindowItemCount" xml:space="preserve">
     <value>{0} item(s)</value>
-    <comment>{0} is the number of dropped items, shown while the files are listed.</comment>
+    <comment>{0} is the number of dropped items, shown while the files are listed or dropped.</comment>
   </data>
   <data name="TransferWindowPreparing" xml:space="preserve">
     <value>Preparing...</value>
@@ -535,7 +543,7 @@ Reconnect now?</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
     <value>Transfer to the session</value>
-    <comment>Title of the window that shows the progress of a transfer of large files.</comment>
+    <comment>Title of the window shown at every drop into the session, with or without a transfer of large files.</comment>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>An unexpected error occurred.

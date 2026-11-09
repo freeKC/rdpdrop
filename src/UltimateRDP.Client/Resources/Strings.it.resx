@@ -126,6 +126,9 @@ Credenziali salvate: {0} non salva mai una password. Windows la salva quando sel
   <data name="DropFailedReason" xml:space="preserve">
     <value>Rilascio non riuscito: {0}</value>
   </data>
+  <data name="DropInterrupted" xml:space="preserve">
+    <value>Il rilascio si è interrotto: la sessione è stata disconnessa.</value>
+  </data>
   <data name="DropRefused" xml:space="preserve">
     <value>Rilascio rifiutato.</value>
   </data>
@@ -146,6 +149,9 @@ Credenziali salvate: {0} non salva mai una password. Windows la salva quando sel
   </data>
   <data name="DropRefusedReason" xml:space="preserve">
     <value>Rilascio rifiutato: {0}</value>
+  </data>
+  <data name="DropWindowDropping" xml:space="preserve">
+    <value>Rilascio nella sessione...</value>
   </data>
   <data name="DropZoneBanner" xml:space="preserve">
     <value>Rilascia qui per inviare i file nella sessione</value>

@@ -126,6 +126,9 @@ Credenciales guardadas: {0} nunca guarda una contraseña. Windows la guarda cuan
   <data name="DropFailedReason" xml:space="preserve">
     <value>Error al colocar: {0}</value>
   </data>
+  <data name="DropInterrupted" xml:space="preserve">
+    <value>La colocación se detuvo: la sesión se desconectó.</value>
+  </data>
   <data name="DropRefused" xml:space="preserve">
     <value>Colocación rechazada.</value>
   </data>
@@ -146,6 +149,9 @@ Credenciales guardadas: {0} nunca guarda una contraseña. Windows la guarda cuan
   </data>
   <data name="DropRefusedReason" xml:space="preserve">
     <value>Colocación rechazada: {0}</value>
+  </data>
+  <data name="DropWindowDropping" xml:space="preserve">
+    <value>Colocando en la sesión...</value>
   </data>
   <data name="DropZoneBanner" xml:space="preserve">
     <value>Suelte aquí para enviar los archivos a la sesión</value>
