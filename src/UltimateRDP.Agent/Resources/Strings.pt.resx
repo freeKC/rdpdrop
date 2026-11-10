@@ -303,6 +303,9 @@ Mantenha o executável em uma pasta que todos os usuários possam ler, como Prog
   <data name="TrayFastTransferAlways" xml:space="preserve">
     <value>Sempre</value>
   </data>
+  <data name="TrayDirectTransfer" xml:space="preserve">
+    <value>Conexão direta para arquivos grandes</value>
+  </data>
   <data name="TrayFastTransferAuto" xml:space="preserve">
     <value>Automático</value>
   </data>

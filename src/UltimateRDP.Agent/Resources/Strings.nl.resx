@@ -303,6 +303,9 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   <data name="TrayFastTransferAlways" xml:space="preserve">
     <value>Altijd</value>
   </data>
+  <data name="TrayDirectTransfer" xml:space="preserve">
+    <value>Directe verbinding voor grote bestanden</value>
+  </data>
   <data name="TrayFastTransferAuto" xml:space="preserve">
     <value>Automatisch</value>
   </data>

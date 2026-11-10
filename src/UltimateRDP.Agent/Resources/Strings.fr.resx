@@ -303,6 +303,9 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   <data name="TrayFastTransferAlways" xml:space="preserve">
     <value>Toujours</value>
   </data>
+  <data name="TrayDirectTransfer" xml:space="preserve">
+    <value>Connexion directe pour les gros fichiers</value>
+  </data>
   <data name="TrayFastTransferAuto" xml:space="preserve">
     <value>Automatique</value>
   </data>

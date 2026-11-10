@@ -23,6 +23,8 @@ internal sealed class AgentTrayIcon : IDisposable
     private readonly ToolStripMenuItem _stageItem;
     private readonly ToolStripMenuItem _fastTransferItem;
     private readonly (ToolStripMenuItem Item, FastTransferMode Mode)[] _fastTransferModes;
+    private readonly ToolStripMenuItem _directTransferItem;
+    private readonly (ToolStripMenuItem Item, DirectTransferMode Mode)[] _directTransferModes;
 
     /// <param name="logger">The log.</param>
     /// <param name="settings">The settings changed from the menu.</param>
@@ -46,11 +48,24 @@ internal sealed class AgentTrayIcon : IDisposable
             _fastTransferItem.DropDownItems.Add(item);
         }
 
+        _directTransferModes =
+        [
+            (new ToolStripMenuItem(Strings.TrayFastTransferAuto), DirectTransferMode.Auto),
+            (new ToolStripMenuItem(Strings.TrayFastTransferNever), DirectTransferMode.Never),
+        ];
+        _directTransferItem = new ToolStripMenuItem(Strings.TrayDirectTransfer);
+        foreach (var (item, mode) in _directTransferModes)
+        {
+            item.Click += (_, _) => SetDirectTransfer(mode);
+            _directTransferItem.DropDownItems.Add(item);
+        }
+
         _menu = new ContextMenuStrip();
         _menu.Items.AddRange(
         [
             _stageItem,
             _fastTransferItem,
+            _directTransferItem,
             new ToolStripSeparator(),
             new ToolStripMenuItem(Strings.TrayOpenLogFolder, null, (_, _) => OpenLogFolder()),
             new ToolStripMenuItem(Strings.TrayAbout, null, (_, _) => ShowAbout()),
@@ -91,6 +106,18 @@ internal sealed class AgentTrayIcon : IDisposable
         {
             item.Checked = _settings.FastTransfer == mode;
         }
+
+        foreach (var (item, mode) in _directTransferModes)
+        {
+            item.Checked = _settings.DirectTransfer == mode;
+        }
+    }
+
+    private void SetDirectTransfer(DirectTransferMode mode)
+    {
+        _settings.SetDirectTransfer(mode);
+        _logger.Info($"Direct connection for large files: {DirectTransferPolicy.ToSetting(mode)}.");
+        UpdateChecks();
     }
 
     private void SetFastTransfer(FastTransferMode mode)

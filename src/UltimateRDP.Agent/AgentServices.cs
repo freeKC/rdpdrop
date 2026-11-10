@@ -18,6 +18,7 @@ internal sealed class AgentServices
     private readonly AgentProtocolHandler _handler;
     private readonly NativeDropCoordinator _native;
     private readonly StagingFolder _staging;
+    private readonly FileLogger _logger;
 
     /// <param name="logger">The log.</param>
     /// <param name="settings">The settings of the agent.</param>
@@ -26,6 +27,7 @@ internal sealed class AgentServices
     /// <param name="clientModel">The byte model detected on the data of the client, for the hello of the agent.</param>
     public AgentServices(FileLogger logger, AgentSettings settings, Func<Message, bool> send, ChannelMeter meter, Func<ChannelByteModel> clientModel)
     {
+        _logger = logger;
         _staging = new StagingFolder(logger, AgentInfo.StagingDirectory);
         var probe = new DriveRedirectionProbe(logger);
         var language = new ClientLanguage();
@@ -45,5 +47,6 @@ internal sealed class AgentServices
     {
         _native.Stop(wait);
         _staging.Dispose();
+        Direct.DirectCertificate.Delete(_logger);
     }
 }

@@ -1,5 +1,6 @@
 using Timer = System.Threading.Timer;
 using UltimateRDP.Agent.Channel;
+using UltimateRDP.Agent.Direct;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
@@ -27,6 +28,14 @@ namespace UltimateRDP.Agent.Drops;
 /// drag drops the copies at that point and the usual <c>dropResult</c> follows. The
 /// transfer is registered before the <c>dragAck</c> that offers it goes out: its messages
 /// that arrive before the deferred drop wait for it instead of being lost.
+/// <para>
+/// Since 0.6.0, when the <c>directTransfer</c> setting allows it, the offer also opens a
+/// <see cref="DirectListener"/> for a direct TLS connection outside the channel. Only its
+/// success changes the drop: the transfer through the channel is then withdrawn and the
+/// copies of the direct connection are dropped. Any other end of the direct connection
+/// deletes what came through it and leaves the drop to the channel: the client either
+/// sends the files through the channel, or cancels the transfer there.
+/// </para>
 /// </remarks>
 internal sealed class NativeDropCoordinator : IDisposable
 {
@@ -53,6 +62,9 @@ internal sealed class NativeDropCoordinator : IDisposable
     private readonly Dictionary<string, LocalText> _ended = [];
     private readonly TransferRegistry<StagedTransfer> _transfers = new();
     private NativeDrag? _current;
+
+    /// <summary>The last direct listener of the agent: at most one is active at a time in the session.</summary>
+    private DirectListener? _direct;
 
     public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging, ClientLanguage language, ChannelMeter? meter = null)
     {
@@ -97,6 +109,7 @@ internal sealed class NativeDropCoordinator : IDisposable
                 previousTransfer = previous.Transfer;
             }
 
+            previous.Direct?.Close("a newer drag replaced the transfer");
             previousTransfer?.Cancel(LocalText.Of(nameof(Strings.TransferReplaced)));
             previousSession?.Cancel(LocalText.Of(nameof(Strings.CancelNewerDrag)));
         }
@@ -244,6 +257,12 @@ internal sealed class NativeDropCoordinator : IDisposable
         // one of each transfer, and every one that is not a chunk, at the info level; the
         // chunks that follow at the debug level, since thousands may follow.
         var level = count == 1 || message is not FileChunkMessage ? LogLevel.Info : LogLevel.Debug;
+        if (message is TransferBeginMessage && route is TransferRoute.Deliver or TransferRoute.Queued && FindByTransfer(transferId)?.Direct is { Succeeded: false } direct)
+        {
+            // The client sends the files through the channel: it could not use the direct connection.
+            direct.Close("the client sends the files through the channel");
+        }
+
         switch (route)
         {
             case TransferRoute.Deliver:
@@ -287,6 +306,14 @@ internal sealed class NativeDropCoordinator : IDisposable
         }
 
         current?.AckTimer?.Dispose();
+        current?.Direct?.Close("the agent stops");
+        DirectListener? direct;
+        lock (_gate)
+        {
+            direct = _direct;
+        }
+
+        direct?.Close("the agent stops");
         current?.Transfer?.Cancel(LocalText.Of(nameof(Strings.CancelAgentStopping)));
         if (current?.Session is { } session)
         {
@@ -305,6 +332,15 @@ internal sealed class NativeDropCoordinator : IDisposable
         lock (_gate)
         {
             return _current is { } current && current.Id == id ? current : null;
+        }
+    }
+
+    /// <summary>The current drag when it offered <paramref name="transferId"/>, or null.</summary>
+    private NativeDrag? FindByTransfer(string transferId)
+    {
+        lock (_gate)
+        {
+            return _current is { } current && current.TransferId == transferId ? current : null;
         }
     }
 
@@ -592,6 +628,19 @@ internal sealed class NativeDropCoordinator : IDisposable
     /// </summary>
     private void Forget(NativeDrag drag, LocalText reason)
     {
+        if (drag.Direct is { } direct)
+        {
+            if (!direct.Succeeded)
+            {
+                direct.Close("the drag ended");
+            }
+            else if (Volatile.Read(ref drag.DirectFinishing) == 0)
+            {
+                // The files came, and the drag ended before they could be dropped.
+                _staging.ScheduleDelete(direct.FolderId);
+            }
+        }
+
         var withdrawn = false;
         string? transferId;
         lock (_gate)
@@ -663,11 +712,125 @@ internal sealed class NativeDropCoordinator : IDisposable
         lock (_gate)
         {
             _transfers.Offer(transferId);
+        }
+
+        _logger.Info($"Drag {drag.Id}: {total} bytes in {items.Count} item(s), fast transfer {FastTransferPolicy.ToSetting(_settings.FastTransfer)} from {_settings.FastTransferMinBytes} bytes: the files come through the channel as transfer {transferId}.");
+
+        // The listener before the id: a dragAck that offers the transfer offers the direct connection with it.
+        OfferDirect(drag, transferId, transferItems);
+        lock (_gate)
+        {
             drag.TransferId = transferId;
         }
 
-        _logger.Info($"Drag {drag.Id}: {total} bytes in {items.Count} item(s), fast transfer {FastTransferPolicy.ToSetting(_settings.FastTransfer)} from {_settings.FastTransferMinBytes} bytes: the files come through the channel as transfer {drag.TransferId}.");
         return null;
+    }
+
+    /// <summary>
+    /// Opens the direct listener of the transfer when the setting allows it and no other
+    /// direct transfer runs in the session. Before any dragAck offers the transfer.
+    /// </summary>
+    private void OfferDirect(NativeDrag drag, string transferId, IReadOnlyList<TransferItem> items)
+    {
+        if (_settings.DirectTransfer == DirectTransferMode.Never)
+        {
+            _logger.Info($"Drag {drag.Id}: the direct connection is off (directTransfer never); the files come through the channel.");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_direct is { IsActive: true } running)
+            {
+                _logger.Info($"Drag {drag.Id}: transfer {running.TransferId} still uses the direct connection, so this one goes through the channel.");
+                return;
+            }
+        }
+
+        var direct = DirectListener.TryStart(_logger, _settings.DirectPortRange, drag.Id, transferId, items, _staging, _language);
+        if (direct is null)
+        {
+            return;
+        }
+
+        direct.Alive += () => drag.Transfer?.KeepAlive();
+        direct.Finished += (_, succeeded) => OnDirectFinished(drag, direct, succeeded);
+        lock (_gate)
+        {
+            _direct = direct;
+        }
+
+        drag.Direct = direct;
+        if (drag.Abandoned || drag.Left)
+        {
+            direct.Close("the drag ended before it started");
+        }
+    }
+
+    /// <summary>
+    /// The direct connection of <paramref name="drag"/> is over, on its thread. Only a
+    /// success changes the drop; anything else leaves it to the channel.
+    /// </summary>
+    private void OnDirectFinished(NativeDrag drag, DirectListener direct, bool succeeded)
+    {
+        if (!succeeded)
+        {
+            return;
+        }
+
+        if (Find(drag.Id) != drag)
+        {
+            _logger.Info($"Transfer {direct.TransferId}: every file came through the direct connection after the drag ended; the copies are deleted.");
+            _staging.ScheduleDelete(direct.FolderId);
+            return;
+        }
+
+        StagedTransfer? transfer;
+        lock (drag.Gate)
+        {
+            drag.DirectSucceeded = true;
+            transfer = drag.Transfer;
+        }
+
+        if (transfer is null)
+        {
+            // The deferred drop is still on its way through the channel; it drops the copies.
+            _logger.Info($"Transfer {direct.TransferId}: every file came through the direct connection before the deferred drop was handled.");
+            return;
+        }
+
+        FinishWithDirect(drag, direct);
+    }
+
+    /// <summary>
+    /// Drops the copies of the direct connection, once the deferred drop is known: the
+    /// transfer through the channel is withdrawn. Runs once per drag.
+    /// </summary>
+    private void FinishWithDirect(NativeDrag drag, DirectListener direct)
+    {
+        if (Interlocked.Exchange(ref drag.DirectFinishing, 1) != 0)
+        {
+            return;
+        }
+
+        if (drag.Transfer is { } transfer && !transfer.Withdraw())
+        {
+            _logger.Warn($"Transfer {direct.TransferId}: the transfer through the channel already ended; the copies of the direct connection are not dropped.");
+            _staging.ScheduleDelete(direct.FolderId);
+            return;
+        }
+
+        lock (_gate)
+        {
+            _transfers.End(direct.TransferId);
+        }
+
+        var worker = new Thread(() => DropCopies(drag, direct.TransferId, direct.FolderId, direct.StagedPaths))
+        {
+            IsBackground = true,
+            Name = "UltimateRDP final drop " + drag.Id,
+        };
+        worker.Start();
     }
 
     /// <summary>The accepted dragAck, which offers the transfer when one was decided.</summary>
@@ -676,7 +839,7 @@ internal sealed class NativeDropCoordinator : IDisposable
         if (drag.TransferId is { } transferId)
         {
             drag.TransferOffered = true;
-            return new DragAckMessage(drag.Id, true, message, Transfer: true, TransferId: transferId);
+            return new DragAckMessage(drag.Id, true, message, Transfer: true, TransferId: transferId, Direct: drag.Direct is { IsActive: true } direct ? direct.Offer : null);
         }
 
         return new DragAckMessage(drag.Id, true, message);
@@ -719,6 +882,7 @@ internal sealed class NativeDropCoordinator : IDisposable
         }
 
         session?.Cancel(LocalText.Of(nameof(Strings.CancelDeferred)));
+        drag.Direct?.OnDeferredDrop();
 
         // The messages of the transfer that came before this drop now go to the receiver, in
         // their order, before any later one: both run on the channel thread.
@@ -747,6 +911,17 @@ internal sealed class NativeDropCoordinator : IDisposable
         {
             transfer.Handle(message);
         }
+
+        bool directDone;
+        lock (drag.Gate)
+        {
+            directDone = drag.DirectSucceeded;
+        }
+
+        if (directDone && drag.Direct is { } direct)
+        {
+            FinishWithDirect(drag, direct);
+        }
     }
 
     /// <summary>
@@ -767,7 +942,7 @@ internal sealed class NativeDropCoordinator : IDisposable
             return;
         }
 
-        var worker = new Thread(() => DropCopies(drag, transfer))
+        var worker = new Thread(() => DropCopies(drag, transfer.TransferId, transfer.TransferId, transfer.StagedPaths))
         {
             IsBackground = true,
             Name = "UltimateRDP final drop " + drag.Id,
@@ -780,20 +955,20 @@ internal sealed class NativeDropCoordinator : IDisposable
     /// released there, as the live drag does for its final point. Its result is the usual
     /// dropResult.
     /// </summary>
-    private void DropCopies(NativeDrag drag, StagedTransfer transfer)
+    private void DropCopies(NativeDrag drag, string transferId, string folderId, IReadOnlyList<string> stagedPaths)
     {
         var drop = drag.Drop!;
         try
         {
             if (drag.Session is { } live && !live.WaitFinished(PreviousDragWait))
             {
-                _logger.Warn($"Drag {drag.Id}: the live drag did not end; the copies of transfer {transfer.TransferId} are not dropped.");
-                FailDropOfCopies(drag, transfer, LocalText.Of(nameof(Strings.PreviousDropBusy)));
+                _logger.Warn($"Drag {drag.Id}: the live drag did not end; the copies of transfer {transferId} are not dropped.");
+                FailDropOfCopies(drag, folderId, LocalText.Of(nameof(Strings.PreviousDropBusy)));
                 return;
             }
 
-            var session = new DragSession(_logger, drag.Id, transfer.StagedPaths, drop.X, drop.Y);
-            session.Completed += (_, completion) => OnCopiesDropped(drag, transfer, completion);
+            var session = new DragSession(_logger, drag.Id, stagedPaths, drop.X, drop.Y);
+            session.Completed += (_, completion) => OnCopiesDropped(drag, folderId, completion);
             session.Drop(drop.X, drop.Y);
             lock (drag.Gate)
             {
@@ -805,25 +980,25 @@ internal sealed class NativeDropCoordinator : IDisposable
                 session.Cancel(LocalText.Of(nameof(Strings.CancelNewerDrag)));
             }
 
-            _logger.Info($"Drag {drag.Id}: dropping the {transfer.StagedPaths.Count} copied item(s) of transfer {transfer.TransferId} at ({drop.X}, {drop.Y}).");
+            _logger.Info($"Drag {drag.Id}: dropping the {stagedPaths.Count} copied item(s) of transfer {transferId} at ({drop.X}, {drop.Y}).");
             session.Start();
         }
         catch (Exception ex)
         {
             _logger.Error($"Drag {drag.Id}: dropping the copies failed.", ex);
-            FailDropOfCopies(drag, transfer, LocalText.Of(nameof(Strings.UnexpectedError), ex.Message));
+            FailDropOfCopies(drag, folderId, LocalText.Of(nameof(Strings.UnexpectedError), ex.Message));
         }
     }
 
-    private void OnCopiesDropped(NativeDrag drag, StagedTransfer transfer, DragCompletion completion)
+    private void OnCopiesDropped(NativeDrag drag, string folderId, DragCompletion completion)
     {
-        _staging.ScheduleDelete(transfer.TransferId);
+        _staging.ScheduleDelete(folderId);
         SendDropResult(drag, completion);
     }
 
-    private void FailDropOfCopies(NativeDrag drag, StagedTransfer transfer, LocalText reason)
+    private void FailDropOfCopies(NativeDrag drag, string folderId, LocalText reason)
     {
-        _staging.ScheduleDelete(transfer.TransferId);
+        _staging.ScheduleDelete(folderId);
         Forget(drag, reason);
         _send(new DropResultMessage(drag.Id, DropStatus.Error, Message: ForClient(reason), Effect: DropEffect.None));
     }
@@ -872,6 +1047,15 @@ internal sealed class NativeDropCoordinator : IDisposable
 
         /// <summary>The transfer that receives the files, from the deferred drop on.</summary>
         public volatile StagedTransfer? Transfer;
+
+        /// <summary>The direct listener offered with the transfer, when there is one.</summary>
+        public volatile DirectListener? Direct;
+
+        /// <summary>True once every file came through the direct connection. Set under <see cref="Gate"/>.</summary>
+        public bool DirectSucceeded;
+
+        /// <summary>Set to 1 once the copies of the direct connection are on their way to the drop.</summary>
+        public int DirectFinishing;
 
         public int KeyState = enter.KeyState;
 

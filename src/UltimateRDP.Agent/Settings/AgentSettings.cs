@@ -19,8 +19,9 @@ internal sealed class AgentSettings
     private readonly Lock _saveGate = new();
     private volatile bool _stageFiles;
     private volatile FastTransferMode _fastTransfer;
+    private volatile DirectTransferMode _directTransfer;
 
-    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead)
+    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead, DirectTransferMode directTransfer, (int First, int Last) directPortRange)
     {
         _path = path;
         _logger = logger;
@@ -30,6 +31,8 @@ internal sealed class AgentSettings
         _fastTransfer = fastTransfer;
         FastTransferMinBytes = fastTransferMinBytes;
         ChannelRead = channelRead;
+        _directTransfer = directTransfer;
+        DirectPortRange = directPortRange;
     }
 
     /// <summary>
@@ -49,6 +52,18 @@ internal sealed class AgentSettings
     /// editable in the file.
     /// </summary>
     public long FastTransferMinBytes { get; }
+
+    /// <summary>
+    /// "Direct connection for large files": whether a fast transfer offers the direct TLS
+    /// connection, with the channel as the fallback. Auto by default.
+    /// </summary>
+    public DirectTransferMode DirectTransfer => _directTransfer;
+
+    /// <summary>
+    /// The TCP ports the listener of a direct transfer may take, the first free one each
+    /// time, "3400-3449" by default. Only editable in the file; read at startup.
+    /// </summary>
+    public (int First, int Last) DirectPortRange { get; }
 
     /// <summary>Lowest level written to the log. Only editable in the file.</summary>
     public LogLevel LogLevel { get; }
@@ -87,6 +102,8 @@ internal sealed class AgentSettings
         var fastTransfer = FastTransferMode.Auto;
         var fastTransferMinBytes = FastTransferPolicy.DefaultMinBytes;
         var channelRead = ChannelReadMode.Wts;
+        var directTransfer = DirectTransferMode.Auto;
+        (int First, int Last) directPortRange = (DirectTransferPolicy.DefaultFirstPort, DirectTransferPolicy.DefaultLastPort);
         try
         {
             if (FileExists(path))
@@ -115,6 +132,18 @@ internal sealed class AgentSettings
                         logger.Warn($"The channelRead setting \"{data.ChannelRead}\" is unknown; using \"wts\". Use \"wts\" or \"file\".");
                     }
 
+                    directTransfer = DirectTransferPolicy.Parse(data.DirectTransfer, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The directTransfer setting \"{data.DirectTransfer}\" is unknown; using \"auto\". Use \"auto\" or \"never\".");
+                    }
+
+                    directPortRange = DirectTransferPolicy.ParsePortRange(data.DirectPortRange, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The directPortRange setting \"{data.DirectPortRange}\" is not a range of at most {DirectTransferPolicy.MaxPorts} ports from {DirectTransferPolicy.MinPort} to 65535; using \"{DirectTransferPolicy.DefaultPortRange}\".");
+                    }
+
                     if (data.FastTransferMinBytes is { } minBytes)
                     {
                         if (minBytes >= 0)
@@ -134,7 +163,7 @@ internal sealed class AgentSettings
             logger.Warn($"Could not read the settings file {path}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead);
+        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange);
     }
 
     /// <summary>
@@ -157,9 +186,19 @@ internal sealed class AgentSettings
         return Save();
     }
 
+    /// <summary>
+    /// Changes <see cref="DirectTransfer"/> and saves the file. Returns false when the file
+    /// could not be written; the new value is used anyway until the agent exits.
+    /// </summary>
+    public bool SetDirectTransfer(DirectTransferMode value)
+    {
+        _directTransfer = value;
+        return Save();
+    }
+
     /// <summary>Readable summary for the log.</summary>
     public override string ToString() =>
-        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}";
+        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}";
 
     private bool Save()
     {
@@ -171,6 +210,8 @@ internal sealed class AgentSettings
             FastTransfer = FastTransfer == FastTransferMode.Auto ? null : FastTransferPolicy.ToSetting(FastTransfer),
             FastTransferMinBytes = FastTransferMinBytes == FastTransferPolicy.DefaultMinBytes ? null : FastTransferMinBytes,
             ChannelRead = ChannelRead == ChannelReadMode.Wts ? null : ChannelReadModes.ToSetting(ChannelRead),
+            DirectTransfer = DirectTransfer == DirectTransferMode.Auto ? null : DirectTransferPolicy.ToSetting(DirectTransfer),
+            DirectPortRange = DirectPortRange == (DirectTransferPolicy.DefaultFirstPort, DirectTransferPolicy.DefaultLastPort) ? null : DirectTransferPolicy.ToSetting(DirectPortRange),
         };
 
         lock (_saveGate)
@@ -239,5 +280,11 @@ internal sealed class AgentSettings
 
         /// <summary>"wts" or "file". Wts when absent. Read as text, like <see cref="TrayIcon"/>.</summary>
         public string? ChannelRead { get; set; }
+
+        /// <summary>"auto" or "never". Auto when absent. Read as text, like <see cref="TrayIcon"/>.</summary>
+        public string? DirectTransfer { get; set; }
+
+        /// <summary>Ports of the direct connection, such as "3400-3449", the default when absent.</summary>
+        public string? DirectPortRange { get; set; }
     }
 }

@@ -303,6 +303,9 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   <data name="TrayFastTransferAlways" xml:space="preserve">
     <value>Sempre</value>
   </data>
+  <data name="TrayDirectTransfer" xml:space="preserve">
+    <value>Connessione diretta per i file di grandi dimensioni</value>
+  </data>
   <data name="TrayFastTransferAuto" xml:space="preserve">
     <value>Automatico</value>
   </data>

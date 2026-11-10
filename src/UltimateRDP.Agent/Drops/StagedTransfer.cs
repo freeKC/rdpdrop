@@ -282,6 +282,38 @@ internal sealed class StagedTransfer
         return damage;
     }
 
+    /// <summary>
+    /// The files of this drop are coming through the direct connection: the transfer stays
+    /// alive although nothing arrives through the channel. Callable from any thread.
+    /// </summary>
+    public void KeepAlive() => Interlocked.Exchange(ref _lastMessageTicks, Environment.TickCount64);
+
+    /// <summary>
+    /// The files came through the direct connection: this transfer through the channel ends
+    /// without a result and without <see cref="Finished"/>, since the drop goes on with the
+    /// copies of the direct connection. Returns false when it was already over. Callable from
+    /// any thread.
+    /// </summary>
+    public bool Withdraw()
+    {
+        lock (_gate)
+        {
+            if (_receiver.IsFinished || _resultSent)
+            {
+                return false;
+            }
+
+            _resultSent = true;
+            _finishedRaised = true;
+            _idleTimer.Dispose();
+            StopGapTimer();
+            _receiver.Cancel();
+            _logger.Info($"Transfer {TransferId} of drag {DragId}: the files came through the direct connection; nothing came through the channel, which is no longer waited for.");
+            LogChannelSummary();
+            return true;
+        }
+    }
+
     /// <summary>Stops the transfer for <paramref name="reason"/>. Callable from any thread.</summary>
     public void Cancel(LocalText reason)
     {
@@ -364,7 +396,7 @@ internal sealed class StagedTransfer
             : string.Empty;
         _logger.Info(string.Create(
             CultureInfo.InvariantCulture,
-            $"Transfer {TransferId} of drag {DragId}: {status}, {_receiver.ReceivedFiles} of {_receiver.ExpectedFiles} file(s), {_receiver.ReceivedBytes} of {_receiver.ExpectedBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s{lines}{(outcome is null ? string.Empty : ". " + outcome)}"));
+            $"Transfer {TransferId} of drag {DragId}: {status} through the channel, {_receiver.ReceivedFiles} of {_receiver.ExpectedFiles} file(s), {_receiver.ReceivedBytes} of {_receiver.ExpectedBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s{lines}{(outcome is null ? string.Empty : ". " + outcome)}"));
         _send(new TransferResultMessage(TransferId, status, text?.In(_language.Culture), _receiver.ReceivedBytes, Math.Round(seconds, 3)));
         LogChannelSummary();
     }

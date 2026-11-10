@@ -348,6 +348,9 @@ Keep the executable in a folder that every user can read, such as Program Files.
   <data name="TrayFastTransferAlways" xml:space="preserve">
     <value>Always</value>
   </data>
+  <data name="TrayDirectTransfer" xml:space="preserve">
+    <value>Direct connection for large files</value>
+  </data>
   <data name="TrayFastTransferAuto" xml:space="preserve">
     <value>Auto</value>
   </data>

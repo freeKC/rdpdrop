@@ -303,6 +303,9 @@ Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lese
   <data name="TrayFastTransferAlways" xml:space="preserve">
     <value>Immer</value>
   </data>
+  <data name="TrayDirectTransfer" xml:space="preserve">
+    <value>Direktverbindung für große Dateien</value>
+  </data>
   <data name="TrayFastTransferAuto" xml:space="preserve">
     <value>Automatisch</value>
   </data>

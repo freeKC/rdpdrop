@@ -45,6 +45,15 @@ internal static class FatalErrors
             }
 
             InputInjector.ReleaseIfDown();
+            try
+            {
+                // The key of the direct connection is left in the user key store otherwise.
+                Direct.DirectCertificate.Delete(null);
+            }
+            catch (Exception)
+            {
+                // The process ends anyway; the next agent of the session replaces the key.
+            }
         }
 
         Kernel32.TerminateProcess(Kernel32.GetCurrentProcess(), ExitCode);
