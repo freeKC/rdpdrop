@@ -418,6 +418,12 @@ Nu opnieuw verbinden?</value>
   <data name="TransferFileChanged" xml:space="preserve">
     <value>{0} is gewijzigd tijdens het verzenden. Probeer het opnieuw.</value>
   </data>
+  <data name="TransferDirect" xml:space="preserve">
+    <value>Directe verbinding</value>
+  </data>
+  <data name="TransferDirectLost" xml:space="preserve">
+    <value>De directe verbinding is verbroken. Probeer het opnieuw.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>De overdracht is gestopt: de verbinding met de sessie is verbroken.</value>
   </data>

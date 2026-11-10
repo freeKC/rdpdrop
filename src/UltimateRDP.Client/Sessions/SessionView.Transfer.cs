@@ -2,6 +2,8 @@ using System.Globalization;
 using UltimateRDP.Client.Localization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Client.Resources;
+using UltimateRDP.Core.Agent;
+using UltimateRDP.Core.Direct;
 using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.Transfer;
 
@@ -15,9 +17,17 @@ namespace UltimateRDP.Client.Sessions;
 /// file it drops the copies at that point and sends the usual dropResult.
 /// </summary>
 /// <remarks>
+/// <para>
 /// One transfer at a time: while one runs, new drags are refused with a status text and a
 /// notice in the progress window. The Session menu and the window can cancel it; closing
 /// the tab cancels it too.
+/// </para>
+/// <para>
+/// Since 0.6.0, when the dragAck offers a direct connection and the <c>directTransfer</c>
+/// setting is <c>auto</c>, a <see cref="DirectUpload"/> sends the files outside the channel
+/// first. When it cannot be used before the agent acknowledged anything, the same drop goes
+/// on through the channel with a <see cref="TransferUpload"/>, as in 0.5.2.
+/// </para>
 /// </remarks>
 internal sealed partial class SessionView
 {
@@ -27,13 +37,19 @@ internal sealed partial class SessionView
     /// <summary>Most bytes in flight, from the <c>transferWindowBytes</c> setting.</summary>
     private readonly long _transferWindowBytes;
 
+    /// <summary>Whether a direct connection offered by the agent is used, from the <c>directTransfer</c> setting.</summary>
+    private readonly DirectTransferMode _directTransferMode;
+
     private TransferUpload? _upload;
+
+    /// <summary>The transfer through the direct connection, while it runs.</summary>
+    private DirectUpload? _direct;
 
     /// <summary>The window of the current or last drop, until it is closed.</summary>
     private DropProgressForm? _progressWindow;
 
     /// <summary>True while files are being transferred to the agent, or a drop waits for the dragAck that may offer a transfer.</summary>
-    public bool CanCancelTransfer => _upload is not null || _held is not null;
+    public bool CanCancelTransfer => _upload is not null || _direct is not null || _held is not null;
 
     /// <summary>Cancels the transfer in progress, or the held drop, from the menu or the progress window.</summary>
     public void CancelTransfer()
@@ -41,6 +57,14 @@ internal sealed partial class SessionView
         if (_held is { } held)
         {
             GiveUpHeldDrop(held, LocalText.Of(nameof(Strings.DropCancelled)), "cancelled by the user", sendLeave: true);
+            return;
+        }
+
+        if (_direct is { } direct)
+        {
+            ClientLog.Info($"Transfer {direct.TransferId}: cancelled by the user, on the direct connection.");
+            EndDirect(direct, "The user cancelled the transfer.");
+            ShowTransferFailure(direct, LocalText.Of(nameof(Strings.TransferCancelledByUser)));
             return;
         }
 
@@ -92,6 +116,13 @@ internal sealed partial class SessionView
             return;
         }
 
+        if (_direct is { } direct && lines.Any(line => line.Subject == direct.TransferId || line.Subject == direct.DragId))
+        {
+            // Without its deferred drop the agent cannot drop what comes through the direct connection.
+            OnDirectFailed(direct, LocalText.Of(nameof(Strings.TransferNotSent)));
+            return;
+        }
+
         if (_pendingDropId is { } dropId && lines.Any(line => line.Type == MessageTypes.Drop && line.Subject == dropId))
         {
             ClientLog.Warn($"Drop {dropId}: its line was not sent.");
@@ -102,7 +133,125 @@ internal sealed partial class SessionView
         }
     }
 
-    private void StartTransfer(string dragId, string transferId, IReadOnlyList<DropItem> items)
+    /// <summary>
+    /// Starts the transfer of a deferred drop: through the direct connection when the agent
+    /// offered one and the setting allows it, through the channel otherwise.
+    /// </summary>
+    private void StartTransfer(string dragId, string transferId, IReadOnlyList<DropItem> items, DirectTransferOffer? direct)
+    {
+        if (direct is not null && _directTransferMode == DirectTransferMode.Auto)
+        {
+            StartDirectTransfer(dragId, transferId, items, direct);
+            return;
+        }
+
+        if (direct is not null)
+        {
+            ClientLog.Info(Invariant($"Transfer {transferId}: the agent offered a direct connection on port {direct.Port}; the directTransfer setting of the client is never, so the files go through the channel."));
+        }
+
+        StartChannelTransfer(dragId, transferId, items);
+    }
+
+    private void StartDirectTransfer(string dragId, string transferId, IReadOnlyList<DropItem> items, DirectTransferOffer direct)
+    {
+        var upload = new DirectUpload(this, dragId, transferId, items, direct, Host);
+        upload.Planned += OnDirectPlanned;
+        upload.Acknowledged += OnDirectAcknowledged;
+        upload.FellBack += OnDirectFellBack;
+        upload.Failed += OnDirectFailed;
+        upload.Completed += OnDirectCompleted;
+        _direct = upload;
+        ClientLog.Info(Invariant($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s) through the direct connection, port {direct.Port} of {Host}{(direct.Host is { } hint ? ", address hint " + hint : string.Empty)}, certificate pinned to SHA-256 {direct.CertSha256}; the channel takes the files when the connection cannot be used."));
+        ShowDropStatus(LocalText.Joined(LocalText.Of(nameof(Strings.TransferPreparing), items.Count), LocalText.Of(nameof(Strings.TransferDirect))));
+        OpenProgressWindow(dragId, items, transfer: true);
+        ProgressWindowOf(dragId)?.ShowDirect(true);
+        upload.Start();
+        RaiseStateChanged();
+    }
+
+    private void OnDirectPlanned(DirectUpload upload)
+    {
+        if (upload != _direct)
+        {
+            return;
+        }
+
+        ClientLog.Info(Invariant($"Transfer {upload.TransferId}: {upload.FileCount} file(s), {upload.TotalBytes} bytes, for the direct connection."));
+        ShowTransferProgress(upload);
+    }
+
+    private void OnDirectAcknowledged(DirectUpload upload)
+    {
+        if (upload == _direct && upload.Progress?.TryRefresh(Environment.TickCount64) == true)
+        {
+            ShowTransferProgress(upload);
+        }
+    }
+
+    /// <summary>The direct connection cannot be used: the same drop goes on through the channel.</summary>
+    private void OnDirectFellBack(DirectUpload upload, string reason)
+    {
+        if (upload != _direct)
+        {
+            return;
+        }
+
+        ClientLog.Info($"Transfer {upload.TransferId}: the direct connection cannot be used, {reason}; the files go through the channel.");
+        _direct = null;
+        ProgressWindowOf(upload)?.ShowDirect(false);
+        StartChannelTransfer(upload.DragId, upload.TransferId, upload.Items);
+    }
+
+    /// <summary>The direct transfer failed after data got through, or the agent refused it: the agent is told through the channel.</summary>
+    private void OnDirectFailed(DirectUpload upload, LocalText reason)
+    {
+        if (upload != _direct)
+        {
+            return;
+        }
+
+        ClientLog.Warn($"Transfer {upload.TransferId}: stopped on the direct connection, {reason.ToEnglish()}");
+        LogDirectSummary(upload, null);
+        EndDirect(upload, reason.ToEnglish());
+        ShowTransferFailure(upload, reason);
+    }
+
+    /// <summary>The agent has every file: it drops the copies and the dropResult follows through the channel.</summary>
+    private void OnDirectCompleted(DirectUpload upload, DirectResult result)
+    {
+        if (upload != _direct)
+        {
+            return;
+        }
+
+        LogDirectSummary(upload, result);
+        _direct = null;
+        RaiseStateChanged();
+        var seconds = result.Milliseconds > 0 ? result.Milliseconds / 1000.0 : (Environment.TickCount64 - upload.StartTicks) / 1000.0;
+        var rate = TransferProgressText.MegabytesPerSecond(result.Bytes, seconds);
+        ShowDropStatus(LocalText.Of(nameof(Strings.TransferDropping), upload.FileCount, rate));
+        ProgressWindowOf(upload)?.ShowTransferred(upload.FileCount, TimeSpan.FromSeconds(seconds), rate);
+    }
+
+    /// <summary>
+    /// Ends the direct transfer on the client. With <paramref name="cancelReason"/>, the
+    /// agent is told through the channel to forget the drop; the drop is then over too.
+    /// </summary>
+    private void EndDirect(DirectUpload upload, string? cancelReason)
+    {
+        upload.Stop(cancelReason ?? "The transfer ended on the agent.");
+        _direct = null;
+        if (cancelReason is not null)
+        {
+            _pendingDropId = null;
+            _agent.SendTransfer(new TransferCancelMessage(upload.TransferId, cancelReason), upload.TransferId);
+        }
+
+        RaiseStateChanged();
+    }
+
+    private void StartChannelTransfer(string dragId, string transferId, IReadOnlyList<DropItem> items)
     {
         var encoding = ChunkEncodings.Choose(_agent.ClientToAgentModel);
         var upload = new TransferUpload(
@@ -167,7 +316,7 @@ internal sealed partial class SessionView
     /// same progress in the window. While a drag hovers over the session, the status text
     /// waits, so that the reason the drag is refused stays visible.
     /// </summary>
-    private void ShowTransferProgress(TransferUpload upload)
+    private void ShowTransferProgress(IUploadView upload)
     {
         if (upload.Progress is not { } progress)
         {
@@ -186,6 +335,11 @@ internal sealed partial class SessionView
         var text = progress.BytesPerSecond is { } rate && progress.Remaining is { } remaining
             ? LocalText.Of(nameof(Strings.TransferProgressRate), upload.FileCount, progress.Percent, rate / TransferProgressText.BytesPerMegabyte, TimeLeftText(remaining))
             : LocalText.Of(nameof(Strings.TransferProgress), upload.FileCount, progress.Percent);
+        if (upload.IsDirect)
+        {
+            text = LocalText.Joined(text, LocalText.Of(nameof(Strings.TransferDirect)));
+        }
+
         if (_dropTextBeforeDrag is not null)
         {
             _dropTextBeforeDrag = text;
@@ -208,6 +362,18 @@ internal sealed partial class SessionView
 
     private void OnTransferResult(TransferResultMessage result)
     {
+        if (_direct is { } direct && result.TransferId == direct.TransferId)
+        {
+            // The agent ended the drop through the channel while the files went directly.
+            ClientLog.Info($"Transfer {direct.TransferId}: the agent ended the transfer through the channel with {result.Status}; the direct connection stops.");
+            EndDirect(direct, cancelReason: null);
+            _pendingDropId = null;
+            ShowTransferFailure(direct, string.IsNullOrWhiteSpace(result.Message)
+                ? LocalText.Of(nameof(Strings.TransferFailedNoDetail))
+                : LocalText.Of(result.Status == DropStatus.Cancelled ? nameof(Strings.CancelledReason) : nameof(Strings.TransferFailedReason), result.Message));
+            return;
+        }
+
         if (_upload is not { } upload || result.TransferId != upload.TransferId)
         {
             ClientLog.Info($"Transfer result {result.TransferId} matches no transfer in progress. Ignored.");
@@ -263,6 +429,15 @@ internal sealed partial class SessionView
     /// <summary>The session was disconnected: the transfer is lost, and the agent deletes what it received.</summary>
     private void AbortTransfer()
     {
+        if (_direct is { } direct)
+        {
+            ClientLog.Info($"Transfer {direct.TransferId}: stopped by the disconnection, on the direct connection.");
+            direct.Stop("The session was disconnected.");
+            _direct = null;
+            ShowTransferFailure(direct, LocalText.Of(nameof(Strings.TransferInterrupted)));
+            RaiseStateChanged();
+        }
+
         if (_upload is not { } upload)
         {
             return;
@@ -293,6 +468,12 @@ internal sealed partial class SessionView
             EndTransfer(upload, "The tab of the session was closed.");
         }
 
+        if (_direct is { } direct)
+        {
+            ClientLog.Info($"Transfer {direct.TransferId}: cancelled, the tab of the session is closing.");
+            EndDirect(direct, "The tab of the session was closed.");
+        }
+
         CloseProgressWindow();
     }
 
@@ -315,7 +496,7 @@ internal sealed partial class SessionView
     }
 
     /// <summary>Shows why the transfer ended, in the status bar and in red in its window.</summary>
-    private void ShowTransferFailure(TransferUpload upload, LocalText reason)
+    private void ShowTransferFailure(IUploadView upload, LocalText reason)
     {
         ShowDropStatus(reason);
         ProgressWindowOf(upload)?.ShowFailure(reason);
@@ -339,7 +520,7 @@ internal sealed partial class SessionView
         var window = new DropProgressForm(dragId, Host);
         window.CancelRequested += (_, _) =>
         {
-            if ((_upload?.DragId ?? _held?.Live.Id) == window.DragId)
+            if ((_upload?.DragId ?? _direct?.DragId ?? _held?.Live.Id) == window.DragId)
             {
                 CancelTransfer();
             }
@@ -369,7 +550,7 @@ internal sealed partial class SessionView
     }
 
     /// <summary>The window of <paramref name="upload"/>, when it is still open.</summary>
-    private DropProgressForm? ProgressWindowOf(TransferUpload upload) => ProgressWindowOf(upload.DragId);
+    private DropProgressForm? ProgressWindowOf(IUploadView upload) => ProgressWindowOf(upload.DragId);
 
     /// <summary>The window of the drop of <paramref name="dragId"/>, when it is still open.</summary>
     private DropProgressForm? ProgressWindowOf(string dragId) =>
@@ -378,7 +559,7 @@ internal sealed partial class SessionView
     /// <summary>A new drag was refused because a transfer runs or a drop is held: the window says so too.</summary>
     private void NoteBusyRefusal()
     {
-        if ((_upload?.DragId ?? _held?.Live.Id) is { } dragId)
+        if ((_upload?.DragId ?? _direct?.DragId ?? _held?.Live.Id) is { } dragId)
         {
             ProgressWindowOf(dragId)?.ShowBusyNotice();
         }
@@ -436,6 +617,19 @@ internal sealed partial class SessionView
         var rate = TransferProgressText.MegabytesPerSecond(result.Bytes, seconds);
         var agentRate = TransferProgressText.MegabytesPerSecond(result.Bytes, result.Seconds);
         ClientLog.Info(Invariant(
-            $"Transfer {upload.TransferId} of drag {upload.DragId}: {result.Status}, {upload.FileCount} file(s), {result.Bytes} of {upload.TotalBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s from the drop; {result.Seconds:0.0} s and {agentRate:0.0} MB/s measured by the agent; {upload.DescribeResends()}."));
+            $"Transfer {upload.TransferId} of drag {upload.DragId}: {result.Status} through the channel, {upload.FileCount} file(s), {result.Bytes} of {upload.TotalBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s from the drop; {result.Seconds:0.0} s and {agentRate:0.0} MB/s measured by the agent; {upload.DescribeResends()}."));
+    }
+
+    /// <summary>The summary of a transfer through the direct connection: the path, the port, the TLS protocol and the rate.</summary>
+    private static void LogDirectSummary(DirectUpload upload, DirectResult? result)
+    {
+        var seconds = (Environment.TickCount64 - upload.StartTicks) / 1000.0;
+        var bytes = result?.Bytes ?? upload.Progress?.DoneBytes ?? 0;
+        var rate = TransferProgressText.MegabytesPerSecond(bytes, seconds);
+        var agent = result is null
+            ? "no final frame of the agent"
+            : Invariant($"{result.Milliseconds / 1000.0:0.0} s and {TransferProgressText.MegabytesPerSecond(result.Bytes, result.Milliseconds / 1000.0):0.0} MB/s measured by the agent");
+        ClientLog.Info(Invariant(
+            $"Transfer {upload.TransferId} of drag {upload.DragId}: {(result is null ? "Failed" : result.Status)} through the direct connection to {upload.Endpoint ?? "(not connected)"}, port {upload.Port}, {upload.Tls ?? "no TLS session"}, {upload.FileCount} file(s), {bytes} of {upload.TotalBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s from the drop; {agent}."));
     }
 }

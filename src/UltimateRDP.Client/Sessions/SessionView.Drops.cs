@@ -122,6 +122,7 @@ internal sealed partial class SessionView
     private void DisposeDrops()
     {
         _upload?.Stop();
+        _direct?.Stop("The session view was closed.");
         _held = null;
         CloseProgressWindow();
         StopDragTimers();
@@ -143,7 +144,7 @@ internal sealed partial class SessionView
             return LocalText.Of(nameof(Strings.DropRefusedNotConnected));
         }
 
-        if (_upload is not null || _held is not null)
+        if (_upload is not null || _direct is not null || _held is not null)
         {
             // One transfer at a time: a new drag would end the one the agent is receiving,
             // or the live drag whose dragAck a held drop waits for.
@@ -370,7 +371,7 @@ internal sealed partial class SessionView
         _pendingDropId = live.Id;
         if (live.TransferId is { } transferId)
         {
-            StartTransfer(live.Id, transferId, live.Items);
+            StartTransfer(live.Id, transferId, live.Items, live.Direct);
         }
         else
         {
@@ -445,6 +446,7 @@ internal sealed partial class SessionView
         {
             live.State = AckState.Accepted;
             live.TransferId = held.Decision.TransferId;
+            live.Direct = held.Decision.Direct;
         }
         else
         {
@@ -539,6 +541,7 @@ internal sealed partial class SessionView
                 if (ack.Transfer == true && ack.TransferId is { Length: > 0 } transferId)
                 {
                     live.TransferId = transferId;
+                    live.Direct = ack.Direct is { } direct && direct.IsWellFormed() ? direct : null;
                 }
 
                 if (!string.IsNullOrWhiteSpace(ack.Message))
@@ -707,6 +710,12 @@ internal sealed partial class SessionView
             EndTransfer(upload, "The drag ended on the agent before the transfer.");
             ProgressWindowOf(upload)?.ShowFailure(DescribeResult(result));
         }
+        else if (_direct is { } direct && direct.DragId == result.Id)
+        {
+            ClientLog.Info($"Transfer {direct.TransferId}: the drag ended on the agent with {result.Status}; the direct connection stops.");
+            EndDirect(direct, "The drag ended on the agent before the transfer.");
+            ProgressWindowOf(direct)?.ShowFailure(DescribeResult(result));
+        }
         else
         {
             ShowDropResultInWindow(result.Id, DescribeResult(result), failed: result.Status != DropStatus.Ok);
@@ -775,6 +784,9 @@ internal sealed partial class SessionView
 
         /// <summary>Set when the agent asked for the files through the channel.</summary>
         public string? TransferId { get; set; }
+
+        /// <summary>The direct connection the agent offered with the transfer, well formed, or null.</summary>
+        public DirectTransferOffer? Direct { get; set; }
 
         /// <summary>True while the last accepted dragAck was provisional: the final one may still offer a transfer.</summary>
         public bool AwaitsFinalAck { get; set; }

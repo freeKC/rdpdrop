@@ -57,6 +57,9 @@ internal sealed class DropProgressForm : Form
     private Func<string> _statusText = () => string.Empty;
     /// <summary>"Transferred 3 file(s) in ...", once a transfer succeeded; null for a drop without transfer.</summary>
     private Func<string>? _doneText;
+
+    /// <summary>True while the files go through the direct connection: the status says so on its second line.</summary>
+    private bool _direct;
     private long _noticeUntil;
     private long? _closeAt;
     private Rectangle _area;
@@ -310,6 +313,19 @@ internal sealed class DropProgressForm : Form
         }
     }
 
+    /// <summary>
+    /// The transfer goes through the direct connection, or no longer does: while it runs,
+    /// the status adds "Direct connection" on its second line.
+    /// </summary>
+    public void ShowDirect(bool direct)
+    {
+        if (_direct != direct)
+        {
+            _direct = direct;
+            Render();
+        }
+    }
+
     /// <summary>Writes every text again in the current user interface language.</summary>
     public void ApplyTexts() => Render();
 
@@ -415,6 +431,11 @@ internal sealed class DropProgressForm : Form
         SetTip(_fileLabel, _fileTip());
         SetText(_countLabel, _countText());
         var status = _statusText();
+        if (_direct && IsRunning)
+        {
+            status += Environment.NewLine + Strings.TransferDirect;
+        }
+
         SetText(_statusLabel, status);
         SetTip(_statusLabel, status);
         var color = _stage == Stage.Failed ? FailureColor : SystemColors.ControlText;

@@ -55,6 +55,7 @@ internal sealed partial class SessionView : UserControl
         _display = new DisplayController(_rdp, this, settings.DisplayMode);
         _transferChunkBytes = settings.TransferChunkBytes;
         _transferWindowBytes = settings.TransferWindowBytes;
+        _directTransferMode = settings.DirectTransferMode;
         InitializeViewChoices(settings);
 
         Dock = DockStyle.Fill;

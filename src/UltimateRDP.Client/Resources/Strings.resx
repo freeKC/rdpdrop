@@ -471,6 +471,13 @@ Reconnect now?</value>
     <value>{0} changed while it was being sent. Try again.</value>
     <comment>{0} is a file path.</comment>
   </data>
+  <data name="TransferDirect" xml:space="preserve">
+    <value>Direct connection</value>
+    <comment>Shown with the stage of a transfer that goes through the direct TLS connection instead of the RDP channel.</comment>
+  </data>
+  <data name="TransferDirectLost" xml:space="preserve">
+    <value>The direct connection was lost. Try again.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>The transfer stopped: the session was disconnected.</value>
   </data>

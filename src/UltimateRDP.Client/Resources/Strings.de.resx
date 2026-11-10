@@ -418,6 +418,12 @@ Jetzt neu verbinden?</value>
   <data name="TransferFileChanged" xml:space="preserve">
     <value>{0} hat sich während des Sendens geändert. Versuchen Sie es erneut.</value>
   </data>
+  <data name="TransferDirect" xml:space="preserve">
+    <value>Direktverbindung</value>
+  </data>
+  <data name="TransferDirectLost" xml:space="preserve">
+    <value>Die Direktverbindung wurde unterbrochen. Versuchen Sie es erneut.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>Die Übertragung wurde beendet: Die Sitzung wurde getrennt.</value>
   </data>

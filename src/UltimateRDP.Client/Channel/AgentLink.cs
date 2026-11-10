@@ -643,7 +643,7 @@ internal sealed class AgentLink : IDisposable
                 break;
 
             case DragAckMessage ack:
-                ClientLog.Info($"Drag ack {ack.Id}: accepted {ack.Accepted}{(ack.Transfer == true ? ", transfer " + ack.TransferId : string.Empty)}, message \"{ack.Message}\"");
+                ClientLog.Info($"Drag ack {ack.Id}: accepted {ack.Accepted}{(ack.Transfer == true ? ", transfer " + ack.TransferId : string.Empty)}{(ack.Direct is { } direct ? (direct.IsWellFormed() ? ", direct connection on port " + direct.Port.ToString(CultureInfo.InvariantCulture) : ", direct connection offer malformed, ignored") : string.Empty)}, message \"{ack.Message}\"");
                 DragAckReceived?.Invoke(this, ack);
                 break;
 

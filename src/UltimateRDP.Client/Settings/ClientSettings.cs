@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using UltimateRDP.Client.Logging;
+using UltimateRDP.Core.Agent;
 using UltimateRDP.Core.Localization;
 using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.Recent;
@@ -68,6 +69,17 @@ internal sealed class ClientSettings
     public long TransferWindowBytes { get; set; } = TransferSender.DefaultWindowBytes;
 
     /// <summary>
+    /// <c>auto</c> by default: when the agent offers a direct connection for a fast
+    /// transfer, the files go through it, and through the channel when it cannot be used.
+    /// <c>never</c> always sends them through the channel. Only editable in the file.
+    /// </summary>
+    public string DirectTransfer { get; set; } = DirectTransferPolicy.ToSetting(DirectTransferMode.Auto);
+
+    /// <summary>The mode of <see cref="DirectTransfer"/>.</summary>
+    [JsonIgnore]
+    public DirectTransferMode DirectTransferMode => DirectTransferPolicy.Parse(DirectTransfer, out _);
+
+    /// <summary>
     /// <c>info</c> by default, or <c>debug</c> to also log every message sent to the agent
     /// and every call of the control. Only editable in the file.
     /// </summary>
@@ -118,7 +130,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, log level {LogLevel}";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, direct connection {DirectTransfer}, log level {LogLevel}";
 
     private ClientSettings Normalized()
     {
@@ -142,6 +154,13 @@ internal sealed class ClientSettings
         TransferBatchCharacters = SendQueue.ClampBatchLimit(TransferBatchCharacters);
         TransferWindowBytes = TransferSender.ClampWindowBytes(TransferWindowBytes);
         LogLevel = string.Equals(LogLevel?.Trim(), DebugLevel, StringComparison.OrdinalIgnoreCase) ? DebugLevel : InfoLevel;
+        var directTransfer = DirectTransferPolicy.Parse(DirectTransfer, out var recognized);
+        if (!recognized)
+        {
+            ClientLog.Warn($"The directTransfer setting \"{DirectTransfer}\" is unknown; using \"auto\". Use \"auto\" or \"never\".");
+        }
+
+        DirectTransfer = DirectTransferPolicy.ToSetting(directTransfer);
         RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;
     }

@@ -38,22 +38,13 @@ namespace UltimateRDP.Client.Sessions;
 /// again, which shows the agent a loss at the end of what was sent.
 /// </para>
 /// </remarks>
-internal sealed class TransferUpload
+internal sealed class TransferUpload : IUploadView
 {
     private const int ReadBufferSize = 1024 * 1024;
     private const int WaitSliceMilliseconds = 500;
 
     /// <summary>Most characters of short lines held for the next chunk, for a folder of many empty files.</summary>
     private const int MaxHeldCharacters = 100_000;
-
-    /// <summary>Every file, hidden and system ones too, as a copy by Explorer would take them.</summary>
-    private static readonly EnumerationOptions ListingOptions = new()
-    {
-        AttributesToSkip = 0,
-        IgnoreInaccessible = false,
-        RecurseSubdirectories = false,
-        ReturnSpecialDirectories = false,
-    };
 
     private readonly Control _owner;
     private readonly Func<IReadOnlyList<QueuedLine>, bool> _sendLines;
@@ -113,6 +104,9 @@ internal sealed class TransferUpload
     /// <summary>True when the lines are numbered and kept until the agent processed them.</summary>
     public bool Sequenced { get; }
 
+    /// <summary>False: the files go through the channel.</summary>
+    public bool IsDirect => false;
+
     /// <summary>Number of files, folders being counted file by file. Known once <see cref="Planned"/> was raised.</summary>
     public int FileCount { get; private set; }
 
@@ -155,7 +149,7 @@ internal sealed class TransferUpload
         {
             try
             {
-                foreach (var entry in pending.Pop().EnumerateFileSystemInfos("*", ListingOptions))
+                foreach (var entry in pending.Pop().EnumerateFileSystemInfos("*", TransferListing.Options))
                 {
                     if (watch.Elapsed >= budget)
                     {
@@ -331,49 +325,16 @@ internal sealed class TransferUpload
     /// <summary>The files to send, each with its path on this computer. Null when a file or folder cannot be read.</summary>
     private List<(string Path, TransferFile File)>? ListFiles()
     {
-        var files = new List<(string Path, TransferFile File)>();
-        foreach (var item in _items)
+        try
         {
-            var name = TransferPaths.ItemName(item.ClientPath);
-            try
-            {
-                if (!item.IsDirectory)
-                {
-                    var info = new FileInfo(item.ClientPath);
-                    files.Add((info.FullName, new TransferFile(name, info.Length, info.LastWriteTimeUtc)));
-                    continue;
-                }
-
-                var root = new DirectoryInfo(item.ClientPath);
-                var pending = new Stack<DirectoryInfo>();
-                pending.Push(root);
-                while (pending.Count > 0)
-                {
-                    var folder = pending.Pop();
-                    foreach (var entry in folder.EnumerateFileSystemInfos("*", ListingOptions))
-                    {
-                        if (entry is FileInfo info)
-                        {
-                            var relative = TransferPaths.Combine(name, Path.GetRelativePath(root.FullName, info.FullName));
-                            files.Add((info.FullName, new TransferFile(relative, info.Length, info.LastWriteTimeUtc)));
-                        }
-                        else if (entry is DirectoryInfo child && !child.Attributes.HasFlag(FileAttributes.ReparsePoint))
-                        {
-                            // A junction or a link to a folder could loop, or leave the dropped folder.
-                            pending.Push(child);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-            {
-                ClientLog.Warn($"Transfer {TransferId}: cannot list {item.ClientPath}. {ex.Message}");
-                Fail(LocalText.Of(nameof(Strings.TransferReadFailed), item.ClientPath, ex.Message));
-                return null;
-            }
+            return TransferListing.List(_items);
         }
-
-        return files;
+        catch (TransferListingException ex)
+        {
+            ClientLog.Warn($"Transfer {TransferId}: cannot list {ex.ItemPath}. {ex.Message}");
+            Fail(LocalText.Of(nameof(Strings.TransferReadFailed), ex.ItemPath, ex.Message));
+            return null;
+        }
     }
 
     /// <summary>Sends one file. Returns false when the upload stopped or failed.</summary>

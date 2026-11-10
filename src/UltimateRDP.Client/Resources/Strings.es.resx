@@ -418,6 +418,12 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
   <data name="TransferFileChanged" xml:space="preserve">
     <value>{0} cambió mientras se enviaba. Vuelva a intentarlo.</value>
   </data>
+  <data name="TransferDirect" xml:space="preserve">
+    <value>Conexión directa</value>
+  </data>
+  <data name="TransferDirectLost" xml:space="preserve">
+    <value>Se perdió la conexión directa. Vuelva a intentarlo.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>La transferencia se detuvo: la sesión se desconectó.</value>
   </data>

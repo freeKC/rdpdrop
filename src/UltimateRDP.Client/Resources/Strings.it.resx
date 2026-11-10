@@ -418,6 +418,12 @@ Riconnettere ora?</value>
   <data name="TransferFileChanged" xml:space="preserve">
     <value>{0} è cambiato durante l'invio. Riprovare.</value>
   </data>
+  <data name="TransferDirect" xml:space="preserve">
+    <value>Connessione diretta</value>
+  </data>
+  <data name="TransferDirectLost" xml:space="preserve">
+    <value>La connessione diretta è stata persa. Riprovare.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>Il trasferimento si è interrotto: la sessione è stata disconnessa.</value>
   </data>

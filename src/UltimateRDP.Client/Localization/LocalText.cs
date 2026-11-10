@@ -35,6 +35,12 @@ internal sealed class LocalText
     /// </summary>
     public static LocalText Of(string key, params object?[] args) => new(key, null, args);
 
+    /// <summary>
+    /// Two texts shown one after the other, separated by a middle dot, such as the stage of a
+    /// transfer and the path it takes.
+    /// </summary>
+    public static LocalText Joined(LocalText first, LocalText second) => new(null, null, [first, second]);
+
     /// <summary>A text that is shown as it is, in every language.</summary>
     public static LocalText Raw(string? text) => string.IsNullOrEmpty(text) ? Empty : new(null, text, []);
 
@@ -49,6 +55,11 @@ internal sealed class LocalText
         if (_raw is not null)
         {
             return _raw;
+        }
+
+        if (_key is null)
+        {
+            return string.Join(" \u00B7 ", _args.Select(part => part is LocalText text ? text.Render(language, formatting) : Convert.ToString(part, formatting)));
         }
 
         var format = Strings.ResourceManager.GetString(_key!, language) ?? _key!;

@@ -418,6 +418,12 @@ Se reconnecter maintenant ?</value>
   <data name="TransferFileChanged" xml:space="preserve">
     <value>{0} a changé pendant son envoi. Réessayez.</value>
   </data>
+  <data name="TransferDirect" xml:space="preserve">
+    <value>Connexion directe</value>
+  </data>
+  <data name="TransferDirectLost" xml:space="preserve">
+    <value>La connexion directe a été perdue. Réessayez.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>Le transfert s'est arrêté : la session a été déconnectée.</value>
   </data>
