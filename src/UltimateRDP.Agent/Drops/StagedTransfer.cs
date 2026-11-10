@@ -33,6 +33,11 @@ namespace UltimateRDP.Agent.Drops;
 /// sends again after it was processed, its newest one when it waits, gets a fresh
 /// acknowledgement. Lines without a number are handled as they arrive.
 /// </para>
+/// <para>
+/// Since 0.5.2 a numbered chunk that arrives damaged, whose data or position cannot be
+/// right, is handled as a lost line: the receiver leaves it, the log describes the damage,
+/// and the inbox asks the client for it again under the same rules.
+/// </para>
 /// </remarks>
 internal sealed class StagedTransfer
 {
@@ -113,6 +118,11 @@ internal sealed class StagedTransfer
             {
                 Reorder(message, seq, now);
             }
+            else if (_inbox.Arrived > 0 && ReliableInbox.IsNumberedType(message))
+            {
+                // Its number was damaged on the way: the next line shows the gap, and the inbox asks for it.
+                _logger.Info($"Transfer {TransferId}: a {message.Type} line without a number among numbered lines, damaged on the way; ignored, line {_inbox.Expected} is expected.");
+            }
             else
             {
                 HandleInOrder(message);
@@ -128,7 +138,7 @@ internal sealed class StagedTransfer
     private void Reorder(Message message, long seq, long now)
     {
         var expected = _inbox.Expected;
-        var step = _inbox.Accept(message, now);
+        var step = _inbox.Accept(message, now, HandleNumbered);
         if (step.Duplicate)
         {
             _logger.Debug($"Transfer {TransferId}: line {seq} ({message.Type}) arrived again, ignored.");
@@ -147,23 +157,37 @@ internal sealed class StagedTransfer
             _logger.Info($"Transfer {TransferId}: the missing lines from {expected} arrived; {step.Released} line(s) that waited behind them follow.");
         }
 
-        foreach (var ready in step.Ready)
+        if (_receiver.IsFinished)
         {
-            HandleInOrder(ready);
-            if (_receiver.IsFinished)
-            {
-                StopGapTimer();
-                return;
-            }
+            StopGapTimer();
+            return;
         }
 
         if (step.Request is { } request)
         {
-            _logger.Info($"Transfer {TransferId}: line {seq} came while line {_inbox.Expected} was expected; asking the client for lines {request.From} to {request.To} (request {_inbox.Requests}).");
+            _logger.Info(request.Damaged == true
+                ? $"Transfer {TransferId}: line {request.From} arrived damaged; asking the client for lines {request.From} to {request.To} (request {_inbox.Requests})."
+                : $"Transfer {TransferId}: line {seq} came while line {_inbox.Expected} was expected; asking the client for lines {request.From} to {request.To} (request {_inbox.Requests}).");
             _send(request);
         }
 
         AfterInboxStep(step);
+    }
+
+    /// <summary>
+    /// Hands one numbered line, in order, to the receiver. Returns false when it is a chunk
+    /// damaged on the way, which the inbox then asks for again. Under the lock.
+    /// </summary>
+    private bool HandleNumbered(Message line)
+    {
+        if (_receiver.IsFinished || HandleInOrder(line) is not { } damage)
+        {
+            return true;
+        }
+
+        // What the damage looks like, without the line itself.
+        _logger.Info($"Transfer {TransferId}: {damage.Describe()}");
+        return false;
     }
 
     /// <summary>Starts or stops the check of the missing lines, and stops the transfer when the inbox gave up. Under the lock.</summary>
@@ -201,7 +225,9 @@ internal sealed class StagedTransfer
             var step = _inbox.Check(Environment.TickCount64);
             if (step.Request is { } request)
             {
-                _logger.Info($"Transfer {TransferId}: lines {request.From} to {request.To} still missing; asking the client again (request {_inbox.Requests}).");
+                _logger.Info(request.Damaged == true
+                    ? $"Transfer {TransferId}: lines {request.From} to {request.To} still missing, line {request.From} arrived damaged; asking the client again (request {_inbox.Requests})."
+                    : $"Transfer {TransferId}: lines {request.From} to {request.To} still missing; asking the client again (request {_inbox.Requests}).");
                 _send(request);
             }
 
@@ -219,13 +245,16 @@ internal sealed class StagedTransfer
         _gapTimer = null;
     }
 
-    /// <summary>Handles one message in the order of the transfer. Under the lock.</summary>
-    private void HandleInOrder(Message message)
+    /// <summary>
+    /// Handles one message in the order of the transfer. Returns what is wrong with a
+    /// numbered chunk damaged on the way, which was left for a resend. Under the lock.
+    /// </summary>
+    private ChunkDamage? HandleInOrder(Message message)
     {
         if (message is TransferBeginMessage begin && !HasRoomFor(begin))
         {
             StopUnderLock(LocalText.Of(nameof(Strings.TransferNoSpace), Megabytes(FastTransferPolicy.RequiredFreeSpace(begin.Bytes)), Megabytes(_staging.FreeSpace() ?? 0)), DropStatus.Error);
-            return;
+            return null;
         }
 
         if (message is TransferBeginMessage announced)
@@ -233,7 +262,7 @@ internal sealed class StagedTransfer
             _logger.Info($"Transfer {TransferId} of drag {DragId}: receiving {announced.Files} file(s), {announced.Bytes} bytes, chunks in {ChunkEncodings.OrDefault(announced.ChunkEncoding)}{(announced.Seq is null ? ", lines not numbered" : ", numbered lines")}.");
         }
 
-        if (_receiver.Handle(message) is { } ack)
+        if (_receiver.Handle(message, out var damage) is { } ack)
         {
             if (message is FileChunkMessage { Offset: 0 } first)
             {
@@ -249,6 +278,8 @@ internal sealed class StagedTransfer
         {
             _logger.Info($"Transfer {TransferId}: cancelled by the client, {cancel.Reason ?? "no reason given"}.");
         }
+
+        return damage;
     }
 
     /// <summary>Stops the transfer for <paramref name="reason"/>. Callable from any thread.</summary>
@@ -329,7 +360,7 @@ internal sealed class StagedTransfer
         var rate = seconds > 0 ? _receiver.ReceivedBytes / BytesPerMegabyte / seconds : 0;
         var outcome = status == DropStatus.Ok ? null : _receiver.FailureDetail ?? _stopDetail ?? text?.ToString();
         var lines = _inbox.Requests > 0 || _inbox.DuplicateLines > 0
-            ? string.Create(CultureInfo.InvariantCulture, $"; {_inbox.Requests} resend request(s), {_inbox.ReleasedLines} line(s) held until the missing ones came, {_inbox.DuplicateLines} line(s) received twice")
+            ? string.Create(CultureInfo.InvariantCulture, $"; {_inbox.Requests} resend request(s) ({_inbox.DamagedRequests} for damaged lines), {_inbox.ReleasedLines} line(s) held until the missing ones came, {_inbox.DuplicateLines} line(s) received twice, {_inbox.DamagedLines} line(s) received damaged")
             : string.Empty;
         _logger.Info(string.Create(
             CultureInfo.InvariantCulture,

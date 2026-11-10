@@ -224,7 +224,8 @@ internal sealed class TransferUpload
 
     /// <summary>
     /// The agent asks for lines again. UI thread. Returns the lines still kept, in order,
-    /// marked as sent again, for the caller to queue.
+    /// marked as sent again, for the caller to queue: the same strings as the first time. A
+    /// request for a line that arrived damaged goes the same way and is counted apart.
     /// </summary>
     public IReadOnlyList<QueuedLine> OnResend(TransferResendMessage request)
     {
@@ -237,7 +238,7 @@ internal sealed class TransferUpload
                 return [];
             }
 
-            lines = _outbox.Take(request.From, request.To);
+            lines = _outbox.Take(request.From, request.To, request.Damaged == true);
         }
 
         if (lines.Count == 0)
@@ -246,7 +247,8 @@ internal sealed class TransferUpload
             return lines;
         }
 
-        ClientLog.Info(Invariant($"Transfer {TransferId}: resending lines {lines[0].Seq} to {lines[^1].Seq} asked by the agent, {lines.Count} line(s) of {lines.Sum(line => (long)line.Text.Length)} characters, the first one {lines[0].Type}."));
+        var reason = request.Damaged == true ? Invariant($", line {request.From} arrived damaged") : string.Empty;
+        ClientLog.Info(Invariant($"Transfer {TransferId}: resending lines {lines[0].Seq} to {lines[^1].Seq} asked by the agent{reason}, {lines.Count} line(s) of {lines.Sum(line => (long)line.Text.Length)} characters, the first one {lines[0].Type}."));
         return lines;
     }
 
@@ -256,7 +258,7 @@ internal sealed class TransferUpload
         lock (_gate)
         {
             return _outbox is { } outbox
-                ? Invariant($"{outbox.ResentLines} line(s) sent again for {outbox.Requests} request(s) of the agent, the newest line sent again {outbox.Probes} time(s) after a silence")
+                ? Invariant($"{outbox.ResentLines} line(s) sent again for {outbox.Requests} request(s) of the agent ({outbox.DamagedRequests} for damaged lines), the newest line sent again {outbox.Probes} time(s) after a silence")
                 : "lines not numbered, the agent cannot ask for lost ones";
         }
     }
