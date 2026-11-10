@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/freeKC/ultimaterdp/actions/workflows/ci.yml/badge.svg)](https://github.com/freeKC/ultimaterdp/actions/workflows/ci.yml)
 
-UltimateRDP lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. UltimateRDP is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection. Large files travel through the virtual channel before the drop, which is faster than drive redirection.
+UltimateRDP lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. UltimateRDP is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection. Large files travel through the virtual channel before the drop, which is faster than drive redirection, and from version 0.6.0 through a direct TLS connection when the network allows it.
 
 ## Why
 
@@ -21,7 +21,7 @@ Small files travel through drive redirection. Large files travel through the Ult
 
 The client is one portable executable. It runs without administrator rights. The agent archive also holds one executable.
 
-UltimateRDP works through a Remote Desktop Gateway.
+UltimateRDP works through a Remote Desktop Gateway. The direct connection for large files does not, and the files then go through the channel: see "Direct connection for large files".
 
 UltimateRDP has a deliberately narrow scope:
 
@@ -138,6 +138,7 @@ Things to know:
 - If you release the button very quickly, before the agent answered the start of the drag, the client waits for that answer, for at most a second and a half, with "Preparing..." in the progress window, so that large files still go through the UltimateRDP channel. A new drag is refused during that wait, as during a transfer.
 - Empty folders inside a dropped folder are not created in the session.
 - The agent must run version 0.4.1 or later, and the client too. The progress window is new in client 0.4.2 and works with an agent 0.4.1. With an older client or agent, every drop goes through drive redirection.
+- From version 0.6.0 on both sides, the files go through a direct connection when the server opens its ports for it, and through the channel otherwise. See "Direct connection for large files".
 
 From version 0.5.0 the files travel in a denser form when your connection allows it. The agent tells the client how the data of the client reaches it. When each character arrives as two bytes, as measured on a production server, the client packs 15 bits of the file into each character instead of base64, and a file byte costs about 1.07 bytes on the channel instead of 2.67. On a channel that carries 5.8 MB/s, the transfer goes from about 2.1 MB/s to about 5.4 MB/s. When each character arrives as one byte, the client keeps base64, at about three quarters of the channel. Both sides must run 0.5.0 for the denser form; with an older agent the client sends base64 as before. The status bar and the progress window do not change; the client log says which form a transfer uses.
 
@@ -148,6 +149,7 @@ The client sends the files in chunks of 32 KiB. The setting `transferChunkBytes`
   "transferChunkBytes": 32768,
   "transferBatchCharacters": 200000,
   "transferWindowBytes": 4194304,
+  "directTransfer": "auto",
   "logLevel": "info"
 }
 ```
@@ -282,6 +284,7 @@ By default the tray icon of the agent is visible only while an UltimateRDP clien
 
 - **Stage files in the session before the drop**: off by default. When on, the agent copies the files into the session before the drag starts, and the remote application receives local paths instead of `\\tsclient` paths. Turn it on for applications that refuse network paths. Large files take time to copy before the drag starts. When the files come through the channel, see below, they arrive as local copies anyway.
 - **Fast transfer of large files**: Auto, Always or Never. Auto, the default, sends the files through the UltimateRDP channel before the drop when they hold 10 MiB or more. Always does it for every drop, Never for none: the remote application then reads the files through drive redirection, as in version 0.3.
+- **Direct connection for large files**: Auto or Never. Auto, the default, offers the direct connection for a fast transfer, with the channel as the fallback. Never keeps every fast transfer in the channel. See "Direct connection for large files".
 - **Open log folder**, **About** and **Exit**.
 
 The menu follows the display language of Windows on the server.
@@ -296,6 +299,8 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
   "stageFiles": false,
   "fastTransfer": "auto",
   "fastTransferMinBytes": 10485760,
+  "directTransfer": "auto",
+  "directPortRange": "3400-3449",
   "trayIcon": "auto",
   "channelRead": "wts"
 }
@@ -306,11 +311,62 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
 | `stageFiles` | `true`, `false` | `false` | The tray menu entry "Stage files in the session before the drop". |
 | `fastTransfer` | `auto`, `always`, `never` | `auto` | The tray menu entry "Fast transfer of large files". |
 | `fastTransferMinBytes` | a number of bytes | `10485760` (10 MiB) | The size from which `auto` sends the files through the channel, counted over all the dropped items. Only editable in the file. |
+| `directTransfer` | `auto`, `never` | `auto` | The tray menu entry "Direct connection for large files". |
+| `directPortRange` | a range such as `3400-3449`, or one port | `3400-3449` | The TCP ports of the direct connection, see "Direct connection for large files". Only editable in the file. |
 | `logLevel` | `debug`, `info`, `warn`, `error` | `info` | The lowest level written to the log. Only editable in the file. |
 | `trayIcon` | `auto`, `always`, `never` | `auto` | `auto` shows the tray icon only while an UltimateRDP client is connected to the session. `always` shows it from the start of the agent. `never` never shows it: the agent is then controlled with `--uninstall` and its `Run` entry only. Only editable in the file. |
 | `channelRead` | `wts`, `file` | `wts` | How the agent reads the channel. `wts` reads it with WTSVirtualChannelRead, 1600 bytes at a time. `file` is an experiment: the agent reads the file handle of the channel with a buffer of 64 KiB, takes out the channel headers it may find, logs which framing it found, and goes back to `wts` for the connection at the first inconsistency, with a warning. Only editable in the file. |
 
 An unknown value gives the default and a warning in the log. Restart the agent after editing the file by hand.
+
+## Direct connection for large files
+
+From version 0.6.0, the files of a fast transfer go through a direct TLS connection between the client and the agent, outside the Remote Desktop connection, when the network allows it. Through the UltimateRDP channel, transfers measured in production reached 2 to 4 MB/s, whatever the link; the direct connection carries them at the rate of the network. When it cannot be used, the files go through the channel as before, without anything to do for the user.
+
+How it works:
+
+1. When the agent decides a fast transfer, it listens on the first free TCP port of a range, 3400 to 3449 by default, for this transfer only. Each session uses its own port, so a range is needed on a server with many sessions.
+2. Its answer to the drag, through the channel, gives the port, a random single use token, and the SHA-256 of its TLS certificate.
+3. After the drop the client connects to the host of the .rdp file on that port, within 3 seconds. It accepts only the certificate whose SHA-256 the agent gave, sends the token, then the files.
+4. The agent accepts one connection per offer, checks every file as through the channel, and drops the copies.
+
+The listener exists only while a transfer is offered or runs. It closes 10 seconds after the drop when no connection came. The certificate is created in memory by the agent at its first direct transfer; its private key is a non exportable key of the user key store, which the agent deletes when it exits. The agent still runs with the rights of the user: a port above 1024 needs no administrator right.
+
+### Firewall rules
+
+The administrator opens the range, inbound TCP to the server, restricted to the client addresses allowed for RDP. On the Windows firewall of the server, from an elevated PowerShell:
+
+```
+New-NetFirewallRule -DisplayName "UltimateRDP direct transfer" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3400-3449 -RemoteAddress <allowed client addresses> -Program "C:\Program Files\UltimateRDP\UltimateRDP.Agent.exe" -Profile Any
+```
+
+Replace `<allowed client addresses>` with the same list as the rule that allows RDP, separated by commas, and the program path with the place of the agent. With `-Program`, Windows has a rule for the agent and does not ask the users when it starts to listen. To make sure that users never see such a question on the server, run `Set-NetFirewallProfile -Profile Domain,Private,Public -NotifyOnListen False`.
+
+At the hosting provider, add the same rule to the firewall in front of the server: TCP, destination ports 3400 to 3449, source the allowed client addresses only.
+
+If you change the range in the agent settings, change both rules with it.
+
+### Fallback
+
+The channel takes the files, as in version 0.5.2, when:
+
+- the client connects through a Remote Desktop Gateway, or a firewall does not open the ports: the connection attempt fails within 3 seconds;
+- the TLS handshake fails, the certificate is not the one the agent gave, or the agent refuses the token;
+- the connection breaks before the agent acknowledged the first 8 MiB;
+- the client or the agent runs a version before 0.6.0, or one of them has the setting `directTransfer` at `never`;
+- no port of the range is free on the server.
+
+When the connection breaks later, the transfer stops with "The direct connection was lost. Try again." and nothing is dropped. The client log says at the info level which path a transfer took and why the direct connection was not used. The status bar and the progress window show "Direct connection" while the files go through it.
+
+### Settings
+
+| Where | Setting | Values | When absent | Meaning |
+| --- | --- | --- | --- | --- |
+| agent.json | `directTransfer` | `auto`, `never` | `auto` | The tray menu entry "Direct connection for large files". `never` sends every fast transfer through the channel. |
+| agent.json | `directPortRange` | a range such as `3400-3449`, or one port | `3400-3449` | The ports the agent may listen on, from 1025 to 65535, at most 1000 ports. Only editable in the file; restart the agent after a change. |
+| client.json | `directTransfer` | `auto`, `never` | `auto` | `never` makes the client ignore the offer of the agent and use the channel. Only editable in the file. |
+
+The direct connection needs both sides at 0.6.0. A client 0.5.2 ignores the offer and uses the channel; an agent 0.5.2 makes no offer.
 
 ## How it works
 
@@ -345,6 +401,7 @@ Messages are JSON objects sent as ASCII lines, except the `u15` chunks, and each
 - **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s, then with the lines described under "Measuring a slow transfer". The client log also gives the length of the first chunk line it sent, and the agent log has a line for the first chunk of each file it received. When the status bar says "The agent did not acknowledge the first data of the transfer.", the data did not get through: the client log then gives the byte model, the chunk size, the length of the lines and the number of lines sent. A smaller `transferChunkBytes` may help, see "Large files". To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
 - **A transfer fails with "A message of the transfer was lost on the way".** The Remote Desktop control sometimes loses a short message sent just before a large one. From 0.5.1 on both sides this should no longer appear: the agent asks the client to send the missing lines again, and the summary of the transfer in both logs counts the lines sent again. If it still appears, one side runs an older version; if a transfer fails with "Lines of the transfer were lost on the way and could not be recovered", report it with both logs taken with `logLevel` set to `debug`.
 - **A transfer fails at once with "Data was lost or damaged on the way".** The channel sometimes damages the data of one line on the way. From 0.5.2 on both sides the agent asks for that line again, as for a lost one, and its log says what the damage looked like in a line that contains "arrived damaged"; an agent 0.5.1 still fails the transfer.
+- **Large files never use the direct connection.** The client log says why at the start of each transfer: "the direct connection cannot be used" with the reason, such as a port that did not answer within 3 seconds. Check the firewall rules of "Direct connection for large files", on the server and at the hosting provider, and that both sides run 0.6.0. The agent log says on which port it listened, and warns when no port of the range was free.
 - **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
 
 ## Build from source
@@ -373,11 +430,12 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 - The agent simulates input only inside your own session, and only between the start and the end of a drag. It only uses the left mouse button. It injects the press only once its own proxy window is under the cursor, so the press never reaches another application. To cancel, it posts Escape to its proxy window instead of simulating a key.
 - The agent never offers a move. A move accepted in the session could delete the file on your local disk through the redirected drive.
 - Messages carry file paths, coordinates, modifier key flags and window names. File contents go through the channel only for a transfer of large files, inside the encrypted Remote Desktop connection.
+- From version 0.6.0, the files of a transfer of large files may go through a direct TLS connection instead. The agent listens only while a transfer is offered, accepts one connection per offer, and only with the single use token it gave through the encrypted Remote Desktop connection. The client accepts only the certificate whose SHA-256 the agent gave there. The files go to the same staging folder, with the same checks. Open the ports only to the client addresses allowed for RDP.
 - The client never writes credentials and never logs them. It reads the generic credential `TERMSRV/<host>` when one exists, and hands it to the Microsoft control. Other credential prompts come from the Microsoft control.
 
 ## Status
 
-Version 0.5.2 is a test release.
+Version 0.6.0 is a test release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -387,7 +445,7 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 
 The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client. Version 0.4.3 fixes short messages that the Remote Desktop control sometimes lost just before a large one, which failed some transfers at their start. Version 0.4.4 measures where the time of a transfer goes, on both sides, and adds the settings `transferWindowBytes` and `channelRead` to test what limits it.
 
-Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps. Version 0.5.1 numbers the messages of a transfer, so that the agent asks for the ones the Remote Desktop control lost and the transfer goes on. Version 0.5.2 does the same for a message that arrives damaged.
+Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps. Version 0.5.1 numbers the messages of a transfer, so that the agent asks for the ones the Remote Desktop control lost and the transfer goes on. Version 0.5.2 does the same for a message that arrives damaged. Version 0.6.0 sends large files through a direct TLS connection when the server opens its ports for it, since the channel stayed at 2 to 4 MB/s; it was tested over loopback only so far.
 
 Feedback that helps:
 

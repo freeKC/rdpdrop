@@ -1,6 +1,6 @@
 # UltimateRDP design
 
-Date: 2026-11-05, updated on 2026-11-09 for version 0.4.0.
+Date: 2026-11-05, updated on 2026-11-10 for version 0.6.0.
 
 ## Goal
 
@@ -11,7 +11,9 @@ nothing under the cursor accepts them, the drop is ignored.
 The transfer uses the standard RDP drive redirection; UltimateRDP only adds the
 "drop" gesture on top of it. Since version 0.4, large files travel instead
 through the UltimateRDP channel before the drop, which is faster; see
-"Version 0.4" below.
+"Version 0.4" below. Since version 0.6, they travel through a direct TLS
+connection between the client and the agent when the network allows it, with
+the channel as the fallback; see "Version 0.6".
 
 Scope:
 
@@ -120,6 +122,8 @@ Pure logic shared by the two apps and covered by tests.
 * `U15Codec` and `ChunkEncodings`: the dense encoding of the chunks,
   described under "Version 0.5". `DropDecision`: the drop held for the
   answer of the agent, described under "Version 0.4.5" and "Version 0.5".
+* `DirectFrames`, `DirectFrameReader`, `DirectSender`, `DirectReceiver` and
+  `DirectTransferPolicy`: the direct connection, described under "Version 0.6".
 
 ### Protocol
 
@@ -146,12 +150,13 @@ Client to agent:
 
 Agent to client:
 
-* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.5.2",
+* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.6.0",
   "driveRedirectionAvailable": true, "clientToAgentModel": "utf16",
   "reliableTransfer": true }`
 * `dragAck` : `{ "type": "dragAck", "id": "<guid>", "accepted": true,
   "message": "optional text", "transfer": true, "transferId": "<guid>",
-  "provisional": true }`
+  "provisional": true, "direct": { "port": 3400, "token": "<64 hex digits>",
+  "certSha256": "<64 hex digits>", "host": "192.0.2.10" } }`
 * `dropResult` : `{ "type": "dropResult", "id": "<guid>",
   "status": "ok" | "error" | "cancelled", "effect": "copy" | "link" | "none",
   "message": "human readable text", "targetWindow": { "className": "CabinetWClass",
@@ -206,6 +211,9 @@ Field notes:
 * `damaged` of `transferResend`, and `length` of a numbered base64
   `fileChunk`, are new in 0.5.2, see "Version 0.5.2". They are not written
   when they have no value, and an older peer does not use them.
+* `direct` of `dragAck` is new in 0.6.0, see "Version 0.6". It is not
+  written when the agent offers no direct connection, and an older client
+  ignores it and sends the files through the channel.
 
 Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
@@ -362,12 +370,14 @@ Behaviour:
    error text.
 6. Tray icon, shown as the `trayIcon` setting says (see below), with its
    menu: Stage files in the session before the drop, Fast transfer of large
-   files (Auto, Always, Never), Open log folder, About, Exit. About is a task
+   files (Auto, Always, Never), Direct connection for large files (Auto,
+   Never), Open log folder, About, Exit. About is a task
    dialog with the version, the publisher APROGSYS and its web site, and the
    project page, as links. Settings in
    `%LOCALAPPDATA%\UltimateRDP\agent.json` (`stageFiles`, `fastTransfer`,
-   and `fastTransferMinBytes`, `logLevel`, `trayIcon` and `channelRead`
-   which are only editable in the file). Logs in
+   `directTransfer`, and `fastTransferMinBytes`, `directPortRange`,
+   `logLevel`, `trayIcon` and `channelRead` which are only editable in the
+   file). Logs in
    `%LOCALAPPDATA%\UltimateRDP\logs\agent-<date>.log`, rotated by day, kept
    fourteen days.
 7. Command line:
@@ -527,7 +537,9 @@ the fallback for anything missing.
   drag, and only with the left button. See "Step 2" for the details.
 * Messages carry file names, coordinates, modifier key flags and window names.
   File contents go through the channel only for a fast transfer, inside the
-  RDP connection like any other channel data.
+  RDP connection like any other channel data, or through the direct TLS
+  connection of version 0.6, whose rules are under "Security rules" in
+  "Version 0.6".
 * The client never writes credentials. It reads the generic credential
   `TERMSRV/<host>` when one exists; other credential prompts come from the
   Microsoft control.
@@ -572,6 +584,11 @@ the fallback for anything missing.
   duplicates, the bound, the repeated requests and their limit), the outbox
   of the client, the batches of short lines, the probe rule, and whole
   transfers through the codec path that lose calls: see "Version 0.5.1".
+* The direct connection of version 0.6: the frames and their limits, the
+  token, the order of the frames, the paths, the sizes, the checksums, the
+  free space, a truncated stream before and after the first
+  acknowledgement, a cancel, a file that changed, and 100 MB through an in
+  memory connection; see "Version 0.6".
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -2221,3 +2238,339 @@ way. Try again.", whatever the client.
 
 The agent without a client does not change: everything new runs inside a
 transfer, and the diagnostic only on a damaged chunk.
+
+
+## Version 0.6
+
+### Why a direct connection
+
+Decided on 2026-11-10. Every transfer measured in production went through
+the RDP virtual channel at 2 to 4 MB/s of file data: 2.1 MB/s with base64
+in 0.4.4, about 2.5 MB/s in `u15` with 0.5.2, while the channel itself
+carried about 5.8 MB/s of wire data and the link at least 12 MB/s. Drive
+redirection read 3.6 to 3.7 MB/s. The dense encoding of 0.5 removed the
+padding; what is left is the flow control of the Remote Desktop connection
+over its virtual channels, which nothing in UltimateRDP can change. In this
+section MB means a million bytes.
+
+Version 0.6 opens a direct TCP connection between the client and the agent,
+outside RDP, protected by TLS, for the files of a fast transfer. The RDP
+channel keeps everything else: the drag, the offer of the direct connection,
+the deferred drop, the dropResult. It also stays the path of the files
+whenever the direct connection cannot be used: through a Remote Desktop
+Gateway, where the client has no route to the server, when the firewall does
+not open the ports, or with a peer before 0.6.0.
+
+The server of the first deployment hosts about fifty sessions, most of them
+on mstsc, and accepts TCP 3389 and 5985 only from the allowed client
+addresses. The owner opens a dedicated range of inbound TCP ports for the
+direct connection, on the Windows firewall and on the firewall of the
+hosting provider, restricted to the same addresses as RDP.
+
+### The offer
+
+When the agent decides a fast transfer at `dragEnter`, as in 0.4, and the
+setting `directTransfer` of agent.json is `auto` (the default; `never` turns
+it off, and the tray menu "Direct connection for large files" offers Auto
+and Never), it opens a `DirectListener` before any dragAck offers the
+transfer:
+
+* a TCP listener on the first free port of `directPortRange`, "3400-3449"
+  by default, bound to all addresses, IPv6 and IPv4, with exclusive use of
+  the port, so that no other socket may take it on one address only; the
+  range takes a single port such as "3400" too, from 1025 to 65535, at most
+  1000 ports;
+* a token of 32 random bytes, new for every offer;
+* the certificate of the agent process, created at the first offer (see
+  "The certificate" below);
+* the primary IPv4 address of the server, the first address of an interface
+  that is up and has an IPv4 gateway, as a hint.
+
+The accepted dragAck carries them:
+
+```
+{"type":"dragAck","id":"<id>","accepted":true,"transfer":true,"transferId":"<id>","direct":{"port":3400,"token":"<64 hex digits>","certSha256":"<64 hex digits>","host":"192.0.2.10"}}
+```
+
+`host` is absent when the agent knows no such address. Several transfers in
+several sessions each take their own port, which is why a range is used.
+When no port of the range is free, or the certificate cannot be created, the
+dragAck carries no `direct` and the files come through the channel, with a
+line in the log. In a session where a direct transfer still runs, the next
+offer has no `direct` either.
+
+The listener accepts exactly one connection and stops listening as soon as
+it has it: a second connection to the port is refused by TCP. A connection
+that does not finish the TLS handshake and present the token within 5
+seconds is dropped. The listener also closes when the drag ends without a
+deferred drop, when a newer drag replaces it, when the client sends
+`transferBegin` through the channel, when the agent stops, and 10 seconds
+after the deferred drop when no connection came: the client may have fallen
+back to the channel, which then carries the files as in 0.5.2. The 10
+seconds count from the deferred drop, not from the offer, because the client
+only connects once the button is released; before that, the listener lives
+as long as the drag that offered it.
+
+### The connection
+
+After the local drop the client sends the deferred `drop` through the
+channel, as before, then, when its own setting `directTransfer` of
+client.json is `auto` (the default; `never` keeps the channel), connects
+(`DirectUpload` in the client):
+
+1. TCP to the host of the session, the `full address` of the .rdp file
+   without its port, and the port of the offer, within 3 seconds. Only when
+   that host cannot be reached does the client try the `host` hint, within 3
+   seconds too.
+2. A TLS client handshake with `SslStream`, TLS 1.2 or 1.3, that accepts the
+   certificate of the server only when its SHA-256 is the `certSha256` of
+   the offer. Neither the chain nor the name is checked: the pin replaces
+   them.
+3. The token frame; the agent compares it in constant time and answers with
+   the ready frame. A wrong token gets no answer: the agent closes.
+4. The files are listed only now, so that a long listing of a folder cannot
+   use up the 10 seconds of the agent, then sent frame by frame.
+
+### The frames
+
+Every frame is a length of 4 bytes, little endian, that counts the payload
+only, one type byte, then the payload (`DirectFrames` in Core). Numbers are
+little endian; a text is UTF-8 without a length, at the end of its payload.
+Nothing is base64 or JSON. A payload above 1 MiB, or an unknown type, breaks
+the connection.
+
+| Type | Byte | From | Payload |
+| --- | --- | --- | --- |
+| token | 1 | client | version 1 (1 byte), the token (32 bytes) |
+| ready | 2 | agent | none |
+| begin | 3 | client | files (4 bytes), bytes (8 bytes) |
+| fileHeader | 4 | client | index (4 bytes), size (8 bytes), last write time in UTC as ticks (8 bytes, 0 when unknown), relative path |
+| data | 5 | client | 1 byte to 1 MiB of the open file |
+| fileTrailer | 6 | client | index (4 bytes), SHA-256 of the file (32 bytes) |
+| cancel | 7 | client | reason, in English, for the log |
+| ack | 8 | agent | index of the file (4 bytes), bytes of that file (8 bytes), bytes of the transfer (8 bytes) |
+| final | 9 | agent | status as in `dropResult` (1 byte: 0 ok, 1 error, 2 cancelled), failure (1 byte), bytes received (8 bytes), milliseconds of the agent (8 bytes), text for the user in the language of the client |
+
+The client writes the data of a file in frames of 1 MiB, one write each.
+The agent acknowledges every 8 MiB and at the end of each file; the
+acknowledgements drive the progress window and the status bar exactly as
+the `fileAck` of the channel do: the rate, the time left, the current file.
+After the last file the agent sends the final frame, then reads and drops
+what the client may still send until it closes, at most 2 seconds, so that
+a reset cannot lose the final frame; then both sides close. The flow
+control is the one of TCP. The sockets of both sides have a timeout of 60
+seconds once the token was accepted, as the channel path stops a transfer
+after 60 seconds without data.
+
+`DirectReceiver` in Core is the agent side. It checks the order of the
+frames, that every relative path passes `TransferPaths.IsAllowed` and comes
+once, that the files fit in the total of the begin frame, that a file never
+goes past its size, the size and the SHA-256 at each trailer, and at the end
+that every dropped file arrived. Any failure ends the transfer with an error
+final frame whose failure byte names it (protocol, token, no space, bad
+name, size, checksum, write, incomplete) and whose text is the one the
+channel path would show; what was written is deleted at once.
+`DirectSender` in Core is the client side; a thread of its own reads the
+acknowledgements and the final frame while the data goes out. Both run over
+any stream, so that the tests use an in memory connection and the
+applications an `SslStream`.
+
+The files go to `%LOCALAPPDATA%\UltimateRDP\staging\<transferId>-direct`,
+a folder of their own beside the folder of the channel transfer, with the
+same storage, the same path checks and the same deletion one hour after the
+drop.
+
+### The drop
+
+The agent registers the transfer and creates its channel receiver at the
+deferred drop, as before; only a success of the direct connection changes
+what follows:
+
+* When every file came through the direct connection, the agent withdraws
+  the transfer through the channel without a `transferResult`
+  (`StagedTransfer.Withdraw`) and drops the copies of the direct folder at
+  the kept point with the short drag of 0.4; the usual `dropResult`
+  follows through the channel. When the direct transfer ends before the
+  deferred drop was handled, the deferred drop does it.
+* Any other end of the direct connection deletes what came through it and
+  leaves the drop to the channel. While the direct data flows, the channel
+  receiver does not stop for the lack of channel data.
+
+The client acts on the outcome (`DirectSendOutcome`):
+
+| Outcome on the client | What the client does |
+| --- | --- |
+| the final frame says ok | "Transferred 3 file(s) in ... dropping into the session...", then the dropResult |
+| no TCP connection within 3 s, to the host and then to the hint | the channel, at once |
+| TLS handshake fails, or the certificate is not the pinned one | the channel, at once |
+| the agent closes without answering the token | the channel, at once |
+| the stream breaks before the first acknowledgement | the channel, at once |
+| the stream breaks after an acknowledgement | "The direct connection was lost. Try again.", `transferCancel` through the channel, nothing is dropped |
+| an error final frame (checksum, name, space, write) | its text in red, `transferCancel` through the channel |
+| a file cannot be read or changed | cancel frame, then the text of the channel path, `transferCancel` through the channel |
+| the user cancels, or the tab closes | cancel frame, `transferCancel` through the channel |
+| a `transferResult` or `dropResult` of the drag through the channel | the direct connection stops and the text is shown |
+
+The fallback goes on with the same drop and the same progress window: the
+client starts the `TransferUpload` of 0.5.2 for the same transfer id, and
+the agent, whose channel receiver waited since the deferred drop, receives
+it. The reason is in the client log at the info level. The user does
+nothing.
+
+The whole matrix, by what is installed and what the network allows:
+
+| Situation | Path of the files |
+| --- | --- |
+| client and agent 0.6.0, port reachable | direct |
+| client 0.6.0, agent 0.5.2 or older | channel: the dragAck has no `direct` |
+| client 0.5.2 or older, agent 0.6.0 | channel: the client ignores `direct`; the listener closes at `transferBegin`, or 10 s after the drop |
+| `directTransfer` `never` on the agent | channel: no offer |
+| `directTransfer` `never` on the client | channel; the listener closes at `transferBegin` |
+| no free port in the range, or no certificate | channel: no offer |
+| Remote Desktop Gateway, or ports closed by a firewall | channel, after at most 3 s, or 6 s with the hint |
+| another direct transfer runs in the session | channel: no offer |
+
+### Security rules
+
+These rules are part of the design; a change to any of them is a change of
+the design.
+
+* The listener exists only while a transfer is offered or runs: from the
+  decision of a fast transfer to the end of its direct transfer, or to the
+  closing rules above. Without a transfer the agent listens on nothing.
+* TLS is mandatory, version 1.2 or 1.3; no clear text frame ever goes on the
+  connection.
+* The client pins the certificate by its SHA-256, which it received through
+  the RDP channel, already authenticated and encrypted by the Remote Desktop
+  connection. A process that took the port, or a man in the middle, cannot
+  present that certificate: the client refuses it, sends nothing, and falls
+  back to the channel.
+* The token is 32 random bytes, new for every offer, sent only inside TLS,
+  compared in constant time, and good for one connection: the agent clears
+  its copy once it is accepted. It is never written to a log.
+* One connection per offer: the listener stops listening as soon as it
+  accepted one. A connection that does not authenticate within 5 seconds is
+  dropped and ends the offer, and the channel takes the files.
+* One listener per offer, and per session: the agent of each session runs
+  with the rights of its user, offers its own port, and only accepts the
+  token of its own offer.
+* The agent writes nothing outside the staging folder of the transfer: the
+  relative paths pass the checks of `TransferPaths`, and the storage checks
+  again that every full path stays in the folder.
+* Every failure is logged at the warning level, with the address of the
+  client and without the token.
+* No new privilege: on Windows Server, binding a port above 1024 needs no
+  administrator right, and the agent still runs as the user. The firewall
+  rule is created by the administrator, separately (see below).
+
+### The certificate
+
+The certificate is self signed, ECDSA P-256 with SHA-256, for "CN=UltimateRDP
+agent", with the server authentication usage. It is created at the first
+direct offer of the agent process, in about 100 ms, kept until the process
+exits, and never added to a certificate store; the agent idle in a session
+without client never creates it.
+
+The request was a key kept in memory only. SChannel, which `SslStream` uses
+on Windows, refuses such a key for a TLS server ("the platform does not
+support ephemeral keys"), as a throwaway program confirmed on this
+development computer with TLS 1.2 and 1.3. The private key is therefore a
+named key of the CNG key store of the session user, in the Microsoft
+Software Key Storage Provider, not exportable, named
+`UltimateRDP.Agent.Direct.S<session id>`: it is written to the profile of
+the user, protected by Windows for that user only, like any user key. The
+agent deletes it when it exits, at the end of the session too, and after an
+unexpected error before it ends; a key that an agent left behind is
+replaced by the next agent of the same session.
+
+### The firewall rule
+
+The administrator opens the range on the Windows firewall of the server,
+from an elevated PowerShell, restricted to the addresses allowed for RDP:
+
+```
+New-NetFirewallRule -DisplayName "UltimateRDP direct transfer" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3400-3449 -RemoteAddress <allowed client addresses> -Program "C:\Program Files\UltimateRDP\UltimateRDP.Agent.exe" -Profile Any
+```
+
+and the same range, TCP inbound to the server, from the same addresses only,
+on the firewall of the hosting provider. `-Program` limits the rule to the
+agent; with it Windows has a rule for the program and does not ask the users
+when the agent starts to listen. On a server where the users may not see
+such questions at all, `Set-NetFirewallProfile -Profile Domain,Private,Public
+-NotifyOnListen False` turns them off. Without the rule the connection does
+not come and every transfer goes through the channel, after the 3 seconds of
+the attempt.
+
+### Logs
+
+Agent, at the info level:
+
+```
+Direct connection: TLS certificate ECDSA P-256 created in 135 ms, SHA-256 <hex>, key UltimateRDP.Agent.Direct.S1 of the user key store, not exportable.
+Transfer <id> of drag <id>: direct connection offered on port 3400, address hint 192.0.2.10.
+Transfer <id>: direct connection from 198.51.100.7:50122 on port 3400.
+Transfer <id>: direct connection from 198.51.100.7:50122 accepted with Tls13 (TLS_AES_256_GCM_SHA384); receiving the files.
+Transfer <id> of drag <id>: Succeeded through the direct connection from 198.51.100.7:50122 on port 3400, Tls13 (TLS_AES_256_GCM_SHA384), 1 of 1 file(s), 500000000 of 500000000 bytes in 1.4 s, 351.6 MB/s, 60 acknowledgement(s).
+Transfer <id> of drag <id>: the files came through the direct connection; nothing came through the channel, which is no longer waited for.
+Transfer <id>: direct connection on port 3400 closed, no connection came within 10 s of the drop; the files come through the channel.
+```
+
+and at the warning level a failed handshake, a wrong token, a stream that
+broke, or a port range without a free port. The summary of a transfer
+through the channel now says "through the channel".
+
+Client, at the info level:
+
+```
+Transfer <id> of drag <id>: started with 1 item(s) through the direct connection, port 3400 of <host>, address hint 192.0.2.10, certificate pinned to SHA-256 <hex>; the channel takes the files when the connection cannot be used.
+Transfer <id>: direct connection to <host>:3400 with Tls13 (TLS_AES_256_GCM_SHA384); the agent accepted the token.
+Transfer <id> of drag <id>: Ok through the direct connection to <host>:3400, port 3400, Tls13 (TLS_AES_256_GCM_SHA384), 1 file(s), 500000000 of 500000000 bytes in 1.6 s, 319.0 MB/s from the drop; 1.4 s and 351.6 MB/s measured by the agent.
+Transfer <id>: the direct connection cannot be used, cannot connect, <host>:3400 did not answer within 3 s; the files go through the channel.
+```
+
+The status bar adds "Direct connection" to the stage of the transfer, as in
+"Transferring 1 file(s): 42 % (85.0 MB/s, 5 s left) · Direct connection",
+and the progress window shows it on the second line of its status while the
+transfer runs. It is one new text in each application, in the seven
+languages; the client also has "The direct connection was lost. Try again.",
+and the agent the tray menu entry.
+
+### Measured
+
+In the tests, `DirectTransferTests` runs whole transfers between a
+`DirectSender` and a `DirectReceiver` through an in memory connection with a
+bounded buffer per direction: several files with a folder and a name in
+UTF-8, the acknowledgements by 8 MiB and per file, a wrong token, another
+version, the token used twice, a stream cut before and after the first
+acknowledgement, a wrong checksum, a cancel frame, a path that leaves the
+items, a missing file, no free space, a file that got shorter, a file that
+cannot be opened, items that cannot be listed, frames out of order or too
+long, and a storage that fails. 100 MB go through in about 0.3 s on this
+development computer.
+
+Over loopback, on this development computer, a throwaway program ran the
+real `DirectListener` and `DirectCertificate` of the agent, by reflection,
+with the client side of `DirectUpload`: TLS 1.3 with
+TLS_AES_256_GCM_SHA384, a handshake of about 120 ms with the creation of
+the certificate, and 500 MB written to a staging folder on disk in 1.57 s
+from the connection to the final frame, 319 MB/s, 352 MB/s measured by the
+agent. The same program saw a wrong pin refused by the client, a wrong
+token refused by the agent, a second connection refused by TCP, a silent
+connection dropped after 5 seconds, a listener closed 10 seconds after the
+drop without connection, and the key gone from the user key store after the
+agent deleted it. The production rate depends on the link; with the 12
+MB/s measured upstream, the direct connection is expected to carry the files
+at the rate of the link instead of 2 to 4 MB/s.
+
+### Versions
+
+Both sides ship together as 0.6.0 for the direct connection. A client 0.5.2
+or older ignores the `direct` field, since unknown fields are ignored, and
+sends the files through the channel; the listener of the agent then closes
+at its `transferBegin`, or 10 seconds after the deferred drop. An agent
+0.5.2 or older sends no `direct`, so a client 0.6.0 uses the channel. The
+channel path of 0.5.2 does not change.
+
+The agent without a client does not change: no listener, no certificate, no
+key and no thread exist while no transfer is offered, and nothing of the
+direct connection runs before the first fast transfer of the session.
