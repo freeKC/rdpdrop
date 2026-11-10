@@ -146,8 +146,9 @@ Client to agent:
 
 Agent to client:
 
-* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.5.0",
-  "driveRedirectionAvailable": true, "clientToAgentModel": "utf16" }`
+* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.5.1",
+  "driveRedirectionAvailable": true, "clientToAgentModel": "utf16",
+  "reliableTransfer": true }`
 * `dragAck` : `{ "type": "dragAck", "id": "<guid>", "accepted": true,
   "message": "optional text", "transfer": true, "transferId": "<guid>",
   "provisional": true }`
@@ -159,6 +160,9 @@ Agent to client:
   "message": "human readable text" }`
 * `fileAck` and `transferResult`: the fast transfer, described under
   "Version 0.4".
+* `transferResend` : `{ "type": "transferResend", "transferId": "<guid>",
+  "from": 1, "to": 2 }`, the lines of a transfer that the agent misses,
+  described under "Version 0.5.1".
 
 Field notes:
 
@@ -194,6 +198,10 @@ Field notes:
   `oneBytePerChar`, and `provisional` of `dragAck` are new in 0.5.0, see
   "Version 0.5". They are not written when they have no value, and an older
   peer ignores them.
+* `reliableTransfer` of the hello of the agent, `seq` of `transferBegin`,
+  `fileBegin`, `fileChunk`, `fileEnd` and `fileAck`, and the message
+  `transferResend` are new in 0.5.1, see "Version 0.5.1". The client only
+  numbers the lines of a transfer when the agent says `reliableTransfer`.
 
 Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
@@ -228,7 +236,9 @@ the wire, frames messages by lines, and detects the model at run time.
   themselves to the control: whatever the control does with them, the agent
   receives either ASCII bytes or UTF-16LE bytes, and both are covered by its
   own detection. One call of the control may carry several lines one after
-  the other, up to 200 000 characters by default (see "Version 0.4.3").
+  the other, up to 200 000 characters by default (see "Version 0.4.3"), and
+  since 0.5.1 short lines never go alone just before a line that does not
+  fit beside them (see "Version 0.5.1").
 * One exception since 0.5.0: when the agent says that the data of the client
   reaches it in the UTF-16 model, the chunks of a transfer travel in `u15`,
   whose units are characters from U+1000 to U+8FFF. Those lines are not
@@ -553,6 +563,11 @@ the fallback for anything missing.
   the agent path, whole transfers in `u15` with batches of two chunks per
   call, and 100 MB in `u15` through the whole codec path. The held drop:
   provisional and final answers of the agent.
+* The reliable transfer of version 0.5.1: the numbers of the lines and their
+  place in the hand built chunk lines, the inbox of the agent (order, gaps,
+  duplicates, the bound, the repeated requests and their limit), the outbox
+  of the client, the batches of short lines, the probe rule, and whole
+  transfers through the codec path that lose calls: see "Version 0.5.1".
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -1794,3 +1809,222 @@ The agent without a client does not change: the channel thread hands each
 line as a string instead of its ASCII bytes, the hello reply reads a model
 the channel loop already keeps, and nothing new runs while no client speaks
 on the channel.
+
+
+## Version 0.5.1
+
+From 0.4.0 to 0.5.0, transfers failed at their start because a short call of
+`SendOnVirtualChannel` never reached the agent. In every case the logs of both
+sides show the same thing: a call of 100 to 400 characters, followed within
+about 10 ms by a call of 140 000 to 350 000 characters, is lost in its
+entirety between the Remote Desktop control and `WTSVirtualChannelRead` of the
+agent. The call before it and the calls after it arrive intact and in order,
+the control returns without an error, and nothing is logged anywhere. The
+incidents documented with the logs of both sides:
+
+| Version | Byte model of the data of the client | Call lost | Next call |
+| --- | --- | --- | --- |
+| 0.4.0 | UTF-16 | `transferBegin`, 101 characters, 9 ms after `drop` | `fileBegin`, then a chunk line of 350 000 characters |
+| 0.4.1 (client 0.4.2) | one byte per character | `fileBegin`, about 200 characters | a chunk line of 174 868 characters, 8 ms later |
+| 0.5.0, 2026-11-10 11:03:46 | UTF-16 | `transferBegin` and `fileBegin` in one call, 314 characters | two `u15` chunks, 140 081 characters, 8 ms later |
+
+Keeping the strings alive (0.4.3) did not prevent it, and neither did the
+grouping of lines into calls: in the last incident the queue was sent before
+the first chunk was queued. The cause is inside the control and cannot be
+fixed from the client. Version 0.5.1 therefore treats the channel from the
+client to the agent as lossy at the granularity of a whole call, and makes
+the transfer protocol recover by itself. It also shapes the calls so that the
+case becomes rare.
+
+### Numbered lines
+
+Every line of a transfer, `transferBegin`, `fileBegin`, `fileChunk` and
+`fileEnd`, carries `"seq": N`, its number in the transfer: 0 for
+`transferBegin`, then one more for each line, in the order of sending
+(`TransferSender` with `sequenced`). `transferCancel` carries none and is
+handled at once.
+
+```
+{"type":"transferBegin","transferId":"<id>","files":1,"bytes":700000000,"chunkEncoding":"u15","seq":0}
+{"type":"fileBegin","transferId":"<id>","fileIndex":0,"relativePath":"a.bin","size":700000000,"modified":"2026-11-10T10:00:00Z","seq":1}
+{"type":"fileChunk","transferId":"<id>","fileIndex":0,"offset":0,"length":131072,"enc":"u15","seq":2,"data":"<units>"}
+{"type":"fileChunk","transferId":"<id>","fileIndex":0,"offset":0,"seq":2,"data":"<base64>"}
+{"type":"fileEnd","transferId":"<id>","fileIndex":0,"sha256":"<hex>","seq":5343}
+```
+
+In the chunk lines built by `TransferLines`, `seq` is an ASCII field just
+before `data`, after `enc` in `u15`, where the serializer writes it too. The
+hand parser of the agent reads it when it is there, and still reads a line
+without it.
+
+### The agent puts the lines back in order
+
+`ReliableInbox` in Core, one per transfer in `StagedTransfer`, hands the
+numbered lines to the receiver in the order of their numbers:
+
+* A line with the expected number is handled, with the lines that waited
+  behind it.
+* A line with a higher number waits, and the agent sends at once
+  `{"type":"transferResend","transferId":"<id>","from":E,"to":S-1}`, from the
+  expected line to the line before the first one that waits.
+* While those lines are missing, the request goes again once nothing arrived
+  for 500 ms since the last line and the last request. Counting from the last
+  line, and not only from the last request, matters: the lines that the
+  client sent before the resend are still on the way, behind up to a full
+  window, and the resend comes after them. A timer of the transfer checks
+  every 100 ms, and only while lines are missing.
+* After ten requests for the same lines without progress, the transfer fails
+  with "Lines of the transfer were lost on the way and could not be
+  recovered. Try again.", in the language of the client; the log of the agent
+  says which lines. Progress, even partial, starts the count again. A missing
+  range that no request named yet, the second of two separate losses, is
+  asked for as soon as the first is filled.
+* A line whose number is below the expected one, or that already waits, is a
+  duplicate from a resend and is ignored, with a line at the debug level.
+* At most the bound of the queue of an offered transfer waits, twice the
+  largest window of the client in base64 characters. Beyond it the transfer
+  fails with the same text. A client that keeps to its window never reaches
+  it: nothing behind a missing line is acknowledged, so the client stops at
+  its window.
+* `fileAck` gains `"seq": N`: every line up to N was processed. The client
+  frees the lines it kept up to N.
+
+Lines without `seq`, from a client before 0.5.1, are handled as they arrive,
+as before, including the `MessageLost` failure of 0.4.3.
+
+### The client sends the lines again
+
+`ReliableOutbox` in Core keeps every numbered line of the transfer as its
+string until an acknowledgement covers it, so that a line can go again long
+after the call of the control returned. The strings handed to the control
+are still kept as in 0.4.3; a call that holds only chunks sent again is kept
+for 60 seconds and is not freed by the acknowledgement of its own chunks,
+since the first copy may be the one that arrived.
+
+* On `transferResend` the client queues the lines it still keeps from `from`
+  to `to`, in order and together, through the usual send queue, and logs
+  "Transfer <id>: resending lines 1 to 2 asked by the agent, 2 line(s) of 314
+  characters, the first one transferBegin." at the info level. Lines already
+  acknowledged are left out.
+* When the last call of what was sent is lost, no later line shows the agent
+  a gap: at the end of the transfer, or when the lost call held the chunk
+  that would have brought the next acknowledgement and the window is then
+  full. So a client that waits for an acknowledgement and got none, and sent
+  no chunk, for 2 seconds sends its newest line again (`TransferAckWatch`),
+  and again every 2 seconds while it waits. The agent then sees the gap and
+  asks for it, or handles the line if it was the only one missing. When the
+  agent already processed that line, the acknowledgement was the part that
+  went missing, and the agent answers it with a fresh `fileAck`.
+* The first acknowledgement timeout of 10 seconds and the rule of 60 seconds
+  without any acknowledgement stay as a last resort.
+
+The summary of the transfer in the log of the client ends with "2 line(s)
+sent again for 1 request(s) of the agent, the newest line sent again 0
+time(s) after a silence". The summary of the agent ends with "1 resend
+request(s), 30 line(s) held until the missing ones came, 0 line(s) received
+twice" when it asked for anything.
+
+### Shaping the calls
+
+The loss needs a short call followed closely by a large one, so the client
+avoids that pattern:
+
+* `TransferUpload` holds `transferBegin`, `fileBegin` and `fileEnd` and hands
+  them to the queue together with the next chunk, in the same message of the
+  UI thread, so that they leave in the same call as that chunk. It hands
+  them over on their own before it waits for room in the window, since the
+  agent may need a `fileEnd` to acknowledge, at the end of the transfer, and
+  when 100 000 characters of them or more wait, for a folder of many empty
+  files.
+* When the queue is about to send less than 1000 characters and the transfer
+  thread is about to hand over a chunk, from its start until its first lines
+  are queued and from the moment the window has room for the next chunk until
+  it is queued, the send waits for that chunk, at most 20 ms (a timer of the
+  UI thread, so about 20 to 30 ms), and the short lines leave in the same
+  call. The `drop` line that starts a transfer waits this way for the first
+  chunk.
+* `SendQueue` never ends a batch with short lines when the next line does not
+  fit beside them: when the lines taken hold less than 1000 characters, or a
+  tenth of the limit when that is lower, the next line joins them, and the
+  call may go past the limit of 200 000 characters by less than 1000
+  characters. With chunks of 128 KiB or less a chunk line and its short lines
+  always fit within the limit; the exception only applies to larger chunk
+  lines, which went alone and above the limit already.
+
+The limit of 200 000 characters per call stays.
+
+### Logs
+
+Client, at the info level:
+
+```
+Agent ready, version 0.5.1, ..., so transfer chunks go in u15; transfer lines numbered, the agent asks for the missing ones.
+Transfer <id> of drag <id>: started with 1 item(s), ..., numbered lines.
+Transfer <id>: first chunk line sent, 70046 characters for chunks of 131072 bytes in u15, with 2 short line(s) in front of it.
+Transfer <id>: resending lines 0 to 1 asked by the agent, 2 line(s) of 314 characters, the first one transferBegin.
+Transfer <id>: no acknowledgement for 2 s after the last file; sending line 5343 (fileEnd) again, so that the agent sees what it misses.
+```
+
+Agent, at the info level:
+
+```
+Transfer <id> of drag <id>: receiving 1 file(s), 700000000 bytes, chunks in u15, numbered lines.
+Transfer <id>: line 2 came while line 0 was expected; asking the client for lines 0 to 1 (request 1).
+Transfer <id>: lines 0 to 1 still missing; asking the client again (request 2).
+Transfer <id>: the missing lines from 0 arrived; 30 line(s) that waited behind them follow.
+Transfer <id>: line 5343, the last one processed, came again; acknowledging it again.
+```
+
+and, when the lines never came, a warning "Transfer <id>: lines 0 to 1 of the
+transfer never arrived after 10 requests to the client." At the debug level
+the client logs each line with its number, "Sent again" for a resend, and
+the waits of short lines for a chunk.
+
+What to look for after a transfer: "A message of the transfer was lost on the
+way" should no longer appear with both sides at 0.5.1. A request of the agent
+and the matching resend of the client show that a call was lost and
+recovered, and the counts at the end of both summaries say how often.
+
+### Measured in the tests
+
+`LostCallTests` runs whole transfers through the codec path of the tests,
+numbered lines, batches of the send queue, bytes of the channel in blocks of
+1600, model detection, line reader, hand parser, the inbox and the outbox,
+in base64 in both byte models and in `u15` in the UTF-16 model. Time only
+passes in the test when the client has nothing to do, in steps of 100 ms.
+
+* The call of `transferBegin` and `fileBegin` sent alone and lost, as in the
+  incident of 0.5.0: one request for lines 0 to 1, two lines sent again, the
+  files arrive intact.
+* A call of chunks lost: one request, the lines of that call sent again.
+* The last call, with the last chunks and the last `fileEnd`, lost: the
+  client sends its newest line again after 2 simulated seconds, the agent
+  asks for the rest. The last `fileEnd` lost alone: the line sent again is
+  that line.
+* Two chunk calls lost just before the window fills: the newest line sent
+  again once, then one request.
+* A resend lost once: two requests 500 ms apart, then success.
+* Calls delivered twice: the copies are ignored, nothing is asked.
+* Every resend lost: ten requests, then the error, and nothing written stays.
+* Lines without numbers: the old failure, "transferBegin never arrived".
+* 100 MB with two lost calls: 0.7 to 1.0 s once the code is warm, 2.7 s for
+  the first run of the test process, on this development computer.
+
+### Versions
+
+Both sides ship together as 0.5.1. The agent says `reliableTransfer: true` in
+its hello, and only then does the client number its lines. This matters: the
+hand parser of an agent 0.5.0 expects `data` right after `enc` in a `u15`
+chunk line, so it would not read a numbered line, and the line would then go
+to the JSON reader as ASCII and fail the transfer as bad data. A 0.5.0 agent
+reads the numbered lines of base64 and the other numbered lines, since its
+JSON reader skips unknown fields, but it never receives any, since it does
+not say `reliableTransfer`. With an agent 0.5.0, a client 0.5.1 sends the
+lines of 0.5.0, with the shaping of the calls. A client 0.5.0 ignores the
+new field of the hello and sends lines without numbers, which an agent 0.5.1
+handles as before; it never receives `transferResend`, which it would log as
+an invalid line and ignore. The recovery needs both sides at 0.5.1.
+
+The agent without a client does not change: its hello has one more field,
+and the inbox and its timer only exist during a transfer, the timer only
+while lines are missing.
