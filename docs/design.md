@@ -146,7 +146,7 @@ Client to agent:
 
 Agent to client:
 
-* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.5.1",
+* `hello` : `{ "type": "hello", "version": 1, "agentVersion": "0.5.2",
   "driveRedirectionAvailable": true, "clientToAgentModel": "utf16",
   "reliableTransfer": true }`
 * `dragAck` : `{ "type": "dragAck", "id": "<guid>", "accepted": true,
@@ -161,8 +161,9 @@ Agent to client:
 * `fileAck` and `transferResult`: the fast transfer, described under
   "Version 0.4".
 * `transferResend` : `{ "type": "transferResend", "transferId": "<guid>",
-  "from": 1, "to": 2 }`, the lines of a transfer that the agent misses,
-  described under "Version 0.5.1".
+  "from": 1, "to": 2, "damaged": true }`, the lines of a transfer that the
+  agent misses, described under "Version 0.5.1"; `damaged` under "Version
+  0.5.2".
 
 Field notes:
 
@@ -202,6 +203,9 @@ Field notes:
   `fileBegin`, `fileChunk`, `fileEnd` and `fileAck`, and the message
   `transferResend` are new in 0.5.1, see "Version 0.5.1". The client only
   numbers the lines of a transfer when the agent says `reliableTransfer`.
+* `damaged` of `transferResend`, and `length` of a numbered base64
+  `fileChunk`, are new in 0.5.2, see "Version 0.5.2". They are not written
+  when they have no value, and an older peer does not use them.
 
 Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
@@ -2038,3 +2042,182 @@ an invalid line and ignore. The recovery needs both sides at 0.5.1.
 The agent without a client does not change: its hello has one more field,
 and the inbox and its timer only exist during a transfer, the timer only
 while lines are missing.
+
+
+## Version 0.5.2
+
+### The incident
+
+On 2026-11-10 at 14:05:59, with 0.5.1 on both sides, the first call of a
+transfer carried `transferBegin`, `fileBegin` and the first `u15` chunk, as
+the shaping of 0.5.1 wants it: "first chunk line sent, 70046 characters for
+chunks of 131072 bytes in u15, with 2 short line(s) in front of it". The
+agent received the first two lines, "receiving 1 file(s), 790626304 bytes,
+chunks in u15, numbered lines", and failed at once on the third: "A chunk at
+byte 0 is not valid u15 of 1 to 262144 bytes". The transfer ended with "Data
+was lost or damaged on the way. Try again.", and nothing was asked again,
+since the receiver of 0.5.1 ended the transfer on any invalid chunk. The
+same drop six seconds later decoded its first chunk and ran at 2.5 MB/s, and
+a whole transfer of 790 MB in `u15` had succeeded at 11:03:58 the same day.
+
+So `u15` units normally travel intact, and this was a damage inside one
+call: the ASCII fields of the line read well, its data did not. A block of
+the channel missing or changed inside the data of the line explains it. It
+is the first damage seen in the logs; every earlier incident was the loss of
+a whole call.
+
+### Damaged equals lost
+
+A numbered chunk line that arrives damaged is handled as a lost line. The
+receiver (`TransferReceiver.Handle(message, out damage)` in Core) finds a
+chunk damaged when, with the expected number or a higher one:
+
+* it does not start where the file stands (its `offset`),
+* it names another encoding than `transferBegin`, or one this agent does not
+  know,
+* its data is not valid in its encoding: a `u15` unit outside 0x1000 to
+  0x8FFF, a unit count that does not match `length`, padding bits that are
+  not zero, a character that base64 does not use or a base64 length that is
+  not a multiple of four,
+* or its data does not hold the number of bytes its `length` says, 1 to 256
+  KiB.
+
+Such a chunk is not consumed: nothing is written, hashed or counted.
+`ReliableInbox` then treats its number as missing: the lines after it wait as
+behind a gap, and the line is asked for with the rules of 0.5.1, at once the
+first time, again after 500 ms without any line or request, at most ten
+times without progress. A copy that arrives damaged again counts as no
+progress. After the tenth request the transfer ends with the text of 0.5.1,
+"Lines of the transfer were lost on the way and could not be recovered. Try
+again.", and the log of the agent says "lines 82 to 82 of the transfer never
+arrived intact after 10 requests to the client; line 82 arrived damaged."
+A line that waited behind a gap and turns out damaged when its turn comes is
+dropped and asked for the same way.
+
+The request says `"damaged": true` when its first line arrived damaged:
+
+```
+{"type":"transferResend","transferId":"<id>","from":2,"to":2,"damaged":true}
+```
+
+The field only feeds the log and the counts of the client; the lines go
+again as for any request. The client keeps each line as the string it built,
+and `ReliableOutbox.Take` hands that very string again, so a chunk sent again
+is the same line, character for character, as the first time.
+
+Other problems of a numbered chunk still end the transfer as before: a chunk
+of another file than the open one, a file longer than announced. A wrong
+checksum at `fileEnd` too: data changed inside the alphabet of the encoding,
+with the right count, cannot be seen in the chunk, and the SHA-256 of the
+file catches it.
+
+A line whose number cannot be read is not a chunk to ask for. A line that is
+not JSON any more is a protocol error, logged and ignored, as before. A
+transfer line that reads without its `seq`, among numbered lines, lost it on
+the way: the agent ignores it with an info line, and the next line shows the
+gap, which the agent asks for. Before any numbered line arrived, lines
+without a number are handled as they arrive, as with a client before 0.5.1.
+
+### The length of base64 lines
+
+A numbered base64 chunk line now carries `length` as a `u15` line does,
+before `seq`:
+
+```
+{"type":"fileChunk","transferId":"<id>","fileIndex":0,"offset":0,"length":131072,"seq":2,"data":"<base64>"}
+```
+
+A block of the channel holds 1600 bytes: 800 characters in the UTF-16 model,
+1600 in the one byte per character model, both multiples of four. Base64
+that lost such a block is still valid base64, only shorter, and without the
+field the agent would write it and then fail on the next chunk, at the wrong
+offset, ten times. With it, the short chunk is damaged and asked for. The
+field costs 15 characters per line with chunks of 32 KiB, 16 with chunks of
+128 KiB. A base64 line without `seq` keeps the form of 0.4, and an agent
+0.5.1 reads the field and does not use it.
+
+### Logs
+
+Agent, at the info level, for the incident as the tests replay it, a block
+of 800 units lost in the first chunk of 128 KiB:
+
+```
+Transfer <id>: line 2 arrived damaged: A chunk at byte 0 is not valid u15 of 1 to 262144 bytes. Chunk of file 0 at byte 0 in u15: 69106 unit(s) of data where 69906 were expected for 131072 bytes, every unit in the range; line of 69245 characters where 70045 were expected for that chunk size.
+Transfer <id>: line 2 arrived damaged; asking the client for lines 2 to 2 (request 1).
+Transfer <id>: lines 2 to 2 still missing, line 2 arrived damaged; asking the client again (request 2).
+Transfer <id>: a fileChunk line without a number among numbered lines, damaged on the way; ignored, line 82 is expected.
+```
+
+The first line is the diagnostic, written once per damaged copy, without
+any of the data:
+
+* the number of the line, then what the receiver found wrong, in the words
+  of the failure of 0.5.1;
+* the file, the offset and the encoding the line names;
+* the characters of data in the line, and those expected: for the `length`
+  of the line, or in base64 without `length`, for the chunk size seen
+  before it, at most the rest of the file; "the expected count is not known"
+  before any chunk;
+* in `u15` the position, from 0 in the data, of the first unit outside the
+  range and its value in hex, as "first unit outside the range at 100,
+  0x0041", or "every unit in the range"; in base64 the first character that
+  base64 does not use, or a padding character before the last two, as
+  "first invalid character at 50, 0x002A", or "no invalid character";
+* the length of the line, without its line break, against the length of the
+  line the client builds for the expected data. The client logs its first
+  chunk line with the line break, one character more.
+
+What the damage looks like then reads from the counts: a lost block shows
+fewer units by a multiple of 800 or 1600 and every unit in the range; a
+changed block shows the right count and a unit outside the range.
+
+Client, at the info level:
+
+```
+Transfer <id>: resending lines 2 to 2 asked by the agent, line 2 arrived damaged, 1 line(s) of 70046 characters, the first one fileChunk.
+```
+
+The summaries count the damaged lines apart. Client: "1 line(s) sent again
+for 1 request(s) of the agent (1 for damaged lines), the newest line sent
+again 0 time(s) after a silence". Agent: "1 resend request(s) (1 for damaged
+lines), 1 line(s) held until the missing ones came, 0 line(s) received
+twice, 1 line(s) received damaged".
+
+### Measured in the tests
+
+`DamagedChunkTests` runs whole transfers through the codec path of the tests
+of 0.5.1, with a channel that changes chosen lines:
+
+* Line 82 of a file of 5 MB, in the middle, damaged once: one unit replaced
+  by 0x0041, one unit removed, one unit added, `length` 100 bytes too large
+  or `offset` one byte too far in `u15`; a star in the data, one character
+  removed or added, `offset` one byte too far in base64, in both byte models.
+  Each time exactly one request, for line 82 alone, one line sent again, the
+  file intact, and the diagnostic gives the position and value of the bad
+  unit and the lengths the test expects.
+* The incident: the first chunk of 128 KiB, in the call of `transferBegin`
+  and `fileBegin`, loses 800 characters: one request for line 2, then
+  success, in both encodings.
+* The copy sent again damaged too: two requests 500 ms apart, then success.
+* Every copy damaged: ten requests, the error above, and nothing written
+  stays.
+* The number of line 82 damaged: the line is ignored, line 83 shows the gap,
+  one request, success.
+* Lines without numbers: a damaged chunk still fails the transfer at once.
+* 100 MB with two lost calls and one damaged chunk: 1.0 to 1.1 s once the
+  code is warm, 2.4 s for the first run of the test process, on this
+  development computer.
+
+`u15` lines did not change, and the wire budget of 0.5 stays.
+
+### Versions
+
+Both sides ship together as 0.5.2. The recovery itself is in the agent: an
+agent 0.5.2 also asks a client 0.5.1 for a damaged line, which that client
+sends again since it ignores the new field, except for base64 that lost a
+whole block, which needs the `length` of a client 0.5.2. An agent 0.5.1 still
+ends the transfer on a damaged chunk, with "Data was lost or damaged on the
+way. Try again.", whatever the client.
+
+The agent without a client does not change: everything new runs inside a
+transfer, and the diagnostic only on a damaged chunk.

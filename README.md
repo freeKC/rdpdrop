@@ -344,6 +344,7 @@ Messages are JSON objects sent as ASCII lines, except the `u15` chunks, and each
 - **The drop lands on the wrong window.** Coordinate scaling after a window resize, or full screen over several monitors, can be the cause. Please report it with both logs.
 - **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s, then with the lines described under "Measuring a slow transfer". The client log also gives the length of the first chunk line it sent, and the agent log has a line for the first chunk of each file it received. When the status bar says "The agent did not acknowledge the first data of the transfer.", the data did not get through: the client log then gives the byte model, the chunk size, the length of the lines and the number of lines sent. A smaller `transferChunkBytes` may help, see "Large files". To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
 - **A transfer fails with "A message of the transfer was lost on the way".** The Remote Desktop control sometimes loses a short message sent just before a large one. From 0.5.1 on both sides this should no longer appear: the agent asks the client to send the missing lines again, and the summary of the transfer in both logs counts the lines sent again. If it still appears, one side runs an older version; if a transfer fails with "Lines of the transfer were lost on the way and could not be recovered", report it with both logs taken with `logLevel` set to `debug`.
+- **A transfer fails at once with "Data was lost or damaged on the way".** The channel sometimes damages the data of one line on the way. From 0.5.2 on both sides the agent asks for that line again, as for a lost one, and its log says what the damage looked like in a line that contains "arrived damaged"; an agent 0.5.1 still fails the transfer.
 - **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
 
 ## Build from source
@@ -376,7 +377,7 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 
 ## Status
 
-Version 0.5.1 is a test release.
+Version 0.5.2 is a test release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -386,7 +387,7 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 
 The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client. Version 0.4.3 fixes short messages that the Remote Desktop control sometimes lost just before a large one, which failed some transfers at their start. Version 0.4.4 measures where the time of a transfer goes, on both sides, and adds the settings `transferWindowBytes` and `channelRead` to test what limits it.
 
-Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps. Version 0.5.1 numbers the messages of a transfer, so that the agent asks for the ones the Remote Desktop control lost and the transfer goes on.
+Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps. Version 0.5.1 numbers the messages of a transfer, so that the agent asks for the ones the Remote Desktop control lost and the transfer goes on. Version 0.5.2 does the same for a message that arrives damaged.
 
 Feedback that helps:
 
