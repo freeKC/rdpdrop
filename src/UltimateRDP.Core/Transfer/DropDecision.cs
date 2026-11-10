@@ -93,6 +93,12 @@ public sealed class DropDecision
     /// <summary>The transfer offered by the dragAck, when <see cref="State"/> is <see cref="DropDecisionState.Transfer"/>.</summary>
     public string? TransferId { get; private set; }
 
+    /// <summary>
+    /// The direct connection offered with the transfer since 0.6.0, when the dragAck carried
+    /// a well formed one; null otherwise.
+    /// </summary>
+    public DirectTransferOffer? Direct { get; private set; }
+
     /// <summary>True when the decision is taken and the drop message goes out.</summary>
     public bool SendsDrop => State is DropDecisionState.Transfer or DropDecisionState.Plain or DropDecisionState.TimedOut;
 
@@ -132,6 +138,7 @@ public sealed class DropDecision
         else if (ack.Transfer == true && !string.IsNullOrEmpty(ack.TransferId))
         {
             TransferId = ack.TransferId;
+            Direct = ack.Direct is { } direct && direct.IsWellFormed() ? direct : null;
             Decide(DropDecisionState.Transfer, nowMilliseconds);
         }
         else
@@ -175,6 +182,7 @@ public sealed class DropDecision
     /// <summary>The outcome in English, for the log.</summary>
     public string Describe() => State switch
     {
+        DropDecisionState.Transfer when Direct is not null => $"the agent offered transfer {TransferId} with a direct connection on port {Direct.Port}, so the drop goes out deferred and the files follow through the direct connection, or the channel when it cannot be used",
         DropDecisionState.Transfer => $"the agent offered transfer {TransferId}, so the drop goes out deferred and the files follow through the channel",
         DropDecisionState.Plain => "the agent accepted the drag without a transfer, so the drop goes out and the files are read through drive redirection",
         DropDecisionState.Refused => "the agent refused the drag, so the drop is not sent",

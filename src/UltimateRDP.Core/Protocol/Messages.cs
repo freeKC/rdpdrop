@@ -306,10 +306,41 @@ public sealed record DragLeaveMessage(string Id) : Message(MessageTypes.DragLeav
 /// transferred, because the check of the items is slow: a final dragAck follows. A drop
 /// held by the client waits for that final answer. Not written when null.
 /// </param>
-public sealed record DragAckMessage(string Id, bool Accepted, string? Message = null, bool? Transfer = null, string? TransferId = null, bool? Provisional = null) : Message(MessageTypes.DragAck)
+/// <param name="Direct">
+/// Since 0.6.0, with <paramref name="Transfer"/>: the agent also listens for a direct TLS
+/// connection that carries the files outside the channel, see <see cref="DirectTransferOffer"/>.
+/// A client that cannot use it, or a client before 0.6.0, sends the files through the
+/// channel. Not written when null. A malformed offer does not refuse the answer: the client
+/// checks it with <see cref="DirectTransferOffer.IsWellFormed"/> and ignores it.
+/// </param>
+public sealed record DragAckMessage(string Id, bool Accepted, string? Message = null, bool? Transfer = null, string? TransferId = null, bool? Provisional = null, DirectTransferOffer? Direct = null) : Message(MessageTypes.DragAck)
 {
     internal override bool IsValid() =>
         !string.IsNullOrEmpty(Id) && (Transfer != true || !string.IsNullOrEmpty(TransferId));
+}
+
+/// <summary>
+/// The direct connection offered by the agent in a <see cref="DragAckMessage"/>, since 0.6.0:
+/// a TCP port it listens on for this transfer only, the single use token the client sends
+/// once the TLS handshake is done, and the SHA-256 of the certificate the agent presents,
+/// which the client pins. The RDP channel that carries the offer is already authenticated
+/// and encrypted.
+/// </summary>
+/// <param name="Port">TCP port of the listener, one of the <c>directPortRange</c> setting of the agent.</param>
+/// <param name="Token">The token, <see cref="Direct.DirectFrames.TokenLength"/> random bytes as lower case hexadecimal digits.</param>
+/// <param name="CertSha256">SHA-256 of the DER form of the certificate of the agent, as lower case hexadecimal digits.</param>
+/// <param name="Host">
+/// A hint: the primary IPv4 address of the server, which the client tries only when the host
+/// of its .rdp file cannot be reached. Not written when the agent knows none.
+/// </param>
+public sealed record DirectTransferOffer(int Port, string Token, string CertSha256, string? Host = null)
+{
+    /// <summary>True when the port is a TCP port and the token and the hash are 64 hexadecimal digits each.</summary>
+    public bool IsWellFormed() =>
+        Port is > 0 and <= 65535
+        && Transfer.TransferHash.IsValidHex(Token)
+        && Transfer.TransferHash.IsValidHex(CertSha256)
+        && (Host is null || Host.Length is > 0 and <= 255);
 }
 
 /// <summary>
