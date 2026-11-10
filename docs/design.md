@@ -2247,7 +2247,7 @@ transfer, and the diagnostic only on a damaged chunk.
 Decided on 2026-11-10. Every transfer measured in production went through
 the RDP virtual channel at 2 to 4 MB/s of file data: 2.1 MB/s with base64
 in 0.4.4, about 2.5 MB/s in `u15` with 0.5.2, while the channel itself
-carried about 5.8 MB/s of wire data and the link at least 12 MB/s. Drive
+carried about 5.8 MB/s of wire data on a client link of over 2 Gbit/s. Drive
 redirection read 3.6 to 3.7 MB/s. The dense encoding of 0.5 removed the
 padding; what is left is the flow control of the Remote Desktop connection
 over its virtual channels, which nothing in UltimateRDP can change. In this
