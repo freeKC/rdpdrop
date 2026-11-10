@@ -81,7 +81,9 @@ public enum TransferFailure
 /// <summary>
 /// Receiving side of a transfer: checks the order of the messages, the offsets, the sizes
 /// and the checksums, writes the bytes to an <see cref="ITransferStorage"/> and decides
-/// when to acknowledge. Any problem fails the whole transfer and deletes what was written.
+/// when to acknowledge. Any problem fails the whole transfer and deletes what was written,
+/// except a numbered chunk damaged on the way, which the caller may ask for again
+/// (<see cref="Handle(Message, out ChunkDamage?)"/>).
 /// </summary>
 /// <remarks>This class is not thread safe.</remarks>
 public sealed class TransferReceiver : IDisposable
@@ -99,6 +101,7 @@ public sealed class TransferReceiver : IDisposable
     private long _fileReceived;
     private long _announcedBytes;
     private long _bytesAtLastAck;
+    private int _chunkSizeSeen;
     private FileAckMessage? _lastAck;
     private long _startTicks;
     private long _endTicks;
@@ -172,9 +175,26 @@ public sealed class TransferReceiver : IDisposable
     /// due. Check <see cref="IsFinished"/> afterwards: once it is true, the result must be
     /// sent. Messages of another transfer, and messages after the end, are ignored.
     /// </summary>
-    public FileAckMessage? Handle(Message message)
+    public FileAckMessage? Handle(Message message) => Handle(message, recover: false, out _);
+
+    /// <summary>
+    /// Handles one message of this transfer as <see cref="Handle(Message)"/> does, except for
+    /// a numbered chunk that the channel damaged: a chunk that does not start where the file
+    /// stands, that names another encoding than <c>transferBegin</c>, or whose data is not
+    /// valid in its encoding or does not match its length. Such a chunk is not consumed:
+    /// nothing changes, <paramref name="damage"/> says what is wrong, and the caller asks
+    /// the client for the line again, as for a lost line. Any other problem, and a damaged
+    /// chunk without a number, ends the transfer as before.
+    /// </summary>
+    public FileAckMessage? Handle(Message message, out ChunkDamage? damage) => Handle(message, recover: true, out damage);
+
+    /// <summary>Chunks found damaged and left for a resend so far.</summary>
+    public int DamagedChunks { get; private set; }
+
+    private FileAckMessage? Handle(Message message, bool recover, out ChunkDamage? damage)
     {
         ArgumentNullException.ThrowIfNull(message);
+        damage = null;
         if (IsFinished)
         {
             return null;
@@ -190,7 +210,7 @@ public sealed class TransferReceiver : IDisposable
         {
             TransferBeginMessage begin when begin.TransferId == TransferId => OnBegin(begin),
             FileBeginMessage file when file.TransferId == TransferId => OnFileBegin(file),
-            FileChunkMessage chunk when chunk.TransferId == TransferId => OnChunk(chunk),
+            FileChunkMessage chunk when chunk.TransferId == TransferId => OnChunk(chunk, recover && chunk.Seq is not null, out damage),
             FileEndMessage end when end.TransferId == TransferId => OnFileEnd(end),
             TransferCancelMessage cancel when cancel.TransferId == TransferId => Cancel(),
             _ => null,
@@ -319,8 +339,9 @@ public sealed class TransferReceiver : IDisposable
         return null;
     }
 
-    private FileAckMessage? OnChunk(FileChunkMessage chunk)
+    private FileAckMessage? OnChunk(FileChunkMessage chunk, bool recover, out ChunkDamage? damage)
     {
+        damage = null;
         var file = _file;
         if (chunk.FileIndex >= BegunFiles)
         {
@@ -333,21 +354,25 @@ public sealed class TransferReceiver : IDisposable
             return Fail(TransferFailure.OutOfOrder, file?.RelativePath, $"A chunk of file {chunk.FileIndex} came while file {(file is null ? "(none)" : file.FileIndex)} is open.");
         }
 
+        // Since 0.5.2 a numbered chunk that fails one of the next three checks was damaged on
+        // the way: it is asked for again, as a lost line, instead of ending the transfer.
         if (chunk.Offset != _fileReceived)
         {
-            return Fail(TransferFailure.DataLost, file.RelativePath, $"A chunk starts at byte {chunk.Offset} where byte {_fileReceived} was expected.");
+            return Damaged(chunk, file, TransferFailure.DataLost, $"A chunk starts at byte {chunk.Offset} where byte {_fileReceived} was expected.", recover, out damage);
         }
 
         var encoding = ChunkEncodings.OrDefault(chunk.Enc);
         if (!string.Equals(encoding, ChunkEncoding, StringComparison.Ordinal))
         {
-            return Fail(TransferFailure.BadData, file.RelativePath, $"A chunk at byte {chunk.Offset} is written in \"{encoding}\" while transferBegin announced \"{ChunkEncoding}\".");
+            return Damaged(chunk, file, TransferFailure.BadData, $"A chunk at byte {chunk.Offset} is written in \"{encoding}\" while transferBegin announced \"{ChunkEncoding}\".", recover, out damage);
         }
 
         if (!TryDecode(chunk, out var count))
         {
-            return Fail(TransferFailure.BadData, file.RelativePath, $"A chunk at byte {chunk.Offset} is not valid {encoding} of 1 to {TransferSender.MaxChunkSize} bytes.");
+            return Damaged(chunk, file, TransferFailure.BadData, $"A chunk at byte {chunk.Offset} is not valid {encoding} of 1 to {TransferSender.MaxChunkSize} bytes.", recover, out damage);
         }
+
+        _chunkSizeSeen = Math.Max(_chunkSizeSeen, count);
 
         if (count > file.Size - _fileReceived)
         {
@@ -376,7 +401,11 @@ public sealed class TransferReceiver : IDisposable
         return null;
     }
 
-    /// <summary>Decodes the data of a chunk into the buffer; false when it is not 1 to <see cref="TransferSender.MaxChunkSize"/> valid bytes.</summary>
+    /// <summary>
+    /// Decodes the data of a chunk into the buffer; false when it is not 1 to
+    /// <see cref="TransferSender.MaxChunkSize"/> valid bytes, or not the number of bytes its
+    /// length field says.
+    /// </summary>
     private bool TryDecode(FileChunkMessage chunk, out int count)
     {
         if (ChunkEncoding == ChunkEncodings.U15)
@@ -385,10 +414,92 @@ public sealed class TransferReceiver : IDisposable
             return count is > 0 and <= TransferSender.MaxChunkSize && U15Codec.TryDecode(chunk.Data, count, _buffer);
         }
 
+        // The length of a numbered base64 line, since 0.5.2, catches valid base64 that lost a block.
         count = 0;
         return chunk.Data.Length <= (TransferSender.MaxChunkSize + 2) / 3 * 4
             && Convert.TryFromBase64String(chunk.Data, _buffer, out count)
-            && count > 0;
+            && count > 0
+            && (chunk.Length is null || chunk.Length == count);
+    }
+
+    /// <summary>
+    /// A chunk that cannot be right: with <paramref name="recover"/> it is left for a resend
+    /// and described in <paramref name="damage"/>, otherwise the transfer fails.
+    /// </summary>
+    private FileAckMessage? Damaged(FileChunkMessage chunk, FileBeginMessage file, TransferFailure failure, string detail, bool recover, out ChunkDamage? damage)
+    {
+        if (!recover)
+        {
+            damage = null;
+            return Fail(failure, file.RelativePath, detail);
+        }
+
+        damage = Diagnose(chunk, file, failure, detail);
+        DamagedChunks++;
+        return null;
+    }
+
+    /// <summary>What a damaged chunk looks like, for the log. Only runs for a damaged chunk.</summary>
+    private ChunkDamage Diagnose(FileChunkMessage chunk, FileBeginMessage file, TransferFailure failure, string detail)
+    {
+        // The data is checked in the encoding the line names, or the announced one when that name is unknown.
+        var encoding = ChunkEncodings.IsKnown(chunk.Enc) ? ChunkEncodings.OrDefault(chunk.Enc) : ChunkEncoding;
+        var data = chunk.Data.AsSpan();
+        int? expectedBytes;
+        int? expectedUnits;
+        int? badIndex;
+        if (encoding == ChunkEncodings.U15)
+        {
+            expectedBytes = chunk.Length is > 0 and <= TransferSender.MaxChunkSize ? chunk.Length : null;
+            expectedUnits = expectedBytes is { } bytes ? U15Codec.EncodedLength(bytes) : null;
+            var index = data.IndexOfAnyExceptInRange(U15Codec.FirstUnit, U15Codec.LastUnit);
+            badIndex = index >= 0 ? index : null;
+        }
+        else
+        {
+            // Without a length field, from a client 0.5.1, the chunks before it tell the size.
+            var rest = file.Size - _fileReceived;
+            expectedBytes = chunk.Length is > 0 and <= TransferSender.MaxChunkSize
+                ? chunk.Length
+                : chunk.Length is null && _chunkSizeSeen > 0 && rest > 0 ? (int)Math.Min(_chunkSizeSeen, rest) : null;
+            expectedUnits = expectedBytes is { } bytes ? (bytes + 2) / 3 * 4 : null;
+            badIndex = FirstInvalidBase64(data);
+        }
+
+        return new ChunkDamage(
+            chunk.Seq ?? -1,
+            chunk.FileIndex,
+            chunk.Offset,
+            encoding,
+            failure,
+            detail,
+            data.Length,
+            expectedBytes,
+            expectedUnits,
+            badIndex,
+            badIndex is { } bad ? data[bad] : '\0',
+            TransferLines.LineLength(chunk, data.Length),
+            expectedUnits is { } units ? TransferLines.LineLength(chunk, units) : null);
+    }
+
+    /// <summary>
+    /// The position of the first character that base64 does not use, counting the padding
+    /// characters before the last two as invalid; null when there is none.
+    /// </summary>
+    private static int? FirstInvalidBase64(ReadOnlySpan<char> data)
+    {
+        var padding = Math.Min(2, data.Length - data.TrimEnd('=').Length);
+        var body = data[..^padding];
+        for (var i = 0; i < body.Length; i++)
+        {
+            var c = body[i];
+            if (!char.IsAsciiLetterOrDigit(c) && c is not ('+' or '/'))
+            {
+                return i;
+            }
+        }
+
+        return null;
     }
 
     private FileAckMessage? OnFileEnd(FileEndMessage end)

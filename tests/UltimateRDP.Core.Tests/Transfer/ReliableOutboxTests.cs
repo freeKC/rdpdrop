@@ -87,6 +87,30 @@ public class ReliableOutboxTests
         Assert.Null(outbox.TakeNewest());
     }
 
+    /// <summary>A chunk sent again for a damaged line is the very string built by TransferLines the first time.</summary>
+    [Theory]
+    [InlineData(ChunkEncodings.U15)]
+    [InlineData(ChunkEncodings.Base64)]
+    public void A_chunk_goes_again_as_the_same_string(string encoding)
+    {
+        var data = new byte[TransferSender.DefaultChunkSize];
+        new Random(3).NextBytes(data);
+        var outbox = new ReliableOutbox();
+        var text = TransferLines.EncodeChunk("t1", 0, 0, data, encoding, seq: 0);
+        outbox.Add(new QueuedLine(text, MessageTypes.FileChunk, "t1", 0, 0));
+
+        var again = Assert.Single(outbox.Take(0, 0, damaged: true));
+
+        Assert.Same(text, again.Text);
+        Assert.Equal(TransferLines.EncodeChunk("t1", 0, 0, data, encoding, seq: 0), again.Text);
+        Assert.True(again.IsResend);
+        Assert.Equal(1, outbox.Requests);
+        Assert.Equal(1, outbox.DamagedRequests);
+        Assert.Empty(outbox.Take(1, 1));
+        Assert.Equal(2, outbox.Requests);
+        Assert.Equal(1, outbox.DamagedRequests);
+    }
+
     [Fact]
     public void A_long_transfer_does_not_keep_what_was_acknowledged()
     {

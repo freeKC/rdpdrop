@@ -11,10 +11,13 @@ namespace UltimateRDP.Core.Transfer;
 /// </summary>
 /// <remarks>
 /// <para>
-/// base64: <c>{"type":"fileChunk","transferId":"...","fileIndex":0,"offset":0,"seq":2,"data":"..."}</c>.
+/// base64: <c>{"type":"fileChunk","transferId":"...","fileIndex":0,"offset":0,"length":131072,"seq":2,"data":"..."}</c>.
 /// The line reads back as the same <see cref="FileChunkMessage"/> as the serialized form;
 /// it only differs in that the <c>+</c> of base64 is written as is, where the serializer
-/// escapes it.
+/// escapes it. <c>length</c> is written since 0.5.2, and only with <c>seq</c>: a block of
+/// the channel lost inside the data can leave valid base64 that is shorter, which the
+/// agent then sees as damaged instead of writing it. An agent 0.5.1 reads the field and
+/// does not use it in base64.
 /// </para>
 /// <para>
 /// u15: <c>{"type":"fileChunk","transferId":"...","fileIndex":0,"offset":0,"length":131072,"enc":"u15","seq":2,"data":"..."}</c>,
@@ -75,14 +78,16 @@ public static class TransferLines
         {
             var message = u15
                 ? new FileChunkMessage(transferId, fileIndex, offset, U15Codec.Encode(data), data.Length, ChunkEncodings.U15, seq)
-                : new FileChunkMessage(transferId, fileIndex, offset, Convert.ToBase64String(data), Seq: seq);
+                : new FileChunkMessage(transferId, fileIndex, offset, Convert.ToBase64String(data), seq is null ? null : data.Length, Seq: seq);
             return LineFraming.EncodeLine(message);
         }
 
         var seqPart = seq is { } number ? string.Create(CultureInfo.InvariantCulture, $"{SeqField}{number}") : string.Empty;
         var prefix = u15
             ? string.Create(CultureInfo.InvariantCulture, $"{TypeAndId}{transferId}{FileIndexField}{fileIndex}{OffsetField}{offset}{LengthField}{data.Length}{U15Field}{seqPart}{DataField}")
-            : string.Create(CultureInfo.InvariantCulture, $"{TypeAndId}{transferId}{FileIndexField}{fileIndex}{OffsetField}{offset}{seqPart}{DataField}");
+            : seq is null
+                ? string.Create(CultureInfo.InvariantCulture, $"{TypeAndId}{transferId}{FileIndexField}{fileIndex}{OffsetField}{offset}{DataField}")
+                : string.Create(CultureInfo.InvariantCulture, $"{TypeAndId}{transferId}{FileIndexField}{fileIndex}{OffsetField}{offset}{LengthField}{data.Length}{seqPart}{DataField}");
         var dataLength = u15 ? U15Codec.EncodedLength(data.Length) : checked((data.Length + 2) / 3 * 4);
         var length = prefix.Length + dataLength + Suffix.Length;
         if (length - 1 > LineFraming.MaxLineLength)
@@ -111,7 +116,8 @@ public static class TransferLines
     /// fields are not in the order written here, or a line whose data holds JSON escapes,
     /// as the serializer writes it. The <c>seq</c> field is read when it is there, and may
     /// be absent, as a client before 0.5.1 writes the line. The units are not checked here:
-    /// the receiver decodes them and fails the transfer on a bad unit.
+    /// the receiver decodes them, and a bad unit fails the transfer, or since 0.5.2 has a
+    /// numbered line asked for again.
     /// </summary>
     public static bool TryParseChunk(string line, [NotNullWhen(true)] out FileChunkMessage? chunk)
     {
@@ -173,6 +179,21 @@ public static class TransferLines
 
         chunk = new FileChunkMessage(transferId, (int)fileIndex, offset, line.Substring(dataStart, dataLength), (int)length, ChunkEncodings.U15, seq);
         return true;
+    }
+
+    /// <summary>
+    /// Characters of the line of <paramref name="chunk"/>, without its <c>\n</c>, as
+    /// <see cref="EncodeChunk"/> writes it with <paramref name="dataLength"/> characters of
+    /// data: the fields the chunk has, in the order written here. For the diagnostics of a
+    /// damaged chunk only.
+    /// </summary>
+    internal static int LineLength(FileChunkMessage chunk, int dataLength)
+    {
+        var length = chunk.Length is { } bytes ? string.Create(CultureInfo.InvariantCulture, $"{LengthField}{bytes}") : string.Empty;
+        var enc = chunk.Enc is { } name ? ",\"enc\":\"" + name + "\"" : string.Empty;
+        var seq = chunk.Seq is { } number ? string.Create(CultureInfo.InvariantCulture, $"{SeqField}{number}") : string.Empty;
+        var prefix = string.Create(CultureInfo.InvariantCulture, $"{TypeAndId}{chunk.TransferId}{FileIndexField}{chunk.FileIndex}{OffsetField}{chunk.Offset}{length}{enc}{seq}{DataField}");
+        return prefix.Length + dataLength + End.Length;
     }
 
     /// <summary>Reads <paramref name="name"/> then a number of at most 18 digits, without a sign.</summary>

@@ -243,12 +243,12 @@ public class LostCallTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// 100 MB with numbered lines and two lost calls, through the whole codec path: the
-    /// reliability costs little, and the transfer still takes a few seconds.
+    /// 100 MB with numbered lines, two lost calls and a damaged chunk, through the whole
+    /// codec path: the reliability costs little, and the transfer still takes a few seconds.
     /// </summary>
     [Theory]
     [MemberData(nameof(Paths))]
-    public void One_hundred_megabytes_with_two_lost_calls_go_through_in_a_few_seconds(ChannelByteModel model, string encoding)
+    public void One_hundred_megabytes_with_two_lost_calls_and_a_damaged_chunk_go_through_in_a_few_seconds(ChannelByteModel model, string encoding)
     {
         const int Size = 100 * 1000 * 1000;
         var data = new byte[Size];
@@ -256,6 +256,7 @@ public class LostCallTests(ITestOutputHelper output)
         var storage = new NullTransferStorage();
         var transfer = new SimulatedTransfer(model, [new TransferItem("big.bin", false)], [(new TransferFile("big.bin", Size), data)], storage, chunkEncoding: encoding, reliable: true) { Batching = new SendQueue() };
         transfer.Channel.LoseCall = (position, _) => !transfer.SendingAgain && position is 7 or 200;
+        transfer.Channel.Tamper = (_, call) => transfer.SendingAgain ? call : DamagedChunkTests.DamageLine(call, 1500, LineDamage.UnitRemoved, encoding);
 
         var watch = Stopwatch.StartNew();
         transfer.Run();
@@ -264,8 +265,10 @@ public class LostCallTests(ITestOutputHelper output)
         Assert.Equal(DropStatus.Ok, transfer.Result?.Status);
         Assert.Equal(Size, storage.Written);
         Assert.Equal(2, transfer.Channel.CallsLost);
-        Assert.Equal(2, transfer.Requests.Count);
-        output.WriteLine($"{model}, {encoding}: 100 MB with 2 lost calls in {watch.Elapsed.TotalSeconds:0.00} s, {Size / watch.Elapsed.TotalSeconds / 1_000_000:0} MB/s, {transfer.Channel.LinesSent} calls, {transfer.Outbox!.ResentLines} line(s) sent again.");
+        Assert.Equal(3, transfer.Requests.Count);
+        Assert.Equal(1500, Assert.Single(transfer.Damages).Seq);
+        Assert.Equal(1, transfer.Inbox!.DamagedRequests);
+        output.WriteLine($"{model}, {encoding}: 100 MB with 2 lost calls and a damaged chunk in {watch.Elapsed.TotalSeconds:0.00} s, {Size / watch.Elapsed.TotalSeconds / 1_000_000:0} MB/s, {transfer.Channel.LinesSent} calls, {transfer.Outbox!.ResentLines} line(s) sent again.");
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(30), $"100 MB took {watch.Elapsed.TotalSeconds:0.0} s.");
     }
 }

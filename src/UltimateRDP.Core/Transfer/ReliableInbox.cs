@@ -16,8 +16,8 @@ public enum InboxFailure
     Unrecovered,
 }
 
-/// <summary>What <see cref="ReliableInbox.Accept"/> or <see cref="ReliableInbox.Check"/> decided.</summary>
-/// <param name="Ready">The lines to handle now, in the order of their numbers.</param>
+/// <summary>What <see cref="ReliableInbox.Accept(Message, long, Func{Message, bool})"/> or <see cref="ReliableInbox.Check"/> decided.</summary>
+/// <param name="Ready">The lines to handle now, in the order of their numbers; with a handler, the lines it took.</param>
 /// <param name="Released">How many of <paramref name="Ready"/> had waited behind a missing line.</param>
 /// <param name="Request">The request to send to the client, or null.</param>
 /// <param name="Duplicate">True when the line had already arrived: it is ignored.</param>
@@ -26,6 +26,12 @@ public sealed record InboxStep(IReadOnlyList<Message> Ready, int Released, Trans
 {
     /// <summary>Nothing to do.</summary>
     public static InboxStep Nothing { get; } = new([], 0, null, false, false);
+
+    /// <summary>
+    /// The number of a line that the handler given to <see cref="ReliableInbox.Accept(Message, long, Func{Message, bool})"/>
+    /// found damaged in this step, or null. That line was not handled: it is missing again.
+    /// </summary>
+    public long? Damaged { get; init; }
 }
 
 /// <summary>
@@ -44,6 +50,14 @@ public sealed record InboxStep(IReadOnlyList<Message> Ready, int Released, Trans
 /// up with <see cref="InboxFailure.Unrecovered"/>. When the missing lines arrive, the lines
 /// that waited are handed on with them, in order. A line that already arrived is a
 /// duplicate, from a resend, and is ignored.
+/// </para>
+/// <para>
+/// Since 0.5.2 a line can also arrive damaged: a chunk whose data the channel changed on
+/// the way. The handler given to <see cref="Accept(Message, long, Func{Message, bool})"/>
+/// says so, and the line is then handled as a lost one: it is not consumed, the lines
+/// after it wait, and it is asked for under the same rules, at once the first time, then
+/// after the same silence and within the same bound. Such requests say
+/// <see cref="TransferResendMessage.Damaged"/> and are counted in <see cref="DamagedRequests"/>.
 /// </para>
 /// <para>
 /// At most <see cref="MaxHeldCharacters"/> characters of lines wait; beyond that the inbox
@@ -77,6 +91,7 @@ public sealed class ReliableInbox
     private long _lastRequest;
     private long _requestedTo = -1;
     private int _requestsForGap;
+    private long _damagedSeq = -1;
 
     /// <param name="transferId">Identifier of the transfer, for the requests.</param>
     /// <param name="maxHeldCharacters">Most characters that may wait, at least 1.</param>
@@ -104,10 +119,29 @@ public sealed class ReliableInbox
     public long HeldCharacters { get; private set; }
 
     /// <summary>True while lines are missing, which <see cref="Check"/> watches.</summary>
-    public bool HasGap => _held.Count > 0 && Failure == InboxFailure.None;
+    public bool HasGap => Failure == InboxFailure.None && (_held.Count > 0 || _damagedSeq >= Expected);
 
-    /// <summary>The first missing range, or null when nothing is missing.</summary>
-    public (long From, long To)? Gap => _held.Count > 0 ? (Expected, _held.First().Key - 1) : null;
+    /// <summary>
+    /// The first missing range, or null when nothing is missing: from the expected line to
+    /// the line before the first one that waits, or to the expected line when it arrived
+    /// damaged and nothing waits behind it.
+    /// </summary>
+    public (long From, long To)? Gap => _held.Count > 0
+        ? (Expected, _held.First().Key - 1)
+        : HasGap ? (Expected, _damagedSeq) : null;
+
+    /// <summary>
+    /// Numbered lines that arrived so far, duplicates and damaged ones included. Once a
+    /// line came numbered, every line of the transfer is: one without a number lost it on
+    /// the way, and the agent leaves it to the gap that the next line shows.
+    /// </summary>
+    public long Arrived { get; private set; }
+
+    /// <summary>
+    /// True for the messages that carry a number in a transfer that numbers its lines:
+    /// <c>transferBegin</c>, <c>fileBegin</c>, <c>fileChunk</c> and <c>fileEnd</c>.
+    /// </summary>
+    public static bool IsNumberedType(Message message) => message is TransferBeginMessage or FileBeginMessage or FileChunkMessage or FileEndMessage;
 
     /// <summary>Requests sent to the client so far.</summary>
     public int Requests { get; private set; }
@@ -117,6 +151,12 @@ public sealed class ReliableInbox
 
     /// <summary>Lines that arrived a second time and were ignored.</summary>
     public long DuplicateLines { get; private set; }
+
+    /// <summary>Lines that arrived damaged, each time one did; they were asked for again.</summary>
+    public long DamagedLines { get; private set; }
+
+    /// <summary>Requests of <see cref="Requests"/> whose first line had arrived damaged.</summary>
+    public int DamagedRequests { get; private set; }
 
     /// <summary>Why the inbox gave up, or <see cref="InboxFailure.None"/>.</summary>
     public InboxFailure Failure { get; private set; }
@@ -143,7 +183,17 @@ public sealed class ReliableInbox
     /// handle now, in order, and the request to send, if one is due.
     /// </summary>
     /// <exception cref="ArgumentException">The message carries no number.</exception>
-    public InboxStep Accept(Message message, long nowMilliseconds)
+    public InboxStep Accept(Message message, long nowMilliseconds) => Accept(message, nowMilliseconds, null);
+
+    /// <summary>
+    /// A numbered line arrived at <paramref name="nowMilliseconds"/>. The lines that can go
+    /// on are handed to <paramref name="handle"/> at once, one by one in order, and listed in
+    /// <see cref="InboxStep.Ready"/>. When <paramref name="handle"/> returns false the line
+    /// arrived damaged and was not handled: it is missing again, the lines after it wait,
+    /// and it is asked for (<see cref="InboxStep.Damaged"/>). A null handler takes every line.
+    /// </summary>
+    /// <exception cref="ArgumentException">The message carries no number.</exception>
+    public InboxStep Accept(Message message, long nowMilliseconds, Func<Message, bool>? handle)
     {
         ArgumentNullException.ThrowIfNull(message);
         var seq = SeqOf(message) ?? throw new ArgumentException("The line carries no number.", nameof(message));
@@ -153,6 +203,7 @@ public sealed class ReliableInbox
         }
 
         _lastArrival = nowMilliseconds;
+        Arrived++;
         if (seq < Expected || _held.ContainsKey(seq))
         {
             DuplicateLines++;
@@ -173,24 +224,50 @@ public sealed class ReliableInbox
             return InboxStep.Nothing with { Request = Expected > _requestedTo ? Request(nowMilliseconds) : null };
         }
 
-        List<Message> ready = [message];
-        Expected++;
+        List<Message> ready = [];
         var released = 0;
-        while (_held.Remove(Expected, out var next))
+        long? damaged = null;
+        if (handle?.Invoke(message) == false)
         {
-            ready.Add(next.Message);
-            HeldCharacters -= next.Characters;
-            released++;
+            damaged = seq;
+        }
+        else
+        {
+            ready.Add(message);
             Expected++;
+            while (_held.Remove(Expected, out var next))
+            {
+                HeldCharacters -= next.Characters;
+                if (handle?.Invoke(next.Message) == false)
+                {
+                    // A line that waited arrived damaged: dropped, it is missing again.
+                    damaged = Expected;
+                    break;
+                }
+
+                ready.Add(next.Message);
+                released++;
+                Expected++;
+            }
         }
 
         ReleasedLines += released;
-        _requestsForGap = 0;
+        if (ready.Count > 0)
+        {
+            _requestsForGap = 0;
+        }
+
+        if (damaged is { } number)
+        {
+            DamagedLines++;
+            _damagedSeq = number;
+        }
 
         // A missing range that no request named yet is asked for at once; one already named
-        // may still be on its way, and Check asks again after a silence.
-        var request = _held.Count > 0 && Expected > _requestedTo ? Request(nowMilliseconds) : null;
-        return new InboxStep(ready, released, request, false, false);
+        // may still be on its way, and Check asks again after a silence. A damaged line that
+        // no request named yet counts as a new range.
+        var request = HasGap && Expected > _requestedTo ? Request(nowMilliseconds) : null;
+        return new InboxStep(ready, released, request, false, false) { Damaged = damaged };
     }
 
     /// <summary>
@@ -208,7 +285,9 @@ public sealed class ReliableInbox
         if (_requestsForGap >= MaxRequests)
         {
             var (from, to) = Gap!.Value;
-            Fail(InboxFailure.Unrecovered, Invariant($"lines {from} to {to} of the transfer never arrived after {MaxRequests} requests to the client."));
+            Fail(InboxFailure.Unrecovered, from == _damagedSeq
+                ? Invariant($"lines {from} to {to} of the transfer never arrived intact after {MaxRequests} requests to the client; line {from} arrived damaged.")
+                : Invariant($"lines {from} to {to} of the transfer never arrived after {MaxRequests} requests to the client."));
             return InboxStep.Nothing with { Failed = true };
         }
 
@@ -222,7 +301,13 @@ public sealed class ReliableInbox
         _requestsForGap++;
         Requests++;
         _lastRequest = nowMilliseconds;
-        return new TransferResendMessage(TransferId, from, to);
+        if (from != _damagedSeq)
+        {
+            return new TransferResendMessage(TransferId, from, to);
+        }
+
+        DamagedRequests++;
+        return new TransferResendMessage(TransferId, from, to, Damaged: true);
     }
 
     private void Fail(InboxFailure failure, string detail)
@@ -231,6 +316,7 @@ public sealed class ReliableInbox
         FailureDetail = detail;
         _held.Clear();
         HeldCharacters = 0;
+        _damagedSeq = -1;
     }
 
     private static long CharactersOf(Message message) => message is FileChunkMessage chunk ? chunk.Data.Length + SmallLineCharacters : SmallLineCharacters;

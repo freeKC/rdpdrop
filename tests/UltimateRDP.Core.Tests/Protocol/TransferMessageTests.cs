@@ -257,6 +257,20 @@ public class TransferMessageTests
         Assert.Equal("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":1,\"to\":2}\n", LineFraming.EncodeLine(new TransferResendMessage("t1", 1, 2)));
     }
 
+    [Fact]
+    public void A_resend_for_a_damaged_line_says_so_and_reads_back()
+    {
+        var damaged = new TransferResendMessage("t1", 7, 7, Damaged: true);
+
+        Assert.True(ToJson(damaged).GetProperty("damaged").GetBoolean());
+        Assert.Equal(damaged, RoundTrip(damaged));
+        Assert.Equal("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":7,\"to\":7,\"damaged\":true}\n", LineFraming.EncodeLine(damaged));
+
+        // A field the reader does not know is skipped: a client 0.5.1 reads this request as any other.
+        Assert.Equal(damaged, Parse("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":7,\"to\":7,\"damaged\":true,\"later\":1}"));
+        Assert.Equal(new TransferResendMessage("t1", 7, 7), Parse("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":7,\"to\":7}"));
+    }
+
     [Theory]
     [InlineData("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":2,\"to\":1}")]
     [InlineData("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":-1,\"to\":1}")]

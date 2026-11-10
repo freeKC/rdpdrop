@@ -38,6 +38,9 @@ public sealed class ReliableOutbox
     /// <summary>Requests of the agent answered so far.</summary>
     public int Requests { get; private set; }
 
+    /// <summary>Requests of <see cref="Requests"/> for a line that arrived damaged, since 0.5.2.</summary>
+    public int DamagedRequests { get; private set; }
+
     /// <summary>Lines sent again for the requests of the agent.</summary>
     public long ResentLines { get; private set; }
 
@@ -82,11 +85,19 @@ public sealed class ReliableOutbox
     /// <summary>
     /// The lines from <paramref name="from"/> to <paramref name="to"/> that are still kept,
     /// in order, marked as sent again. Lines already acknowledged, or never sent, are left
-    /// out: the agent already has the first ones, and cannot miss the others.
+    /// out: the agent already has the first ones, and cannot miss the others. A line goes
+    /// again as the very string kept, so a chunk sent again is the same line, character for
+    /// character, as the first time. <paramref name="damaged"/> counts the request in
+    /// <see cref="DamagedRequests"/>.
     /// </summary>
-    public IReadOnlyList<QueuedLine> Take(long from, long to)
+    public IReadOnlyList<QueuedLine> Take(long from, long to, bool damaged = false)
     {
         Requests++;
+        if (damaged)
+        {
+            DamagedRequests++;
+        }
+
         var first = Math.Max(from, FirstSeq);
         var last = Math.Min(to, NextSeq - 1);
         if (first > last)

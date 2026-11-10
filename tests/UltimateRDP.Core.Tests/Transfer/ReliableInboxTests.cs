@@ -193,6 +193,119 @@ public class ReliableInboxTests
         Assert.Contains("waited behind line 0", inbox.FailureDetail, StringComparison.Ordinal);
     }
 
+    /// <summary>The lines 0 and 1 handed on, then line 2 arrives damaged: the handler refuses it.</summary>
+    private static (ReliableInbox Inbox, Message[] Lines, InboxStep Damaged) DamagedThirdLine()
+    {
+        var inbox = new ReliableInbox("t1");
+        var lines = Lines();
+        inbox.Accept(lines[0], 0, _ => true);
+        inbox.Accept(lines[1], 0, _ => true);
+        return (inbox, lines, inbox.Accept(lines[2], 10, _ => false));
+    }
+
+    [Fact]
+    public void A_damaged_line_is_asked_for_at_once_and_the_lines_after_it_wait()
+    {
+        var (inbox, lines, damaged) = DamagedThirdLine();
+
+        Assert.Empty(damaged.Ready);
+        Assert.Equal(2, damaged.Damaged);
+        Assert.Equal(new TransferResendMessage("t1", 2, 2, Damaged: true), damaged.Request);
+        Assert.Equal(2, inbox.Expected);
+        Assert.True(inbox.HasGap);
+        Assert.Equal((2L, 2L), inbox.Gap);
+
+        var later = inbox.Accept(lines[3], 20, _ => true);
+        Assert.Empty(later.Ready);
+        Assert.Null(later.Request);
+        Assert.Equal((2L, 2L), inbox.Gap);
+
+        List<Message> handled = [];
+        var resent = inbox.Accept(lines[2], 30, line =>
+        {
+            handled.Add(line);
+            return true;
+        });
+
+        Assert.Equal([lines[2], lines[3]], resent.Ready);
+        Assert.Equal([lines[2], lines[3]], handled);
+        Assert.Equal(1, resent.Released);
+        Assert.Null(resent.Damaged);
+        Assert.Null(resent.Request);
+        Assert.False(inbox.HasGap);
+        Assert.Null(inbox.Gap);
+        Assert.Equal(1, inbox.Requests);
+        Assert.Equal(1, inbox.DamagedRequests);
+        Assert.Equal(1, inbox.DamagedLines);
+        Assert.Equal(0, inbox.DuplicateLines);
+    }
+
+    [Fact]
+    public void A_damaged_line_that_waited_is_dropped_when_its_turn_comes()
+    {
+        var inbox = new ReliableInbox("t1");
+        var lines = Lines();
+        inbox.Accept(lines[0], 0, _ => true);
+        inbox.Accept(lines[1], 0, _ => true);
+        Assert.Equal(new TransferResendMessage("t1", 2, 2), inbox.Accept(lines[3], 0, _ => true).Request);
+
+        var filled = inbox.Accept(lines[2], 10, line => line != lines[3]);
+
+        Assert.Equal([lines[2]], filled.Ready);
+        Assert.Equal(0, filled.Released);
+        Assert.Equal(3, filled.Damaged);
+        Assert.Equal(new TransferResendMessage("t1", 3, 3, Damaged: true), filled.Request);
+        Assert.Equal(0, inbox.HeldLines);
+        Assert.Equal(0, inbox.HeldCharacters);
+        Assert.Equal((3L, 3L), inbox.Gap);
+
+        Assert.Empty(inbox.Accept(lines[4], 20, _ => true).Ready);
+        Assert.Equal([lines[3], lines[4]], inbox.Accept(lines[3], 30, _ => true).Ready);
+        Assert.Equal(2, inbox.Requests);
+        Assert.Equal(1, inbox.DamagedRequests);
+    }
+
+    [Fact]
+    public void A_damaged_resend_is_asked_for_again_after_the_silence()
+    {
+        var (inbox, lines, _) = DamagedThirdLine();
+
+        var again = inbox.Accept(lines[2], 100, _ => false);
+
+        Assert.Null(again.Request);
+        Assert.Equal(2, again.Damaged);
+        Assert.Null(inbox.Check(599).Request);
+        Assert.Equal(new TransferResendMessage("t1", 2, 2, Damaged: true), inbox.Check(600).Request);
+        Assert.Equal(2, inbox.Requests);
+        Assert.Equal(2, inbox.DamagedRequests);
+        Assert.Equal(2, inbox.DamagedLines);
+    }
+
+    [Fact]
+    public void A_line_that_always_arrives_damaged_fails_after_ten_requests()
+    {
+        var (inbox, lines, _) = DamagedThirdLine();
+        var now = 10L;
+        for (var request = 2; request <= ReliableInbox.MaxRequests; request++)
+        {
+            now += 100;
+            inbox.Accept(lines[2], now, _ => false);
+            now += 500;
+            Assert.Equal(new TransferResendMessage("t1", 2, 2, Damaged: true), inbox.Check(now).Request);
+        }
+
+        inbox.Accept(lines[2], now + 100, _ => false);
+        var step = inbox.Check(now + 600);
+
+        Assert.True(step.Failed);
+        Assert.Equal(InboxFailure.Unrecovered, inbox.Failure);
+        Assert.Equal(ReliableInbox.MaxRequests, inbox.Requests);
+        Assert.Equal(ReliableInbox.MaxRequests, inbox.DamagedRequests);
+        Assert.Equal("lines 2 to 2 of the transfer never arrived intact after 10 requests to the client; line 2 arrived damaged.", inbox.FailureDetail);
+        Assert.False(inbox.HasGap);
+        Assert.Null(inbox.Gap);
+    }
+
     [Fact]
     public void The_default_bound_holds_twice_the_largest_window_in_base64()
     {

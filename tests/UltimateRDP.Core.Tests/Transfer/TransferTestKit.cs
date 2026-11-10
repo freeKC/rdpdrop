@@ -268,19 +268,10 @@ internal sealed class SimulatedTransfer
             if (Inbox is not null && ReliableInbox.SeqOf(message) is { } seq)
             {
                 // As StagedTransfer does on the agent.
-                var step = Inbox.Accept(message, Clock);
+                var step = Inbox.Accept(message, Clock, line => Receiver.IsFinished || HandleInOrder(line, replies));
                 if (step.Duplicate && seq == Inbox.Expected - 1 && Receiver.CurrentAck() is { } current)
                 {
                     replies.Add(current with { Seq = seq });
-                }
-
-                foreach (var ready in step.Ready)
-                {
-                    HandleInOrder(ready, replies);
-                    if (Receiver.IsFinished)
-                    {
-                        break;
-                    }
                 }
 
                 if (!Receiver.IsFinished && step.Request is { } request)
@@ -293,6 +284,11 @@ internal sealed class SimulatedTransfer
                 {
                     Receiver.Cancel();
                 }
+            }
+            else if (Inbox is not null && Inbox.Arrived > 0 && ReliableInbox.IsNumberedType(message))
+            {
+                // As StagedTransfer: a line whose number was damaged is left to the gap that follows.
+                UnnumberedIgnored++;
             }
             else
             {
@@ -318,7 +314,7 @@ internal sealed class SimulatedTransfer
                     break;
                 case TransferResendMessage request:
                     Assert.NotNull(Outbox);
-                    SendAgain(Outbox.Take(request.From, request.To));
+                    SendAgain(Outbox.Take(request.From, request.To, request.Damaged == true));
                     break;
                 case TransferResultMessage result:
                     Result = result;
@@ -345,6 +341,12 @@ internal sealed class SimulatedTransfer
 
     /// <summary>The requests of the agent, in their order.</summary>
     public List<TransferResendMessage> Requests { get; } = [];
+
+    /// <summary>The chunks that the agent found damaged, in their order.</summary>
+    public List<ChunkDamage> Damages { get; } = [];
+
+    /// <summary>Lines of a numbered transfer that arrived without a number, and were ignored.</summary>
+    public int UnnumberedIgnored { get; private set; }
 
     /// <summary>Simulated milliseconds, which only pass in <see cref="Idle"/>.</summary>
     public long Clock { get; private set; }
@@ -478,12 +480,22 @@ internal sealed class SimulatedTransfer
         return true;
     }
 
-    private void HandleInOrder(Message message, List<Message> replies)
+    /// <summary>Hands a line to the receiver; false for a numbered chunk damaged on the way.</summary>
+    private bool HandleInOrder(Message message, List<Message> replies)
     {
-        if (Receiver.Handle(message) is { } ack)
+        var ack = Receiver.Handle(message, out var damage);
+        if (damage is not null)
+        {
+            Damages.Add(damage);
+            return false;
+        }
+
+        if (ack is not null)
         {
             replies.Add(ReliableInbox.SeqOf(message) is { } seq ? ack with { Seq = seq } : ack);
         }
+
+        return true;
     }
 
     private void AddResultIfOver(List<Message> replies)

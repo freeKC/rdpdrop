@@ -487,6 +487,176 @@ public class TransferReceiverTests
         Assert.Contains("is not valid u15", receiver.FailureDetail, StringComparison.Ordinal);
     }
 
+    /// <summary>A receiver of numbered lines with a file of <paramref name="size"/> bytes open.</summary>
+    private TransferReceiver Numbered(string encoding, long size)
+    {
+        var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 1, size, encoding, Seq: 0), out _);
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", size, Seq: 1), out _);
+        return receiver;
+    }
+
+    [Theory]
+    [MemberData(nameof(BadU15Chunks))]
+    public void A_bad_numbered_u15_chunk_is_left_for_a_resend(FileChunkMessage chunk)
+    {
+        using var receiver = Numbered(ChunkEncodings.U15, TransferSender.MaxChunkSize + 1);
+
+        var ack = receiver.Handle(chunk with { Seq = 2 }, out var damage);
+
+        Assert.Null(ack);
+        Assert.NotNull(damage);
+        Assert.Equal(2, damage.Seq);
+        Assert.Equal(TransferFailure.BadData, damage.Failure);
+        Assert.Contains("is not valid u15", damage.Detail, StringComparison.Ordinal);
+        Assert.Equal(TransferState.Receiving, receiver.State);
+        Assert.Equal(0, receiver.ReceivedBytes);
+        Assert.Equal(1, receiver.DamagedChunks);
+        Assert.Empty(_storage.Content("a.txt"));
+
+        // The line sent again goes on as if nothing happened.
+        Assert.Equal(new FileAckMessage("t1", 0, 3), receiver.Handle(U15Chunk(0, 0, [1, 2, 3]) with { Seq = 2 }, out damage));
+        Assert.Null(damage);
+        Assert.Equal(3, receiver.ReceivedBytes);
+    }
+
+    [Theory]
+    [InlineData("AQI*")]
+    [InlineData("AQI")]
+    [InlineData("AQIDBA")]
+    [InlineData("=AQI")]
+    public void A_bad_numbered_base64_chunk_is_left_for_a_resend(string data)
+    {
+        using var receiver = Numbered(ChunkEncodings.Base64, 3);
+
+        receiver.Handle(new FileChunkMessage("t1", 0, 0, data, Seq: 2), out var damage);
+
+        Assert.Equal(TransferFailure.BadData, damage?.Failure);
+        Assert.Equal(TransferState.Receiving, receiver.State);
+        Assert.Equal(new FileAckMessage("t1", 0, 3), receiver.Handle(Chunk(0, 0, [1, 2, 3]) with { Seq = 2 }, out damage));
+        Assert.Null(damage);
+    }
+
+    [Fact]
+    public void A_numbered_chunk_at_the_wrong_offset_or_in_another_encoding_is_left_for_a_resend()
+    {
+        using var receiver = Numbered(ChunkEncodings.U15, 6);
+        receiver.Handle(U15Chunk(0, 0, [1, 2, 3]) with { Seq = 2 }, out _);
+
+        receiver.Handle(U15Chunk(0, 4, [4, 5, 6]) with { Seq = 3 }, out var offset);
+        receiver.Handle(Chunk(0, 3, [4, 5, 6]) with { Seq = 3 }, out var encoding);
+        receiver.Handle(U15Chunk(0, 3, [4, 5, 6]) with { Seq = 3, Enc = "u16" }, out var unknown);
+
+        Assert.Equal(TransferFailure.DataLost, offset?.Failure);
+        Assert.Equal("A chunk starts at byte 4 where byte 3 was expected.", offset?.Detail);
+        Assert.Equal(TransferFailure.BadData, encoding?.Failure);
+        Assert.Equal(TransferFailure.BadData, unknown?.Failure);
+        Assert.Equal(ChunkEncodings.U15, unknown?.Encoding);
+        Assert.Equal(3, receiver.DamagedChunks);
+        Assert.Equal(TransferState.Receiving, receiver.State);
+        receiver.Handle(U15Chunk(0, 3, [4, 5, 6]) with { Seq = 3 }, out var right);
+        Assert.Null(right);
+        Assert.Equal(6, receiver.ReceivedBytes);
+    }
+
+    [Fact]
+    public void A_bad_chunk_without_a_number_still_fails_the_transfer()
+    {
+        using var receiver = Create();
+        receiver.Handle(new TransferBeginMessage("t1", 1, 3, ChunkEncodings.U15), out _);
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", 3), out _);
+
+        receiver.Handle(new FileChunkMessage("t1", 0, 0, "???", 3, ChunkEncodings.U15), out var damage);
+
+        Assert.Null(damage);
+        Assert.Equal(TransferFailure.BadData, receiver.Failure);
+        Assert.Equal(0, receiver.DamagedChunks);
+    }
+
+    [Fact]
+    public void Other_problems_of_a_numbered_line_still_fail_the_transfer()
+    {
+        using var receiver = Numbered(ChunkEncodings.Base64, 3);
+
+        receiver.Handle(Chunk(0, 0, [1, 2, 3, 4]) with { Seq = 2 }, out var damage);
+
+        Assert.Null(damage);
+        Assert.Equal(TransferFailure.SizeMismatch, receiver.Failure);
+    }
+
+    [Fact]
+    public void A_damaged_u15_chunk_is_described_without_its_data()
+    {
+        var data = new byte[TransferSender.DefaultChunkSize];
+        new Random(5).NextBytes(data);
+        var units = U15Codec.Encode(data);
+        var lineLength = TransferLines.EncodeChunk("t1", 0, 0, data, ChunkEncodings.U15, seq: 2).Length - 1;
+        using var receiver = Numbered(ChunkEncodings.U15, data.Length);
+        var chunk = new FileChunkMessage("t1", 0, 0, units[..100] + 'A' + units[101..], data.Length, ChunkEncodings.U15, 2);
+
+        receiver.Handle(chunk, out var replaced);
+        receiver.Handle(chunk with { Data = units[..800] + units[1600..] }, out var block);
+
+        Assert.Equal(
+            new ChunkDamage(2, 0, 0, ChunkEncodings.U15, TransferFailure.BadData, "A chunk at byte 0 is not valid u15 of 1 to 262144 bytes.", 17477, 32768, 17477, 100, 'A', lineLength, lineLength),
+            replaced);
+        Assert.Equal(
+            $"line 2 arrived damaged: A chunk at byte 0 is not valid u15 of 1 to 262144 bytes. Chunk of file 0 at byte 0 in u15: 17477 unit(s) of data, as expected for 32768 bytes, first unit outside the range at 100, 0x0041; line of {lineLength} characters, as expected for that chunk size.",
+            replaced?.Describe());
+        Assert.Equal(
+            $"line 2 arrived damaged: A chunk at byte 0 is not valid u15 of 1 to 262144 bytes. Chunk of file 0 at byte 0 in u15: 16677 unit(s) of data where 17477 were expected for 32768 bytes, every unit in the range; line of {lineLength - 800} characters where {lineLength} were expected for that chunk size.",
+            block?.Describe());
+        Assert.DoesNotContain(units[..20], replaced?.Describe(), StringComparison.Ordinal);
+    }
+
+    /// <summary>A block of 800 characters lost leaves valid base64: the length field of a numbered line, since 0.5.2, catches it.</summary>
+    [Fact]
+    public void Valid_base64_shorter_than_its_length_field_is_damaged()
+    {
+        var data = new byte[TransferSender.DefaultChunkSize];
+        new Random(9).NextBytes(data);
+        var base64 = Convert.ToBase64String(data);
+        using var receiver = Numbered(ChunkEncodings.Base64, data.Length);
+
+        receiver.Handle(new FileChunkMessage("t1", 0, 0, base64[..800] + base64[1600..], data.Length, Seq: 2), out var damage);
+
+        Assert.Equal(TransferFailure.BadData, damage?.Failure);
+        Assert.Equal(43692, damage?.ExpectedUnits);
+        Assert.Equal(43692 - 800, damage?.Units);
+        Assert.Null(damage?.BadUnitIndex);
+        Assert.Equal(0, receiver.ReceivedBytes);
+        Assert.NotNull(receiver.Handle(new FileChunkMessage("t1", 0, 0, base64, data.Length, Seq: 2), out damage));
+        Assert.Null(damage);
+    }
+
+    /// <summary>A client 0.5.1 numbers its base64 lines without a length field: the chunks before tell the size.</summary>
+    [Fact]
+    public void A_damaged_base64_chunk_is_measured_against_the_chunks_before_it()
+    {
+        var data = new byte[3 * TransferSender.DefaultChunkSize];
+        new Random(6).NextBytes(data);
+        using var receiver = Numbered(ChunkEncodings.Base64, data.Length);
+        var first = Convert.ToBase64String(data, 0, TransferSender.DefaultChunkSize);
+        var firstLength = "{\"type\":\"fileChunk\",\"transferId\":\"t1\",\"fileIndex\":0,\"offset\":0,\"seq\":2,\"data\":\"\"}".Length + 43692;
+        receiver.Handle(new FileChunkMessage("t1", 0, 0, first[..50] + '*' + first[51..], Seq: 2), out var unknown);
+        receiver.Handle(new FileChunkMessage("t1", 0, 0, first, Seq: 2), out _);
+        var second = Convert.ToBase64String(data, TransferSender.DefaultChunkSize, TransferSender.DefaultChunkSize);
+        var lineLength = "{\"type\":\"fileChunk\",\"transferId\":\"t1\",\"fileIndex\":0,\"offset\":32768,\"seq\":3,\"data\":\"\"}".Length + 43692;
+
+        receiver.Handle(new FileChunkMessage("t1", 0, TransferSender.DefaultChunkSize, second[..50] + '*' + second[51..], Seq: 3), out var known);
+
+        Assert.Equal(
+            $"line 2 arrived damaged: A chunk at byte 0 is not valid base64 of 1 to 262144 bytes. Chunk of file 0 at byte 0 in base64: 43692 character(s) of data, the expected count is not known, first invalid character at 50, 0x002A; line of {firstLength} characters, the expected length is not known.",
+            unknown?.Describe());
+        Assert.Equal(32768, known?.ExpectedBytes);
+        Assert.Equal(43692, known?.ExpectedUnits);
+        Assert.Equal(43692, known?.Units);
+        Assert.Equal(50, known?.BadUnitIndex);
+        Assert.Equal('*', known?.BadUnit);
+        Assert.Equal(lineLength, known?.LineLength);
+        Assert.Equal(lineLength, known?.ExpectedLineLength);
+    }
+
     [Fact]
     public void The_current_acknowledgement_says_what_was_received_so_far()
     {

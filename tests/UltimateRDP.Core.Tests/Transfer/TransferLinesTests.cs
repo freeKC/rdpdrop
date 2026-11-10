@@ -256,13 +256,16 @@ public class TransferLinesTests
         return messages;
     }
 
+    /// <summary>Since 0.5.2 a numbered base64 line also says its length, so that the agent sees valid base64 that lost a block.</summary>
     [Fact]
-    public void A_numbered_base64_line_writes_seq_just_before_the_data()
+    public void A_numbered_base64_line_writes_its_length_and_seq_just_before_the_data()
     {
         var line = TransferLines.EncodeChunk(Id, 0, 0, [1, 2, 3], ChunkEncodings.Base64, seq: 5);
 
-        Assert.Equal($"{{\"type\":\"fileChunk\",\"transferId\":\"{Id}\",\"fileIndex\":0,\"offset\":0,\"seq\":5,\"data\":\"AQID\"}}\n", line);
-        Assert.Equal(new FileChunkMessage(Id, 0, 0, "AQID", Seq: 5), ReadAsAgent(line[..^1]));
+        Assert.Equal($"{{\"type\":\"fileChunk\",\"transferId\":\"{Id}\",\"fileIndex\":0,\"offset\":0,\"length\":3,\"seq\":5,\"data\":\"AQID\"}}\n", line);
+        Assert.Equal(new FileChunkMessage(Id, 0, 0, "AQID", 3, Seq: 5), ReadAsAgent(line[..^1]));
+        Assert.False(TransferLines.TryParseChunk(line[..^1], out _));
+        Assert.Equal(line.Length - 1, TransferLines.LineLength(new FileChunkMessage(Id, 0, 0, "AQID", 3, Seq: 5), 4));
     }
 
     [Fact]
@@ -296,7 +299,7 @@ public class TransferLinesTests
     [Fact]
     public void The_serializer_writes_seq_where_the_hand_built_line_does()
     {
-        var message = new FileChunkMessage(Id, 0, 0, "AQID", Seq: 5);
+        var message = new FileChunkMessage(Id, 0, 0, "AQID", 3, Seq: 5);
 
         Assert.Equal(TransferLines.EncodeChunk(Id, 0, 0, [1, 2, 3], ChunkEncodings.Base64, seq: 5), LineFraming.EncodeLine(message));
     }

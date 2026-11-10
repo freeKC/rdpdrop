@@ -54,7 +54,10 @@ public sealed record FileBeginMessage(string TransferId, int FileIndex, string R
 /// <param name="FileIndex">Position of the file in the transfer.</param>
 /// <param name="Offset">Position of the first byte of this piece in the file.</param>
 /// <param name="Data">The bytes, in base64, or in the units of <see cref="U15Codec"/> when <paramref name="Enc"/> says so. Written last.</param>
-/// <param name="Length">The number of bytes, which ends the data of <see cref="ChunkEncodings.U15"/>. Not written when null, as for base64.</param>
+/// <param name="Length">
+/// The number of bytes, which ends the data of <see cref="ChunkEncodings.U15"/>. In base64
+/// written since 0.5.2 on numbered lines only, where the agent checks it. Not written when null.
+/// </param>
 /// <param name="Enc">The encoding of <paramref name="Data"/>, one of <see cref="ChunkEncodings"/>. Not written when null, which means base64.</param>
 /// <param name="Seq">
 /// Number of the line in the transfer, see <see cref="TransferBeginMessage.Seq"/>. Written
@@ -124,7 +127,12 @@ public sealed record FileAckMessage(string TransferId, int FileIndex, long Recei
 /// <param name="TransferId">Identifier of the transfer.</param>
 /// <param name="From">Number of the first missing line.</param>
 /// <param name="To">Number of the last missing line, at least <paramref name="From"/>.</param>
-public sealed record TransferResendMessage(string TransferId, long From, long To) : Message(MessageTypes.TransferResend)
+/// <param name="Damaged">
+/// True since 0.5.2 when line <paramref name="From"/> arrived but its chunk was damaged on
+/// the way, which the agent handles as a lost line; not written otherwise. For the logs and
+/// the counts of the client only: the lines go again the same way.
+/// </param>
+public sealed record TransferResendMessage(string TransferId, long From, long To, bool? Damaged = null) : Message(MessageTypes.TransferResend)
 {
     internal override bool IsValid() => !string.IsNullOrEmpty(TransferId) && From >= 0 && To >= From;
 }
