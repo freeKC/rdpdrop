@@ -270,6 +270,9 @@ Mantenha o executável em uma pasta que todos os usuários possam ler, como Prog
   <data name="TransferFileMessageLost" xml:space="preserve">
     <value>Uma mensagem da transferência se perdeu no caminho: {0} do arquivo {1} nunca chegou. Tente novamente.</value>
   </data>
+  <data name="TransferLinesLost" xml:space="preserve">
+    <value>Linhas da transferência se perderam no caminho e não puderam ser recuperadas. Tente novamente.</value>
+  </data>
   <data name="TransferIdle" xml:space="preserve">
     <value>Nada chegou durante {0} segundos, por isso a transferência foi interrompida.</value>
   </data>

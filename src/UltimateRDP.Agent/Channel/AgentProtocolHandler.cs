@@ -14,7 +14,8 @@ namespace UltimateRDP.Agent.Channel;
 /// messages go to the <see cref="NativeDropCoordinator"/>, which does the slow work on its
 /// own threads, and the log off request to the <see cref="SessionLogoff"/>. The hello of
 /// the client sets the language of the texts sent back, and the hello of the agent tells
-/// the client the byte model of its data, from which it chooses the encoding of the chunks.
+/// the client the byte model of its data, from which it chooses the encoding of the chunks,
+/// and that the agent reads numbered transfer lines.
 /// </summary>
 internal sealed class AgentProtocolHandler
 {
@@ -156,7 +157,7 @@ internal sealed class AgentProtocolHandler
         var available = _probe.IsAvailable();
         var model = _clientModel();
         _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}, language {hello.ClientLanguage ?? "(not said)"} (texts in {language}); drive redirection available: {available}; data of the client in the {model} model.");
-        _send(HelloMessage.FromAgent(AgentInfo.Version, available, model));
+        _send(HelloMessage.FromAgent(AgentInfo.Version, available, model, reliableTransfer: true));
     }
 
     private void RejectNewerVersion(MessageEnvelope envelope)

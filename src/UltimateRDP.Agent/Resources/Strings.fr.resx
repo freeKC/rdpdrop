@@ -270,6 +270,9 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   <data name="TransferFileMessageLost" xml:space="preserve">
     <value>Un message du transfert s'est perdu en chemin : {0} du fichier {1} n'est jamais arrivé. Réessayez.</value>
   </data>
+  <data name="TransferLinesLost" xml:space="preserve">
+    <value>Des lignes du transfert se sont perdues en chemin et n'ont pas pu être récupérées. Réessayez.</value>
+  </data>
   <data name="TransferIdle" xml:space="preserve">
     <value>Rien n'est arrivé pendant {0} secondes, le transfert a donc été arrêté.</value>
   </data>

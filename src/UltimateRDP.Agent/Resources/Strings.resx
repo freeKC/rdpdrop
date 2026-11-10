@@ -311,6 +311,9 @@ Keep the executable in a folder that every user can read, such as Program Files.
   <data name="TransferFileMessageLost" xml:space="preserve">
     <value>A message of the transfer was lost on the way: {0} for file {1} never arrived. Try again.</value>
   </data>
+  <data name="TransferLinesLost" xml:space="preserve">
+    <value>Lines of the transfer were lost on the way and could not be recovered. Try again.</value>
+  </data>
   <data name="TransferIdle" xml:space="preserve">
     <value>Nothing arrived for {0} seconds, so the transfer was stopped.</value>
     <comment>{0} is a number of seconds.</comment>

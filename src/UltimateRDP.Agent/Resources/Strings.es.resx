@@ -270,6 +270,9 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   <data name="TransferFileMessageLost" xml:space="preserve">
     <value>Un mensaje de la transferencia se perdió por el camino: {0} del archivo {1} nunca llegó. Vuelva a intentarlo.</value>
   </data>
+  <data name="TransferLinesLost" xml:space="preserve">
+    <value>Se perdieron líneas de la transferencia por el camino y no se pudieron recuperar. Vuelva a intentarlo.</value>
+  </data>
   <data name="TransferIdle" xml:space="preserve">
     <value>No llegó nada durante {0} segundos, así que la transferencia se detuvo.</value>
   </data>
