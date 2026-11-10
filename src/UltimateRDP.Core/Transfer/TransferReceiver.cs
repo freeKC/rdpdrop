@@ -99,6 +99,7 @@ public sealed class TransferReceiver : IDisposable
     private long _fileReceived;
     private long _announcedBytes;
     private long _bytesAtLastAck;
+    private FileAckMessage? _lastAck;
     private long _startTicks;
     private long _endTicks;
 
@@ -204,6 +205,22 @@ public sealed class TransferReceiver : IDisposable
         FileEndMessage end => end.TransferId,
         _ => null,
     };
+
+    /// <summary>
+    /// An acknowledgement of what was received so far: the bytes of the open file, or the
+    /// last acknowledgement when no file is open. Null before any file began or once the
+    /// transfer is finished. The agent sends it when a client that waits sends again a line
+    /// that was already processed: its acknowledgement may have been lost.
+    /// </summary>
+    public FileAckMessage? CurrentAck()
+    {
+        if (IsFinished)
+        {
+            return null;
+        }
+
+        return _file is { } file ? Ack(file) : _lastAck;
+    }
 
     /// <summary>Cancels the transfer and deletes what was written. Does nothing once it is finished.</summary>
     public FileAckMessage? Cancel()
@@ -444,7 +461,8 @@ public sealed class TransferReceiver : IDisposable
     private FileAckMessage Ack(FileBeginMessage file)
     {
         _bytesAtLastAck = ReceivedBytes;
-        return new FileAckMessage(TransferId, file.FileIndex, _fileReceived);
+        _lastAck = new FileAckMessage(TransferId, file.FileIndex, _fileReceived);
+        return _lastAck;
     }
 
     /// <summary>Runs a storage call; a file error fails the transfer and returns false.</summary>

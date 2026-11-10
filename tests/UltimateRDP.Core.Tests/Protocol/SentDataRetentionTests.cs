@@ -105,4 +105,33 @@ public class SentDataRetentionTests
     {
         Assert.Equal(expected, SentDataRetention<int>.LimitForWindow(window));
     }
+
+    /// <summary>
+    /// Chunks sent again may wait behind a full window, and their own acknowledgement proves
+    /// nothing about their call: kept a minute, unless a later send is acknowledged.
+    /// </summary>
+    [Fact]
+    public void A_send_of_chunks_sent_again_is_kept_a_minute_unless_a_later_send_is_acknowledged()
+    {
+        var retention = new SentDataRetention<int>();
+        retention.Add(1, 10, 0, Chunk("t1", 32_768));
+        retention.Add(2, 10, 0, null, holdLong: true);
+
+        Assert.Empty(retention.ReleaseAcknowledged("t1", 1_000_000));
+        Assert.Empty(retention.ReleaseExpired(59_999));
+
+        retention.Add(3, 10, 0, Chunk("t1", 65_536));
+        Assert.Equal([1, 2], retention.ReleaseAcknowledged("t1", 65_536));
+        Assert.Empty(new SentDataRetention<int>().Add(4, 10, 0, null, holdLong: true));
+    }
+
+    [Fact]
+    public void A_send_held_long_expires_after_a_minute()
+    {
+        var retention = new SentDataRetention<int>();
+        retention.Add(1, 10, 0, null, holdLong: true);
+
+        Assert.Empty(retention.ReleaseExpired(59_999));
+        Assert.Equal([1], retention.ReleaseExpired(60_000));
+    }
 }

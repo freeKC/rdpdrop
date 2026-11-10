@@ -9,7 +9,10 @@ namespace UltimateRDP.Core.Protocol;
 /// counted, so that an acknowledgement of the agent can be matched with the sends that
 /// carried it; -1 for any other line.
 /// </param>
-public sealed record QueuedLine(string Text, string Type, string Subject, long TransferPosition = -1)
+/// <param name="Seq">The number of a line of a transfer that numbers its lines, -1 otherwise.</param>
+/// <param name="IsResend">True for a line sent again, at the request of the agent or because no acknowledgement came.</param>
+/// <param name="Label">What the line is, for the log, such as the file of a <c>fileBegin</c>; null to use the type and the subject.</param>
+public sealed record QueuedLine(string Text, string Type, string Subject, long TransferPosition = -1, long Seq = -1, bool IsResend = false, string? Label = null)
 {
     /// <summary>True for a <c>fileChunk</c> line, which carries a <see cref="TransferPosition"/>.</summary>
     public bool IsChunk => TransferPosition >= 0;
@@ -25,6 +28,13 @@ public sealed record SendBatch(string Text, IReadOnlyList<QueuedLine> Lines)
 
     /// <summary>The first chunk line of the batch, or null when it holds none.</summary>
     public QueuedLine? FirstChunk => Lines.FirstOrDefault(line => line.IsChunk);
+
+    /// <summary>
+    /// The first chunk line of the batch sent for the first time, or null: an
+    /// acknowledgement of its bytes proves that this call arrived. A chunk sent again may
+    /// have arrived the first time, so its acknowledgement proves nothing about this call.
+    /// </summary>
+    public QueuedLine? FirstNewChunk => Lines.FirstOrDefault(line => line.IsChunk && !line.IsResend);
 }
 
 /// <summary>
@@ -41,6 +51,13 @@ public sealed record SendBatch(string Text, IReadOnlyList<QueuedLine> Lines)
 /// at most <see cref="MaxBatchCharacters"/> characters, except a single line longer than
 /// that, which goes alone.
 /// </para>
+/// <para>
+/// Since 0.5.1, short lines never leave alone just before a line that does not fit with
+/// them: when the lines taken so far hold less than <see cref="SmallBatchCharacters"/>, or a
+/// tenth of the limit when that is lower, and the next one does not fit, it joins them, and
+/// the batch may go past the limit by less than <see cref="SmallBatchCharacters"/>. A short call followed within a few
+/// milliseconds by a large one is the case where the control lost calls in production.
+/// </para>
 /// <para>This class is not thread safe.</para>
 /// </remarks>
 public sealed class SendQueue
@@ -56,6 +73,12 @@ public sealed class SendQueue
 
     /// <summary>Largest limit the client accepts in its settings: 1 MiB of characters.</summary>
     public const int MaxBatchLimit = 1024 * 1024;
+
+    /// <summary>
+    /// Below this many characters a batch is short: it should not leave alone just before a
+    /// large line. The lost calls of production held 100 to 400 characters.
+    /// </summary>
+    public const int SmallBatchCharacters = 1000;
 
     private readonly Queue<QueuedLine> _lines = new();
 
@@ -75,6 +98,9 @@ public sealed class SendQueue
     /// <see cref="MaxBatchLimit"/>.
     /// </summary>
     public static int ClampBatchLimit(int characters) => Math.Clamp(characters, MinBatchLimit, MaxBatchLimit);
+
+    /// <summary>Below this many characters, a batch takes the next line along even when it does not fit.</summary>
+    private int ShortBatchCharacters => Math.Min(SmallBatchCharacters, MaxBatchCharacters / 10);
 
     /// <summary>Number of lines waiting.</summary>
     public int Count => _lines.Count;
@@ -101,7 +127,8 @@ public sealed class SendQueue
 
     /// <summary>
     /// Takes the next batch: the first lines, in their order, as many as fit in
-    /// <see cref="MaxBatchCharacters"/>, and at least one. Null when nothing waits.
+    /// <see cref="MaxBatchCharacters"/>, and at least one. Short lines that would end a
+    /// batch just before a line that does not fit go with that line. Null when nothing waits.
     /// </summary>
     public SendBatch? TakeBatch()
     {
@@ -112,11 +139,22 @@ public sealed class SendQueue
 
         var lines = new List<QueuedLine>();
         long characters = 0;
-        while (_lines.TryPeek(out var next) && (lines.Count == 0 || characters + next.Text.Length <= MaxBatchCharacters))
+        while (_lines.TryPeek(out var next))
         {
+            var fits = lines.Count == 0 || characters + next.Text.Length <= MaxBatchCharacters;
+            if (!fits && characters >= ShortBatchCharacters)
+            {
+                break;
+            }
+
             _lines.Dequeue();
             lines.Add(next);
             characters += next.Text.Length;
+            if (!fits)
+            {
+                // The short lines go with the line that did not fit, and nothing more.
+                break;
+            }
         }
 
         QueuedCharacters -= characters;

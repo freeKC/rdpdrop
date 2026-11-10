@@ -255,4 +255,66 @@ public class TransferLinesTests
         Assert.Equal(0, reader.ProtocolErrorCount);
         return messages;
     }
+
+    [Fact]
+    public void A_numbered_base64_line_writes_seq_just_before_the_data()
+    {
+        var line = TransferLines.EncodeChunk(Id, 0, 0, [1, 2, 3], ChunkEncodings.Base64, seq: 5);
+
+        Assert.Equal($"{{\"type\":\"fileChunk\",\"transferId\":\"{Id}\",\"fileIndex\":0,\"offset\":0,\"seq\":5,\"data\":\"AQID\"}}\n", line);
+        Assert.Equal(new FileChunkMessage(Id, 0, 0, "AQID", Seq: 5), ReadAsAgent(line[..^1]));
+    }
+
+    [Fact]
+    public void A_numbered_u15_line_writes_seq_after_enc_and_reads_back()
+    {
+        var data = RandomBytes(1000, 3);
+
+        var line = TransferLines.EncodeChunk(Id, 2, 262_144, data, ChunkEncodings.U15, seq: 123_456_789_012);
+
+        var prefix = $"{{\"type\":\"fileChunk\",\"transferId\":\"{Id}\",\"fileIndex\":2,\"offset\":262144,\"length\":1000,\"enc\":\"u15\",\"seq\":123456789012,\"data\":\"";
+        Assert.StartsWith(prefix, line, StringComparison.Ordinal);
+        Assert.True(TransferLines.TryParseChunk(line[..^1], out var chunk));
+        Assert.Equal(123_456_789_012, chunk.Seq);
+        Assert.Equal(data, DecodeU15(chunk));
+    }
+
+    /// <summary>A client that does not number its lines writes the line of 0.5.0, which an agent 0.5.0 reads.</summary>
+    [Fact]
+    public void A_line_without_seq_keeps_the_form_of_0_5_0_and_reads_back_without_a_number()
+    {
+        var data = RandomBytes(100, 4);
+
+        var line = TransferLines.EncodeChunk(Id, 0, 0, data, ChunkEncodings.U15);
+
+        Assert.DoesNotContain("\"seq\"", line, StringComparison.Ordinal);
+        Assert.Contains("\"enc\":\"u15\",\"data\":\"", line, StringComparison.Ordinal);
+        Assert.True(TransferLines.TryParseChunk(line[..^1], out var chunk));
+        Assert.Null(chunk.Seq);
+    }
+
+    [Fact]
+    public void The_serializer_writes_seq_where_the_hand_built_line_does()
+    {
+        var message = new FileChunkMessage(Id, 0, 0, "AQID", Seq: 5);
+
+        Assert.Equal(TransferLines.EncodeChunk(Id, 0, 0, [1, 2, 3], ChunkEncodings.Base64, seq: 5), LineFraming.EncodeLine(message));
+    }
+
+    [Theory]
+    [InlineData(",\"seq\":,\"data\":\"")]
+    [InlineData(",\"seq\":-1,\"data\":\"")]
+    [InlineData(",\"seq\":1\"data\":\"")]
+    public void A_damaged_seq_is_not_read_by_hand(string damaged)
+    {
+        var line = TransferLines.EncodeChunk(Id, 0, 0, RandomBytes(10, 5), ChunkEncodings.U15, seq: 1)[..^1];
+
+        Assert.False(TransferLines.TryParseChunk(line.Replace(",\"seq\":1,\"data\":\"", damaged, StringComparison.Ordinal), out _));
+    }
+
+    [Fact]
+    public void A_negative_seq_is_refused()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => TransferLines.EncodeChunk(Id, 0, 0, [1], ChunkEncodings.Base64, seq: -1));
+    }
 }

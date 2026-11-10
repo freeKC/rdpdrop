@@ -21,6 +21,12 @@ public sealed record TransferFile(string RelativePath, long Size, DateTime? Modi
 /// each, and <see cref="EndFile"/>. Before each chunk, <see cref="CanSend"/> says whether
 /// the window has room; <see cref="OnAck"/> makes room as the agent acknowledges.
 /// </para>
+/// <para>
+/// When the transfer numbers its lines (<see cref="Sequenced"/>), each of these lines
+/// carries <c>seq</c>: 0 for <c>transferBegin</c>, then one more for each line, in the
+/// order they are built, which is the order they are sent. <see cref="LastSeq"/> gives
+/// the number of the last line built.
+/// </para>
 /// <para>This class is not thread safe.</para>
 /// </remarks>
 public sealed class TransferSender : IDisposable
@@ -57,6 +63,7 @@ public sealed class TransferSender : IDisposable
     private long _offset;
     private bool _fileOpen;
     private bool _begun;
+    private long _nextSeq;
 
     /// <param name="transferId">Identifier given by the agent.</param>
     /// <param name="files">The files, in the order they are sent.</param>
@@ -66,9 +73,10 @@ public sealed class TransferSender : IDisposable
     /// <see cref="MaxWindowBytes"/>; see <see cref="EffectiveWindow"/> for the window used.
     /// </param>
     /// <param name="chunkEncoding">How the chunks are written, one of <see cref="ChunkEncodings"/>; see <see cref="ChunkEncodings.Choose"/>.</param>
+    /// <param name="sequenced">True to number the lines, for an agent that says it reads them (<see cref="HelloMessage.ReliableTransfer"/>).</param>
     /// <exception cref="ArgumentException">A size is negative, the total does not fit, or the encoding is unknown.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The chunk size or the window is out of its bounds.</exception>
-    public TransferSender(string transferId, IReadOnlyList<TransferFile> files, int chunkSize = DefaultChunkSize, long windowBytes = DefaultWindowBytes, string chunkEncoding = ChunkEncodings.Base64)
+    public TransferSender(string transferId, IReadOnlyList<TransferFile> files, int chunkSize = DefaultChunkSize, long windowBytes = DefaultWindowBytes, string chunkEncoding = ChunkEncodings.Base64, bool sequenced = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(transferId);
         ArgumentNullException.ThrowIfNull(files);
@@ -83,6 +91,7 @@ public sealed class TransferSender : IDisposable
 
         TransferId = transferId;
         ChunkEncoding = chunkEncoding;
+        Sequenced = sequenced;
         Files = files;
         ChunkSize = chunkSize;
         WindowBytes = EffectiveWindow(windowBytes, chunkSize);
@@ -106,6 +115,15 @@ public sealed class TransferSender : IDisposable
 
     /// <summary>How the chunks are written, one of <see cref="ChunkEncodings"/>.</summary>
     public string ChunkEncoding { get; }
+
+    /// <summary>True when the lines carry their number, <c>seq</c>.</summary>
+    public bool Sequenced { get; }
+
+    /// <summary>
+    /// The number of the last line built, from 0 for <c>transferBegin</c>; -1 before it.
+    /// Counted even when <see cref="Sequenced"/> is false, without being written.
+    /// </summary>
+    public long LastSeq => _nextSeq - 1;
 
     /// <summary>Most raw bytes in one <c>fileChunk</c>.</summary>
     public int ChunkSize { get; }
@@ -156,7 +174,7 @@ public sealed class TransferSender : IDisposable
         }
 
         _begun = true;
-        return new TransferBeginMessage(TransferId, Files.Count, TotalBytes, ChunkEncoding);
+        return new TransferBeginMessage(TransferId, Files.Count, TotalBytes, ChunkEncoding, NextSeq());
     }
 
     /// <summary>Starts the next file.</summary>
@@ -174,7 +192,7 @@ public sealed class TransferSender : IDisposable
         _hash?.Dispose();
         _hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var file = Files[_current];
-        return new FileBeginMessage(TransferId, _current, file.RelativePath, file.Size, file.Modified);
+        return new FileBeginMessage(TransferId, _current, file.RelativePath, file.Size, file.Modified, NextSeq());
     }
 
     /// <summary>
@@ -200,7 +218,8 @@ public sealed class TransferSender : IDisposable
             throw new ArgumentException("The chunk goes past the announced size of the file.", nameof(data));
         }
 
-        var line = TransferLines.EncodeChunk(TransferId, _current, _offset, data, ChunkEncoding);
+        var line = TransferLines.EncodeChunk(TransferId, _current, _offset, data, ChunkEncoding, Sequenced ? _nextSeq : null);
+        _nextSeq++;
         _hash!.AppendData(data);
         _offset += data.Length;
         SentBytes += data.Length;
@@ -248,7 +267,14 @@ public sealed class TransferSender : IDisposable
         _fileOpen = false;
         EndedFiles++;
         var digest = _hash!.GetHashAndReset();
-        return new FileEndMessage(TransferId, _current, TransferHash.ToHex(digest));
+        return new FileEndMessage(TransferId, _current, TransferHash.ToHex(digest), NextSeq());
+    }
+
+    /// <summary>The number of the next line, or null when the lines are not numbered.</summary>
+    private long? NextSeq()
+    {
+        var seq = _nextSeq++;
+        return Sequenced ? seq : null;
     }
 
     /// <summary>

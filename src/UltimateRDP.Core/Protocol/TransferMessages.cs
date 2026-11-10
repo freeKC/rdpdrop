@@ -14,9 +14,14 @@ namespace UltimateRDP.Core.Protocol;
 /// How the chunks of the transfer are written, one of <see cref="ChunkEncodings"/>. Null,
 /// as a client before 0.5.0 sends it, means base64.
 /// </param>
-public sealed record TransferBeginMessage(string TransferId, int Files, long Bytes, string? ChunkEncoding = null) : Message(MessageTypes.TransferBegin)
+/// <param name="Seq">
+/// Number of the line in the transfer, from 0 for <c>transferBegin</c>, dense and in the order
+/// of sending (see <see cref="ReliableInbox"/>). Null, as a client before 0.5.1 or a client
+/// talking to an agent before 0.5.1 sends it, means the line is handled as it arrives.
+/// </param>
+public sealed record TransferBeginMessage(string TransferId, int Files, long Bytes, string? ChunkEncoding = null, long? Seq = null) : Message(MessageTypes.TransferBegin)
 {
-    internal override bool IsValid() => !string.IsNullOrEmpty(TransferId) && Files >= 0 && Bytes >= 0;
+    internal override bool IsValid() => !string.IsNullOrEmpty(TransferId) && Files >= 0 && Bytes >= 0 && Seq is null or >= 0;
 }
 
 /// <summary>
@@ -31,10 +36,11 @@ public sealed record TransferBeginMessage(string TransferId, int Files, long Byt
 /// </param>
 /// <param name="Size">Size of the file in bytes.</param>
 /// <param name="Modified">Last write time of the file, in UTC, so that the copy keeps it. Not written when null.</param>
-public sealed record FileBeginMessage(string TransferId, int FileIndex, string RelativePath, long Size, DateTime? Modified = null) : Message(MessageTypes.FileBegin)
+/// <param name="Seq">Number of the line in the transfer, see <see cref="TransferBeginMessage.Seq"/>.</param>
+public sealed record FileBeginMessage(string TransferId, int FileIndex, string RelativePath, long Size, DateTime? Modified = null, long? Seq = null) : Message(MessageTypes.FileBegin)
 {
     internal override bool IsValid() =>
-        !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && !string.IsNullOrEmpty(RelativePath) && Size >= 0;
+        !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && !string.IsNullOrEmpty(RelativePath) && Size >= 0 && Seq is null or >= 0;
 }
 
 /// <summary>
@@ -50,16 +56,21 @@ public sealed record FileBeginMessage(string TransferId, int FileIndex, string R
 /// <param name="Data">The bytes, in base64, or in the units of <see cref="U15Codec"/> when <paramref name="Enc"/> says so. Written last.</param>
 /// <param name="Length">The number of bytes, which ends the data of <see cref="ChunkEncodings.U15"/>. Not written when null, as for base64.</param>
 /// <param name="Enc">The encoding of <paramref name="Data"/>, one of <see cref="ChunkEncodings"/>. Not written when null, which means base64.</param>
+/// <param name="Seq">
+/// Number of the line in the transfer, see <see cref="TransferBeginMessage.Seq"/>. Written
+/// after the other fields and before <paramref name="Data"/>.
+/// </param>
 public sealed record FileChunkMessage(
     string TransferId,
     int FileIndex,
     long Offset,
     [property: System.Text.Json.Serialization.JsonPropertyOrder(1)] string Data,
     int? Length = null,
-    string? Enc = null) : Message(MessageTypes.FileChunk)
+    string? Enc = null,
+    long? Seq = null) : Message(MessageTypes.FileChunk)
 {
     internal override bool IsValid() =>
-        !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && Offset >= 0 && Data is not null && Length is null or >= 0;
+        !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && Offset >= 0 && Data is not null && Length is null or >= 0 && Seq is null or >= 0;
 }
 
 /// <summary>
@@ -69,10 +80,11 @@ public sealed record FileChunkMessage(
 /// <param name="TransferId">Identifier of the transfer.</param>
 /// <param name="FileIndex">Position of the file in the transfer.</param>
 /// <param name="Sha256">SHA-256 of the whole file, 64 hexadecimal digits in lower case.</param>
-public sealed record FileEndMessage(string TransferId, int FileIndex, string Sha256) : Message(MessageTypes.FileEnd)
+/// <param name="Seq">Number of the line in the transfer, see <see cref="TransferBeginMessage.Seq"/>.</param>
+public sealed record FileEndMessage(string TransferId, int FileIndex, string Sha256, long? Seq = null) : Message(MessageTypes.FileEnd)
 {
     internal override bool IsValid() =>
-        !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && TransferHash.IsValidHex(Sha256);
+        !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && TransferHash.IsValidHex(Sha256) && Seq is null or >= 0;
 }
 
 /// <summary>
@@ -95,9 +107,26 @@ public sealed record TransferCancelMessage(string TransferId, string? Reason = n
 /// <param name="TransferId">Identifier of the transfer.</param>
 /// <param name="FileIndex">Position of the file in the transfer.</param>
 /// <param name="Received">Bytes of this file received and written so far.</param>
-public sealed record FileAckMessage(string TransferId, int FileIndex, long Received) : Message(MessageTypes.FileAck)
+/// <param name="Seq">
+/// Since 0.5.1, for a transfer whose lines carry a number: every line up to this number was
+/// processed, so the client no longer needs to keep them for a resend. Not written when null.
+/// </param>
+public sealed record FileAckMessage(string TransferId, int FileIndex, long Received, long? Seq = null) : Message(MessageTypes.FileAck)
 {
-    internal override bool IsValid() => !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && Received >= 0;
+    internal override bool IsValid() => !string.IsNullOrEmpty(TransferId) && FileIndex >= 0 && Received >= 0 && Seq is null or >= 0;
+}
+
+/// <summary>
+/// Sent by the agent since 0.5.1 when lines of a transfer are missing: a later line arrived
+/// first, so the lines from <see cref="From"/> to <see cref="To"/> were lost on the way. The
+/// client sends them again, in order. See <see cref="ReliableInbox"/>.
+/// </summary>
+/// <param name="TransferId">Identifier of the transfer.</param>
+/// <param name="From">Number of the first missing line.</param>
+/// <param name="To">Number of the last missing line, at least <paramref name="From"/>.</param>
+public sealed record TransferResendMessage(string TransferId, long From, long To) : Message(MessageTypes.TransferResend)
+{
+    internal override bool IsValid() => !string.IsNullOrEmpty(TransferId) && From >= 0 && To >= From;
 }
 
 /// <summary>

@@ -67,16 +67,18 @@ public sealed class SentDataRetention<T>
 
     /// <summary>
     /// Keeps a send. <paramref name="firstChunk"/> is the first chunk line of the send, or
-    /// null when it holds none. Returns the sends to release because more than
-    /// <see cref="MaxRetainedBytes"/> are kept, oldest first; the new one is kept even when
-    /// it is larger than the limit on its own.
+    /// null when it holds none. <paramref name="holdLong"/> keeps a send without such a
+    /// chunk for <see cref="ChunkHoldTime"/>, without release by an acknowledgement: a send
+    /// of chunks sent again, which may wait behind a full window. Returns the sends to
+    /// release because more than <see cref="MaxRetainedBytes"/> are kept, oldest first; the
+    /// new one is kept even when it is larger than the limit on its own.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="bytes"/> is negative.</exception>
-    public IReadOnlyList<T> Add(T item, long bytes, long nowMilliseconds, QueuedLine? firstChunk)
+    public IReadOnlyList<T> Add(T item, long bytes, long nowMilliseconds, QueuedLine? firstChunk, bool holdLong = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(bytes);
         var chunk = firstChunk is { IsChunk: true };
-        var hold = chunk ? ChunkHoldTime : HoldTime;
+        var hold = chunk || holdLong ? ChunkHoldTime : HoldTime;
         _entries.Add(new Entry(item, bytes, nowMilliseconds + (long)hold.TotalMilliseconds, chunk ? firstChunk!.Subject : null, chunk ? firstChunk!.TransferPosition : -1));
         RetainedBytes += bytes;
         var count = 0;

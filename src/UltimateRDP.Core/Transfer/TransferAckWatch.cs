@@ -20,6 +20,12 @@ public enum TransferAckTimeout
 /// client gives up when it waits for acknowledgements (the window is full, or every file
 /// went out) and none came for <see cref="AckTimeout"/>.
 /// </summary>
+/// <remarks>
+/// Since 0.5.1, when the lines of the transfer are numbered, a client that waits and gets
+/// no acknowledgement for <see cref="ProbeInterval"/> sends its newest line again
+/// (<see cref="ProbeDue"/>): if the last call was lost, nothing after it shows the agent a
+/// gap, and this line does. The two timeouts stay as a last resort.
+/// </remarks>
 /// <remarks>Times are milliseconds of any steady clock. This class is not thread safe.</remarks>
 public sealed class TransferAckWatch
 {
@@ -29,7 +35,12 @@ public sealed class TransferAckWatch
     /// <summary>Longest wait without any acknowledgement while the client waits for one.</summary>
     public static readonly TimeSpan AckTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>Silence after which a waiting client sends its newest line again.</summary>
+    public static readonly TimeSpan ProbeInterval = TimeSpan.FromSeconds(2);
+
     private long _lastAck;
+    private long _lastChunkSent;
+    private long _lastProbe;
     private long? _firstChunkSent;
 
     /// <param name="startMilliseconds">When the transfer began; the silence is counted from there until the first acknowledgement.</param>
@@ -44,14 +55,38 @@ public sealed class TransferAckWatch
     /// <summary>When the first chunk went out, or null before.</summary>
     public long? FirstChunkSent => _firstChunkSent;
 
-    /// <summary>A chunk went out at <paramref name="nowMilliseconds"/>; only the first one counts.</summary>
-    public void OnChunkSent(long nowMilliseconds) => _firstChunkSent ??= nowMilliseconds;
+    /// <summary>Times <see cref="ProbeDue"/> said yes.</summary>
+    public int Probes { get; private set; }
+
+    /// <summary>A chunk went out at <paramref name="nowMilliseconds"/>.</summary>
+    public void OnChunkSent(long nowMilliseconds)
+    {
+        _firstChunkSent ??= nowMilliseconds;
+        _lastChunkSent = nowMilliseconds;
+    }
 
     /// <summary>The agent acknowledged bytes at <paramref name="nowMilliseconds"/>.</summary>
     public void OnAck(long nowMilliseconds)
     {
         HasAck = true;
         _lastAck = nowMilliseconds;
+    }
+
+    /// <summary>
+    /// True when the client should send its newest line again: it waits
+    /// (<paramref name="waitingForAck"/>) and nothing was acknowledged, sent or probed for
+    /// <see cref="ProbeInterval"/>. Counts the probe when it says yes.
+    /// </summary>
+    public bool ProbeDue(long nowMilliseconds, bool waitingForAck)
+    {
+        if (!waitingForAck || nowMilliseconds - Math.Max(_lastAck, Math.Max(_lastChunkSent, _lastProbe)) < ProbeInterval.TotalMilliseconds)
+        {
+            return false;
+        }
+
+        _lastProbe = nowMilliseconds;
+        Probes++;
+        return true;
     }
 
     /// <summary>

@@ -125,21 +125,36 @@ internal sealed class SimulatedChannel
     /// <summary>Changes a line on its way to the agent, by its position from zero.</summary>
     public Func<int, string, string>? Tamper { get; set; }
 
+    /// <summary>Loses a whole call on its way to the agent, from its position and its text, as the control did in production.</summary>
+    public Func<int, string, bool>? LoseCall { get; set; }
+
+    /// <summary>Delivers a call twice to the agent, from its position and its text.</summary>
+    public Func<int, string, bool>? DuplicateCall { get; set; }
+
     public int LinesSent { get; private set; }
 
     public long CharactersSent { get; private set; }
 
+    /// <summary>Calls lost on the way to the agent.</summary>
+    public int CallsLost { get; private set; }
+
     public int PendingForClient => _toClient.Count;
 
-    /// <summary>The client hands one line to the control.</summary>
+    /// <summary>The agent sends a message outside of a read, from a timer.</summary>
+    public void SendFromAgent(Message message) => _toClient.Enqueue(ToControlString(LineFraming.EncodeBytes(message, _agentModel)));
+
+    /// <summary>The client hands one line, or one call of several lines, to the control.</summary>
     public void SendFromClient(string line)
     {
         var position = LinesSent++;
         CharactersSent += line.Length;
-        if (LostLines.Contains(position))
+        if (LostLines.Contains(position) || LoseCall?.Invoke(position, line) == true)
         {
+            CallsLost++;
             return;
         }
+
+        var twice = DuplicateCall?.Invoke(position, line) == true;
 
         if (Tamper is not null)
         {
@@ -152,9 +167,12 @@ internal sealed class SimulatedChannel
         var bytes = _model == ChannelByteModel.OneBytePerChar
             ? Encoding.Latin1.GetBytes(line)
             : MemoryMarshal.AsBytes(line.AsSpan()).ToArray();
-        for (var start = 0; start < bytes.Length; start += AgentReadBlock)
+        for (var copy = twice ? 2 : 1; copy > 0; copy--)
         {
-            AgentRead(bytes.AsSpan(start, Math.Min(AgentReadBlock, bytes.Length - start)));
+            for (var start = 0; start < bytes.Length; start += AgentReadBlock)
+            {
+                AgentRead(bytes.AsSpan(start, Math.Min(AgentReadBlock, bytes.Length - start)));
+            }
         }
     }
 
@@ -214,35 +232,74 @@ internal sealed class SimulatedChannel
         : new string(MemoryMarshal.Cast<byte, char>(bytes));
 }
 
-/// <summary>Drives a whole transfer through a <see cref="SimulatedChannel"/>.</summary>
+/// <summary>
+/// Drives a whole transfer through a <see cref="SimulatedChannel"/>. With
+/// <c>reliable</c>, the lines are numbered, the client keeps them in a
+/// <see cref="ReliableOutbox"/>, and the agent puts them back in order with a
+/// <see cref="ReliableInbox"/>, as the client and the agent of 0.5.1 do. Time only passes
+/// when the client has nothing to do (<see cref="Idle"/>), in steps of
+/// <see cref="IdleStepMilliseconds"/>.
+/// </summary>
 internal sealed class SimulatedTransfer
 {
-    public SimulatedTransfer(ChannelByteModel model, IReadOnlyList<TransferItem> items, IReadOnlyList<(TransferFile File, byte[] Data)> files, ITransferStorage storage, int chunkSize = TransferSender.DefaultChunkSize, long windowBytes = TransferSender.DefaultWindowBytes, string chunkEncoding = ChunkEncodings.Base64)
+    public const int IdleStepMilliseconds = 100;
+
+    /// <summary>Most idle steps in one run: two simulated minutes.</summary>
+    public const int MaxIdleSteps = 1200;
+
+    private int _idleSteps;
+
+    public SimulatedTransfer(ChannelByteModel model, IReadOnlyList<TransferItem> items, IReadOnlyList<(TransferFile File, byte[] Data)> files, ITransferStorage storage, int chunkSize = TransferSender.DefaultChunkSize, long windowBytes = TransferSender.DefaultWindowBytes, string chunkEncoding = ChunkEncodings.Base64, bool reliable = false)
     {
         Files = files;
         Channel = new SimulatedChannel(model);
-        Sender = new TransferSender("t1", [.. files.Select(file => file.File)], chunkSize, windowBytes, chunkEncoding);
+        Sender = new TransferSender("t1", [.. files.Select(file => file.File)], chunkSize, windowBytes, chunkEncoding, reliable);
         Receiver = new TransferReceiver("t1", items, storage, () => Environment.TickCount64);
+        Watch = new TransferAckWatch(0);
+        if (reliable)
+        {
+            Outbox = new ReliableOutbox();
+            Inbox = new ReliableInbox("t1");
+        }
+
         Channel.Agent = message =>
         {
-            var ack = Receiver.Handle(message);
             var replies = new List<Message>();
-            if (ack is not null)
+            if (Inbox is not null && ReliableInbox.SeqOf(message) is { } seq)
             {
-                replies.Add(ack);
-            }
-
-            if (Receiver.IsFinished && !ResultSent)
-            {
-                ResultSent = true;
-                replies.Add(new TransferResultMessage("t1", Receiver.State switch
+                // As StagedTransfer does on the agent.
+                var step = Inbox.Accept(message, Clock);
+                if (step.Duplicate && seq == Inbox.Expected - 1 && Receiver.CurrentAck() is { } current)
                 {
-                    TransferState.Succeeded => DropStatus.Ok,
-                    TransferState.Cancelled => DropStatus.Cancelled,
-                    _ => DropStatus.Error,
-                }, Receiver.FailureDetail, Receiver.ReceivedBytes, Receiver.Seconds));
+                    replies.Add(current with { Seq = seq });
+                }
+
+                foreach (var ready in step.Ready)
+                {
+                    HandleInOrder(ready, replies);
+                    if (Receiver.IsFinished)
+                    {
+                        break;
+                    }
+                }
+
+                if (!Receiver.IsFinished && step.Request is { } request)
+                {
+                    Requests.Add(request);
+                    replies.Add(request);
+                }
+
+                if (step.Failed)
+                {
+                    Receiver.Cancel();
+                }
+            }
+            else
+            {
+                HandleInOrder(message, replies);
             }
 
+            AddResultIfOver(replies);
             return replies;
         };
         Channel.Client = message =>
@@ -251,7 +308,17 @@ internal sealed class SimulatedTransfer
             {
                 case FileAckMessage ack:
                     Assert.True(Sender.OnAck(ack));
+                    if (ack.Seq is { } seq)
+                    {
+                        Outbox?.Acknowledge(seq);
+                    }
+
+                    Watch.OnAck(Clock);
                     Acks++;
+                    break;
+                case TransferResendMessage request:
+                    Assert.NotNull(Outbox);
+                    SendAgain(Outbox.Take(request.From, request.To));
                     break;
                 case TransferResultMessage result:
                     Result = result;
@@ -267,6 +334,23 @@ internal sealed class SimulatedTransfer
     public TransferSender Sender { get; }
 
     public TransferReceiver Receiver { get; }
+
+    public TransferAckWatch Watch { get; }
+
+    /// <summary>The lines kept by the client, when they are numbered.</summary>
+    public ReliableOutbox? Outbox { get; }
+
+    /// <summary>The order of the lines on the agent, when they are numbered.</summary>
+    public ReliableInbox? Inbox { get; }
+
+    /// <summary>The requests of the agent, in their order.</summary>
+    public List<TransferResendMessage> Requests { get; } = [];
+
+    /// <summary>Simulated milliseconds, which only pass in <see cref="Idle"/>.</summary>
+    public long Clock { get; private set; }
+
+    /// <summary>True while the client hands lines sent again to the channel.</summary>
+    public bool SendingAgain { get; private set; }
 
     public TransferResultMessage? Result { get; private set; }
 
@@ -286,6 +370,12 @@ internal sealed class SimulatedTransfer
     /// </summary>
     public SendQueue? Batching { get; set; }
 
+    /// <summary>
+    /// With <see cref="Batching"/>, sends transferBegin and fileBegin of the first file in a
+    /// call of their own before the first chunk, as the client of 0.5.0 did in production.
+    /// </summary>
+    public bool FirstLinesAlone { get; set; }
+
     /// <summary>Runs the transfer; <paramref name="cancelAfterChunks"/> stops it with transferCancel.</summary>
     public void Run(int? cancelAfterChunks = null)
     {
@@ -294,6 +384,11 @@ internal sealed class SimulatedTransfer
         foreach (var (_, data) in Files)
         {
             Send(Sender.BeginFile());
+            if (FirstLinesAlone && chunks == 0)
+            {
+                Flush();
+            }
+
             for (var offset = 0; offset < data.Length; offset += Sender.ChunkSize)
             {
                 if (Result is not null)
@@ -306,9 +401,9 @@ internal sealed class SimulatedTransfer
                 {
                     Flush();
                     WindowWaits++;
-                    if (Channel.DeliverToClient() == 0)
+                    if (Channel.DeliverToClient() == 0 && !Idle())
                     {
-                        // Nothing on its way: the agent stopped acknowledging, or failed.
+                        // Nothing on its way and nothing more to try: the agent stopped acknowledging, or failed.
                         return;
                     }
 
@@ -327,7 +422,9 @@ internal sealed class SimulatedTransfer
                 }
 
                 MostInFlight = Math.Max(MostInFlight, Sender.InFlightBytes + count);
-                Send(Sender.EncodeChunk(data.AsSpan(offset, count)));
+                var line = Sender.EncodeChunk(data.AsSpan(offset, count));
+                Emit(new QueuedLine(line, MessageTypes.FileChunk, "t1", Sender.SentBytes, Sender.Sequenced ? Sender.LastSeq : -1));
+                Watch.OnChunkSent(Clock);
                 chunks++;
             }
 
@@ -336,19 +433,104 @@ internal sealed class SimulatedTransfer
 
         Flush();
         Channel.DeliverToClient();
+        while (Result is null && (Channel.DeliverToClient() > 0 || Idle()))
+        {
+        }
     }
 
-    private void Send(Message message) => Send(LineFraming.EncodeLine(message), message.Type);
-
-    private void Send(string line, string type = MessageTypes.FileChunk)
+    /// <summary>
+    /// The client has nothing to do: time passes. The agent asks again for missing lines
+    /// after a silence, and the client sends its newest line again when no acknowledgement
+    /// came. Returns false when the lines are not numbered, or after <see cref="MaxIdleSteps"/>.
+    /// </summary>
+    public bool Idle()
     {
-        if (Batching is null)
+        if (Inbox is null || Outbox is null || ++_idleSteps > MaxIdleSteps)
         {
-            Channel.SendFromClient(line);
+            return false;
+        }
+
+        Clock += IdleStepMilliseconds;
+        if (!Receiver.IsFinished)
+        {
+            var step = Inbox.Check(Clock);
+            if (step.Request is { } request)
+            {
+                Requests.Add(request);
+                Channel.SendFromAgent(request);
+            }
+
+            if (step.Failed)
+            {
+                Receiver.Cancel();
+                var replies = new List<Message>();
+                AddResultIfOver(replies);
+                replies.ForEach(Channel.SendFromAgent);
+            }
+        }
+
+        if (Watch.ProbeDue(Clock, waitingForAck: true) && Outbox.TakeNewest() is { } newest)
+        {
+            SendAgain([newest]);
+        }
+
+        Channel.DeliverToClient();
+        return true;
+    }
+
+    private void HandleInOrder(Message message, List<Message> replies)
+    {
+        if (Receiver.Handle(message) is { } ack)
+        {
+            replies.Add(ReliableInbox.SeqOf(message) is { } seq ? ack with { Seq = seq } : ack);
+        }
+    }
+
+    private void AddResultIfOver(List<Message> replies)
+    {
+        if (!Receiver.IsFinished || ResultSent)
+        {
             return;
         }
 
-        Batching.Enqueue(new QueuedLine(line, type, "t1"));
+        ResultSent = true;
+        replies.Add(new TransferResultMessage("t1", Receiver.State switch
+        {
+            TransferState.Succeeded => DropStatus.Ok,
+            TransferState.Cancelled when Inbox?.Failure is null or InboxFailure.None => DropStatus.Cancelled,
+            _ => DropStatus.Error,
+        }, Receiver.FailureDetail ?? Inbox?.FailureDetail, Receiver.ReceivedBytes, Receiver.Seconds));
+    }
+
+    private void SendAgain(IReadOnlyList<QueuedLine> lines)
+    {
+        SendingAgain = true;
+        foreach (var line in lines)
+        {
+            Emit(line);
+        }
+
+        Flush();
+        SendingAgain = false;
+    }
+
+    private void Send(Message message) =>
+        Emit(new QueuedLine(LineFraming.EncodeLine(message), message.Type, "t1", Seq: ReliableInbox.SeqOf(message) ?? -1));
+
+    private void Emit(QueuedLine line)
+    {
+        if (line.Seq >= 0 && !line.IsResend)
+        {
+            Outbox!.Add(line);
+        }
+
+        if (Batching is null)
+        {
+            Channel.SendFromClient(line.Text);
+            return;
+        }
+
+        Batching.Enqueue(line);
         while (Batching.IsOverLimit)
         {
             Channel.SendFromClient(Batching.TakeBatch()!.Text);

@@ -243,4 +243,59 @@ public class TransferMessageTests
         Assert.Null(ChannelByteModelNames.ToName(ChannelByteModel.Unknown));
         Assert.Equal(ChannelByteModel.Unknown, ChannelByteModelNames.FromName(null));
     }
+
+    [Fact]
+    public void TransferResend_json_has_spec_shape()
+    {
+        var json = ToJson(new TransferResendMessage("t1", 1, 2));
+
+        Assert.Equal("transferResend", json.GetProperty("type").GetString());
+        Assert.Equal("t1", json.GetProperty("transferId").GetString());
+        Assert.Equal(1, json.GetProperty("from").GetInt64());
+        Assert.Equal(2, json.GetProperty("to").GetInt64());
+        Assert.Equal(new TransferResendMessage("t1", 1, 2), RoundTrip(new TransferResendMessage("t1", 1, 2)));
+        Assert.Equal("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":1,\"to\":2}\n", LineFraming.EncodeLine(new TransferResendMessage("t1", 1, 2)));
+    }
+
+    [Theory]
+    [InlineData("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":2,\"to\":1}")]
+    [InlineData("{\"type\":\"transferResend\",\"transferId\":\"t1\",\"from\":-1,\"to\":1}")]
+    [InlineData("{\"type\":\"transferResend\",\"from\":0,\"to\":1}")]
+    [InlineData("{\"type\":\"fileAck\",\"transferId\":\"t1\",\"fileIndex\":0,\"received\":1,\"seq\":-1}")]
+    [InlineData("{\"type\":\"fileChunk\",\"transferId\":\"t1\",\"fileIndex\":0,\"offset\":0,\"seq\":-2,\"data\":\"AA==\"}")]
+    public void Malformed_numbers_are_rejected(string json)
+    {
+        Assert.Null(Parse(json));
+    }
+
+    [Fact]
+    public void Numbered_lines_and_acknowledgements_round_trip()
+    {
+        Assert.Equal(new TransferBeginMessage("t1", 1, 2, ChunkEncodings.U15, 0), RoundTrip(new TransferBeginMessage("t1", 1, 2, ChunkEncodings.U15, 0)));
+        Assert.Equal(new FileBeginMessage("t1", 0, "a", 2, Seq: 1), RoundTrip(new FileBeginMessage("t1", 0, "a", 2, Seq: 1)));
+        Assert.Equal(new FileEndMessage("t1", 0, Hash, 9), RoundTrip(new FileEndMessage("t1", 0, Hash, 9)));
+        Assert.Equal(new FileAckMessage("t1", 0, 2, 9), RoundTrip(new FileAckMessage("t1", 0, 2, 9)));
+        Assert.Equal(9, ToJson(new FileAckMessage("t1", 0, 2, 9)).GetProperty("seq").GetInt64());
+        Assert.False(ToJson(new FileAckMessage("t1", 0, 2)).TryGetProperty("seq", out _));
+    }
+
+    /// <summary>An agent 0.5.0 reads numbered lines of base64 and the short lines with the JSON reader, which skips the field.</summary>
+    [Fact]
+    public void A_reader_that_does_not_know_seq_reads_the_rest_of_the_line()
+    {
+        var json = "{\"type\":\"fileBegin\",\"transferId\":\"t1\",\"fileIndex\":0,\"relativePath\":\"a\",\"size\":2,\"seq\":1,\"later\":true}";
+
+        Assert.Equal(new FileBeginMessage("t1", 0, "a", 2, Seq: 1), Parse(json));
+    }
+
+    [Fact]
+    public void The_hello_of_the_agent_says_it_reads_numbered_lines()
+    {
+        var hello = HelloMessage.FromAgent("0.5.1", true, ChannelByteModel.Utf16, reliableTransfer: true);
+
+        Assert.True(ToJson(hello).GetProperty("reliableTransfer").GetBoolean());
+        Assert.Equal(hello, RoundTrip(hello));
+        Assert.False(ToJson(HelloMessage.FromAgent("0.5.0", true)).TryGetProperty("reliableTransfer", out _));
+        Assert.Null(Assert.IsType<HelloMessage>(Parse("{\"type\":\"hello\",\"version\":1,\"agentVersion\":\"0.5.0\"}")).ReliableTransfer);
+    }
 }

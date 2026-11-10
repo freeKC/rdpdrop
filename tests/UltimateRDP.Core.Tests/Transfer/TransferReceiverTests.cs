@@ -486,4 +486,25 @@ public class TransferReceiverTests
         Assert.Equal(TransferFailure.BadData, receiver.Failure);
         Assert.Contains("is not valid u15", receiver.FailureDetail, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void The_current_acknowledgement_says_what_was_received_so_far()
+    {
+        using var receiver = Create();
+        byte[] a = [1, 2, 3];
+        receiver.Handle(new TransferBeginMessage("t1", 2, 5));
+        Assert.Null(receiver.CurrentAck());
+
+        receiver.Handle(new FileBeginMessage("t1", 0, "a.txt", 3));
+        Assert.Equal(new FileAckMessage("t1", 0, 0), receiver.CurrentAck());
+        receiver.Handle(Chunk(0, 0, [1, 2]));
+        receiver.Handle(Chunk(0, 2, [3]));
+        Assert.Equal(new FileAckMessage("t1", 0, 3), receiver.CurrentAck());
+
+        receiver.Handle(new FileEndMessage("t1", 0, Hash(a)));
+        Assert.Equal(new FileAckMessage("t1", 0, 3), receiver.CurrentAck());
+
+        receiver.Cancel();
+        Assert.Null(receiver.CurrentAck());
+    }
 }

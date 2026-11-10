@@ -56,4 +56,37 @@ public class TransferAckWatchTests
 
         Assert.Equal(TransferAckTimeout.None, watch.Check(30 * Second, waitingForAck: false));
     }
+
+    [Fact]
+    public void The_newest_line_goes_again_after_two_seconds_of_waiting_without_acknowledgement()
+    {
+        var watch = new TransferAckWatch(0);
+        watch.OnChunkSent(1 * Second);
+        watch.OnAck(2 * Second);
+
+        Assert.False(watch.ProbeDue(4 * Second, waitingForAck: false));
+        Assert.False(watch.ProbeDue((4 * Second) - 1, waitingForAck: true));
+        Assert.True(watch.ProbeDue(4 * Second, waitingForAck: true));
+        Assert.False(watch.ProbeDue(5 * Second, waitingForAck: true));
+        Assert.True(watch.ProbeDue(6 * Second, waitingForAck: true));
+        Assert.Equal(2, watch.Probes);
+
+        watch.OnChunkSent(7 * Second);
+        Assert.False(watch.ProbeDue((9 * Second) - 1, waitingForAck: true));
+        Assert.True(watch.ProbeDue(9 * Second, waitingForAck: true));
+    }
+
+    [Fact]
+    public void A_probe_does_not_delay_the_last_resort()
+    {
+        var watch = new TransferAckWatch(0);
+        watch.OnChunkSent(0);
+        watch.OnAck(1 * Second);
+        for (var second = 3; second < 61; second += 2)
+        {
+            Assert.True(watch.ProbeDue(second * Second, waitingForAck: true));
+        }
+
+        Assert.Equal(TransferAckTimeout.Silent, watch.Check((61 * Second) + 1, waitingForAck: true));
+    }
 }

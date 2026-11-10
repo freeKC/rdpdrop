@@ -147,8 +147,9 @@ public class SimulatedTransferTests(ITestOutputHelper output)
             Assert.Equal(data, storage.Content(file.RelativePath));
         }
 
-        // A chunk line longer than the limit, at 256 KiB, goes alone; every other call stays within it.
-        Assert.InRange(longest, 1, Math.Max(SendQueue.DefaultMaxBatchCharacters, transfer.Sender.LongestChunkLine));
+        // A chunk line longer than the limit, at 256 KiB, goes with the short lines just before
+        // it and nothing else; every other call stays within the limit.
+        Assert.InRange(longest, 1, Math.Max(SendQueue.DefaultMaxBatchCharacters, transfer.Sender.LongestChunkLine + SendQueue.SmallBatchCharacters));
         if (2 * transfer.Sender.LongestChunkLine <= SendQueue.DefaultMaxBatchCharacters)
         {
             Assert.True(transfer.Channel.LinesSent < transfer.Sender.ChunkLines, $"{transfer.Channel.LinesSent} calls for {transfer.Sender.ChunkLines} chunk lines.");

@@ -23,6 +23,7 @@ namespace UltimateRDP.Core.Protocol;
 [JsonDerivedType(typeof(TransferCancelMessage), MessageTypes.TransferCancel)]
 [JsonDerivedType(typeof(FileAckMessage), MessageTypes.FileAck)]
 [JsonDerivedType(typeof(TransferResultMessage), MessageTypes.TransferResult)]
+[JsonDerivedType(typeof(TransferResendMessage), MessageTypes.TransferResend)]
 public abstract record Message
 {
     /// <summary>
@@ -97,13 +98,16 @@ public static class MessageTypes
 
     /// <summary>Type of <see cref="TransferResultMessage"/>.</summary>
     public const string TransferResult = "transferResult";
+
+    /// <summary>Type of <see cref="TransferResendMessage"/>.</summary>
+    public const string TransferResend = "transferResend";
 }
 
 /// <summary>
 /// Sent by both sides. The client fills <see cref="ClientVersion"/> and
 /// <see cref="ClientLanguage"/>; the agent fills <see cref="AgentVersion"/> and
-/// <see cref="DriveRedirectionAvailable"/> and, since 0.5.0, <see cref="ClientToAgentModel"/>.
-/// Fields left null are not written.
+/// <see cref="DriveRedirectionAvailable"/>, since 0.5.0 <see cref="ClientToAgentModel"/> and
+/// since 0.5.1 <see cref="ReliableTransfer"/>. Fields left null are not written.
 /// </summary>
 /// <param name="Version">Protocol version, see <see cref="ProtocolConstants.ProtocolVersion"/>.</param>
 /// <param name="ClientVersion">Version of the client, in the hello of the client.</param>
@@ -119,13 +123,20 @@ public static class MessageTypes
 /// chunks from it (<see cref="Transfer.ChunkEncodings.Choose"/>); an agent that does not
 /// say gets base64.
 /// </param>
+/// <param name="ReliableTransfer">
+/// In the hello of the agent, since 0.5.1: true when the agent puts the lines of a transfer
+/// back in the order of their <c>seq</c> and asks for the missing ones with
+/// <see cref="TransferResendMessage"/>. Only then does the client number its lines: an agent
+/// 0.5.0 would not read a <c>u15</c> chunk line that carries a <c>seq</c>.
+/// </param>
 public sealed record HelloMessage(
     int Version,
     string? ClientVersion = null,
     string? AgentVersion = null,
     bool? DriveRedirectionAvailable = null,
     string? ClientLanguage = null,
-    string? ClientToAgentModel = null) : Message(MessageTypes.Hello)
+    string? ClientToAgentModel = null,
+    bool? ReliableTransfer = null) : Message(MessageTypes.Hello)
 {
     /// <summary>
     /// Builds the hello sent by the client.
@@ -136,13 +147,15 @@ public sealed record HelloMessage(
     /// <summary>
     /// Builds the hello sent by the agent, with the byte model it detected on the data of
     /// the client; <see cref="ChannelByteModel.Unknown"/> leaves the field out.
+    /// <paramref name="reliableTransfer"/> says that the agent reads numbered transfer lines.
     /// </summary>
-    public static HelloMessage FromAgent(string agentVersion, bool driveRedirectionAvailable, ChannelByteModel clientToAgentModel = ChannelByteModel.Unknown) =>
+    public static HelloMessage FromAgent(string agentVersion, bool driveRedirectionAvailable, ChannelByteModel clientToAgentModel = ChannelByteModel.Unknown, bool reliableTransfer = false) =>
         new(
             ProtocolConstants.ProtocolVersion,
             AgentVersion: agentVersion,
             DriveRedirectionAvailable: driveRedirectionAvailable,
-            ClientToAgentModel: ChannelByteModelNames.ToName(clientToAgentModel));
+            ClientToAgentModel: ChannelByteModelNames.ToName(clientToAgentModel),
+            ReliableTransfer: reliableTransfer ? true : null);
 }
 
 /// <summary>

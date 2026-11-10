@@ -243,4 +243,34 @@ public class TransferSenderTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new TransferSender("t1", [new TransferFile("a", 1)], TransferSender.DefaultChunkSize, TransferSender.MinWindowBytes - 1));
         Assert.Throws<ArgumentOutOfRangeException>(() => new TransferSender("t1", [new TransferFile("a", 1)], TransferSender.DefaultChunkSize, TransferSender.MaxWindowBytes + 1));
     }
+
+    [Fact]
+    public void Numbered_lines_go_from_zero_in_the_order_they_are_built()
+    {
+        using var sender = new TransferSender("t1", [new TransferFile("a.bin", 2 * Chunk), new TransferFile("b.bin", 0)], Chunk, sequenced: true);
+
+        Assert.Equal(0, sender.Begin().Seq);
+        Assert.Equal(1, sender.BeginFile().Seq);
+        Assert.Equal(2, Read(sender.EncodeChunk(new byte[Chunk])).Seq);
+        Assert.Equal(3, Read(sender.EncodeChunk(new byte[Chunk])).Seq);
+        Assert.Equal(4, sender.EndFile().Seq);
+        Assert.Equal(5, sender.BeginFile().Seq);
+        Assert.Equal(6, sender.EndFile().Seq);
+        Assert.Equal(6, sender.LastSeq);
+        Assert.True(sender.Sequenced);
+    }
+
+    [Fact]
+    public void Lines_are_not_numbered_unless_asked()
+    {
+        using var sender = new TransferSender("t1", [new TransferFile("a.bin", 10)], Chunk);
+
+        Assert.Null(sender.Begin().Seq);
+        Assert.Null(sender.BeginFile().Seq);
+        var line = sender.EncodeChunk(new byte[10]);
+        Assert.Null(Read(line).Seq);
+        Assert.DoesNotContain("seq", line, StringComparison.Ordinal);
+        Assert.Null(sender.EndFile().Seq);
+        Assert.Equal(3, sender.LastSeq);
+    }
 }

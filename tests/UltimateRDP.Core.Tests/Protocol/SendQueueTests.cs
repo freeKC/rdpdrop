@@ -178,4 +178,65 @@ public class SendQueueTests
         Assert.Null(batch.FirstChunk);
         Assert.False(batch.Lines[0].IsChunk);
     }
+
+    /// <summary>Short lines never leave alone just before a line that does not fit with them, the case of the lost calls.</summary>
+    [Fact]
+    public void Short_lines_go_with_a_line_longer_than_the_limit()
+    {
+        var queue = new SendQueue();
+        var fileEnd = Line(MessageTypes.FileEnd, 150, "t1");
+        var fileBegin = Line(MessageTypes.FileBegin, 200, "t1");
+        var chunk = Line(MessageTypes.FileChunk, 349_528, "t1", 0);
+        var after = Line(MessageTypes.FileEnd, 150, "t1");
+        queue.Enqueue(fileEnd);
+        queue.Enqueue(fileBegin);
+        queue.Enqueue(chunk);
+        queue.Enqueue(after);
+
+        Assert.Equal([fileEnd, fileBegin, chunk], queue.TakeBatch()!.Lines);
+        Assert.Equal([after], queue.TakeBatch()!.Lines);
+    }
+
+    [Fact]
+    public void Short_lines_go_with_a_line_that_does_not_fit_beside_them()
+    {
+        var queue = new SendQueue();
+        var begin = Line(MessageTypes.TransferBegin, 120, "t1");
+        var chunk = Line(MessageTypes.FileChunk, 199_950, "t1", 0);
+        queue.Enqueue(begin);
+        queue.Enqueue(chunk);
+
+        var batch = queue.TakeBatch()!;
+
+        Assert.Equal([begin, chunk], batch.Lines);
+        Assert.InRange(batch.Text.Length, SendQueue.DefaultMaxBatchCharacters + 1, SendQueue.DefaultMaxBatchCharacters + SendQueue.SmallBatchCharacters);
+    }
+
+    [Fact]
+    public void A_batch_of_a_thousand_characters_or_more_stays_within_the_limit()
+    {
+        var queue = new SendQueue();
+        var lines = Line(MessageTypes.FileChunk, 1_000, "t1", 0);
+        var chunk = Line(MessageTypes.FileChunk, 199_950, "t1", 1);
+        queue.Enqueue(lines);
+        queue.Enqueue(chunk);
+
+        Assert.Equal([lines], queue.TakeBatch()!.Lines);
+        Assert.Equal([chunk], queue.TakeBatch()!.Lines);
+    }
+
+    [Fact]
+    public void A_chunk_sent_again_does_not_count_as_a_new_chunk()
+    {
+        var queue = new SendQueue();
+        var again = Line(MessageTypes.FileChunk, 100, "t1", 0) with { IsResend = true };
+        var fresh = Line(MessageTypes.FileChunk, 100, "t1", 1);
+        queue.Enqueue(again);
+        queue.Enqueue(fresh);
+
+        var batch = queue.TakeBatch()!;
+
+        Assert.Same(again, batch.FirstChunk);
+        Assert.Same(fresh, batch.FirstNewChunk);
+    }
 }
