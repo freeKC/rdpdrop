@@ -1820,13 +1820,23 @@ about 10 ms by a call of 140 000 to 350 000 characters, is lost in its
 entirety between the Remote Desktop control and `WTSVirtualChannelRead` of the
 agent. The call before it and the calls after it arrive intact and in order,
 the control returns without an error, and nothing is logged anywhere. The
-incidents documented with the logs of both sides:
+four incidents, documented with the logs of both sides:
 
 | Version | Byte model of the data of the client | Call lost | Next call |
 | --- | --- | --- | --- |
-| 0.4.0 | UTF-16 | `transferBegin`, 101 characters, 9 ms after `drop` | `fileBegin`, then a chunk line of 350 000 characters |
-| 0.4.1 (client 0.4.2) | one byte per character | `fileBegin`, about 200 characters | a chunk line of 174 868 characters, 8 ms later |
+| 0.4.0, 2026-11-09 13:50 | UTF-16 | `transferBegin`, 101 characters, 9 ms after `drop` | `fileBegin`, then a chunk line of 350 000 characters |
+| 0.4.0, 2026-11-09 13:50:42 to 13:51:43 | UTF-16 | large calls lost entirely: every chunk call, one line of about 350 000 characters (256 KiB of base64, about 700 KB on the wire) | none reached the agent after `transferBegin`; 4 MiB in flight, no acknowledgement for 60 s, then the client cancelled |
+| 0.4.1 (client 0.4.2), 2026-11-09 15:47 | one byte per character | `fileBegin`, about 200 characters | a chunk line of 174 868 characters, 8 ms later |
 | 0.5.0, 2026-11-10 11:03:46 | UTF-16 | `transferBegin` and `fileBegin` in one call, 314 characters | two `u15` chunks, 140 081 characters, 8 ms later |
+
+The second incident has another profile: calls above roughly 200 000
+characters in the UTF-16 model were not delivered at all. Its standing
+mitigation is the limit of 200 000 characters per call since 0.4.3, with
+calls of 174 868 characters seen to work; 0.5.1 keeps it. The three other
+incidents are the pattern of the short call followed by a large one, which
+the numbered lines below now recover. In every incident the loss is a whole
+call, never a part of a line: the line reader of the agent never saw a cut
+or damaged line.
 
 Keeping the strings alive (0.4.3) did not prevent it, and neither did the
 grouping of lines into calls: in the last incident the queue was sent before
