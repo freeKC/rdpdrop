@@ -48,6 +48,13 @@ namespace UltimateRDP.Client.Channel;
 /// fails empties the queue and raises <see cref="SendFailed"/> with the lines lost.
 /// </para>
 /// <para>
+/// Since 0.5.1, when the queue is about to send less than
+/// <see cref="SendQueue.SmallBatchCharacters"/> and <see cref="LargeLineComing"/> says that
+/// the transfer thread is about to hand over a chunk, the send waits for that chunk, at
+/// most <see cref="ShapingWaitMilliseconds"/>, so that the short lines and the chunk share
+/// one call.
+/// </para>
+/// <para>
 /// Every call of the control is timed. During a transfer, between
 /// <see cref="BeginTransferMeasure"/> and <see cref="EndTransferMeasure"/>, the calls are
 /// summed up (<see cref="ChannelCallStats"/>) and each acknowledgement is matched with the
@@ -57,12 +64,16 @@ namespace UltimateRDP.Client.Channel;
 /// </remarks>
 internal sealed class AgentLink : IDisposable
 {
+    /// <summary>Longest wait of short lines for a chunk that is about to be handed over.</summary>
+    public const int ShapingWaitMilliseconds = 20;
+
     private const int HelloIntervalMilliseconds = 2000;
     private const string FileAckPrefix = "{\"type\":\"" + MessageTypes.FileAck + "\"";
     private static readonly TimeSpan DiscoveryPeriod = TimeSpan.FromSeconds(60);
 
     private readonly RdpControl _control;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = HelloIntervalMilliseconds };
+    private readonly System.Windows.Forms.Timer _shapingTimer = new() { Interval = ShapingWaitMilliseconds };
     private readonly ChannelReceiver _receiver = new();
     private readonly SendQueue _queue;
     private readonly OwnedChannelData _data;
@@ -71,6 +82,7 @@ internal sealed class AgentLink : IDisposable
     private int _hellosSent;
     private bool _connected;
     private bool _flushPosted;
+    private long? _shapingDeadline;
     private long _channelCalls;
     private TransferMeasure? _measure;
 
@@ -84,6 +96,7 @@ internal sealed class AgentLink : IDisposable
         _data = new OwnedChannelData(control, SentDataRetention<IntPtr>.LimitForWindow(windowBytes));
         _control.OnChannelReceivedData += OnChannelReceivedData;
         _timer.Tick += (_, _) => OnTimer();
+        _shapingTimer.Tick += (_, _) => OnShapingTimeout();
     }
 
     /// <summary>Raised when <see cref="State"/> changes, and when the agent answers again.</summary>
@@ -103,6 +116,9 @@ internal sealed class AgentLink : IDisposable
 
     /// <summary>Raised for every transferResult message.</summary>
     public event EventHandler<TransferResultMessage>? TransferResultReceived;
+
+    /// <summary>Raised for every transferResend message: the agent asks for lines of a transfer again.</summary>
+    public event EventHandler<TransferResendMessage>? TransferResendReceived;
 
     /// <summary>
     /// Raised when the control refused a call: the lines of that call and every line still
@@ -127,6 +143,18 @@ internal sealed class AgentLink : IDisposable
     /// does not say.
     /// </summary>
     public ChannelByteModel ClientToAgentModel { get; private set; }
+
+    /// <summary>
+    /// True when the hello of the agent says that it reads numbered transfer lines and asks
+    /// for the missing ones, from 0.5.1; the transfers then number their lines.
+    /// </summary>
+    public bool ReliableTransfer { get; private set; }
+
+    /// <summary>
+    /// Says whether the transfer thread is about to hand over a chunk line. Short lines wait
+    /// for it, see <see cref="ShapingWaitMilliseconds"/>. Called on the UI thread.
+    /// </summary>
+    public Func<bool>? LargeLineComing { get; set; }
 
     /// <summary>
     /// Finds out, once, how strings are handed to the control, and logs it. Called before
@@ -243,23 +271,38 @@ internal sealed class AgentLink : IDisposable
     }
 
     /// <summary>
-    /// Sends a line built by <see cref="Core.Transfer.TransferSender.EncodeChunk"/>, logged at
-    /// the debug level only. <paramref name="transferPosition"/> is the bytes of the transfer
-    /// sent once this chunk is counted. Returns false when the agent is not ready.
+    /// Queues ready lines of a transfer, in their order, during the same UI message so that
+    /// they leave in the same call when they fit: the short lines that come before a chunk
+    /// travel with it. transferBegin is logged at the info level, the other lines at the
+    /// debug level, and lines sent again are counted by the caller. Returns false when the
+    /// agent is not ready; a refusal of the control comes later, through <see cref="SendFailed"/>.
     /// </summary>
-    public bool SendTransferLine(string line, string transferId, int fileIndex, long transferPosition)
+    public bool SendTransferLines(IReadOnlyList<QueuedLine> lines)
     {
         if (State != AgentState.Ready || Model == ChannelByteModel.Unknown)
         {
             return false;
         }
 
-        if (ClientLog.DebugEnabled)
+        foreach (var line in lines)
         {
-            ClientLog.Debug(Invariant($"Sent {MessageTypes.FileChunk} {transferId} file {fileIndex}, {transferPosition} bytes of the transfer, {line.Length} characters."));
+            var what = line.Label ?? $"{line.Type} {line.Subject}";
+            var seq = line.Seq >= 0 ? Invariant($" line {line.Seq}") : string.Empty;
+            var again = line.IsResend ? "Sent again" : "Sent";
+            if (line.Type == MessageTypes.TransferBegin && !line.IsResend)
+            {
+                ClientLog.Info(Invariant($"{again} {what}{seq}, {line.Text.Length} characters."));
+            }
+            else if (ClientLog.DebugEnabled)
+            {
+                var position = line.IsChunk ? Invariant($", {line.TransferPosition} bytes of the transfer") : string.Empty;
+                ClientLog.Debug(Invariant($"{again} {what}{seq}{position}, {line.Text.Length} characters."));
+            }
+
+            _queue.Enqueue(line);
         }
 
-        Enqueue(new QueuedLine(line, MessageTypes.FileChunk, transferId, transferPosition));
+        SendFullBatchesAndScheduleFlush();
         return true;
     }
 
@@ -321,6 +364,7 @@ internal sealed class AgentLink : IDisposable
     public void Dispose()
     {
         _timer.Dispose();
+        _shapingTimer.Dispose();
         _control.OnChannelReceivedData -= OnChannelReceivedData;
         _queue.Clear();
         _data.Dispose();
@@ -328,6 +372,7 @@ internal sealed class AgentLink : IDisposable
 
     private void ResetProtocol()
     {
+        StopShapingWait();
         var dropped = _queue.Clear();
         if (dropped.Count > 0)
         {
@@ -339,6 +384,7 @@ internal sealed class AgentLink : IDisposable
         AgentVersion = null;
         DriveRedirectionAvailable = null;
         ClientToAgentModel = ChannelByteModel.Unknown;
+        ReliableTransfer = false;
     }
 
     private void OnTimer()
@@ -402,6 +448,15 @@ internal sealed class AgentLink : IDisposable
     private void Enqueue(QueuedLine line)
     {
         _queue.Enqueue(line);
+        SendFullBatchesAndScheduleFlush();
+    }
+
+    /// <summary>
+    /// Sends full calls at once while more characters wait than one call may hold, and posts
+    /// a flush for the rest at the end of the current UI message.
+    /// </summary>
+    private void SendFullBatchesAndScheduleFlush()
+    {
         while (_queue.IsOverLimit)
         {
             if (!SendBatch(_queue.TakeBatch()!))
@@ -426,10 +481,20 @@ internal sealed class AgentLink : IDisposable
         _control.BeginInvoke(Flush);
     }
 
-    /// <summary>Sends every line waiting, in calls of at most the limit of the queue.</summary>
+    /// <summary>
+    /// Sends every line waiting, in calls of at most the limit of the queue, unless short
+    /// lines wait for a chunk that is about to come.
+    /// </summary>
     private void Flush()
     {
         _flushPosted = false;
+        if (MustWaitForLargeLine())
+        {
+            // The chunk queues itself and posts a new flush; the timer sends without it.
+            return;
+        }
+
+        StopShapingWait();
         while (_queue.TakeBatch() is { } batch)
         {
             if (!SendBatch(batch))
@@ -439,13 +504,66 @@ internal sealed class AgentLink : IDisposable
         }
     }
 
+    /// <summary>
+    /// True when the lines waiting are short, a chunk is about to come, and the wait of
+    /// <see cref="ShapingWaitMilliseconds"/> is not over. Starts the wait the first time.
+    /// </summary>
+    private bool MustWaitForLargeLine()
+    {
+        if (_queue.Count == 0 || _queue.QueuedCharacters >= SendQueue.SmallBatchCharacters || LargeLineComing?.Invoke() != true)
+        {
+            return false;
+        }
+
+        var now = Environment.TickCount64;
+        if (_shapingDeadline is null)
+        {
+            _shapingDeadline = now + ShapingWaitMilliseconds;
+            _shapingTimer.Start();
+            if (ClientLog.DebugEnabled)
+            {
+                ClientLog.Debug(Invariant($"{_queue.Count} short line(s) of {_queue.QueuedCharacters} characters wait for the chunk that is about to come, at most {ShapingWaitMilliseconds} ms."));
+            }
+
+            return true;
+        }
+
+        return now < _shapingDeadline;
+    }
+
+    /// <summary>The wait for a chunk is over: the short lines go without it.</summary>
+    private void OnShapingTimeout()
+    {
+        _shapingTimer.Stop();
+        if (_shapingDeadline is null)
+        {
+            return;
+        }
+
+        // Whatever the clock says, the wait is over.
+        _shapingDeadline = long.MinValue;
+        if (_queue.Count > 0 && ClientLog.DebugEnabled)
+        {
+            ClientLog.Debug(Invariant($"No chunk came within {ShapingWaitMilliseconds} ms; {_queue.Count} short line(s) go alone."));
+        }
+
+        Flush();
+    }
+
+    private void StopShapingWait()
+    {
+        _shapingDeadline = null;
+        _shapingTimer.Stop();
+    }
+
     /// <summary>One call of the control. On a failure, the queue is emptied and <see cref="SendFailed"/> raised.</summary>
     private bool SendBatch(SendBatch batch)
     {
         var first = batch.Lines[0];
         try
         {
-            var ticks = _data.Send(ProtocolConstants.ChannelName, batch.Text, batch.FirstChunk);
+            // Chunks sent again prove nothing through their acknowledgement: kept for the long time.
+            var ticks = _data.Send(ProtocolConstants.ChannelName, batch.Text, batch.FirstNewChunk, holdLong: batch.FirstChunk is not null);
             var end = Stopwatch.GetTimestamp();
             _channelCalls++;
             if (_measure is { } measure)
@@ -453,7 +571,7 @@ internal sealed class AgentLink : IDisposable
                 measure.Calls.Record(batch.Text.Length, end - ticks, end);
                 foreach (var line in batch.Lines)
                 {
-                    if (line.IsChunk && line.Subject == measure.TransferId)
+                    if (line.IsChunk && !line.IsResend && line.Subject == measure.TransferId)
                     {
                         measure.Acks.OnSent(line.TransferPosition, end);
                     }
@@ -543,6 +661,10 @@ internal sealed class AgentLink : IDisposable
                 TransferResultReceived?.Invoke(this, transfer);
                 break;
 
+            case TransferResendMessage resend:
+                TransferResendReceived?.Invoke(this, resend);
+                break;
+
             case null:
                 ClientLog.Warn(Invariant($"Protocol error: a {line.Text.Length} character line is not a valid message. Ignored."));
                 break;
@@ -570,8 +692,9 @@ internal sealed class AgentLink : IDisposable
         AgentVersion = hello.AgentVersion;
         DriveRedirectionAvailable = hello.DriveRedirectionAvailable;
         ClientToAgentModel = ChannelByteModelNames.FromName(hello.ClientToAgentModel);
+        ReliableTransfer = hello.ReliableTransfer == true;
         _timer.Stop();
-        ClientLog.Info($"Agent ready, version {hello.AgentVersion ?? "(unknown)"}, drive redirection available: {hello.DriveRedirectionAvailable?.ToString() ?? "(not said)"}, data of the client reaches the agent in the {(hello.ClientToAgentModel is null ? "(not said)" : ClientToAgentModel)} model, so transfer chunks go in {ChunkEncodings.Choose(ClientToAgentModel)}.");
+        ClientLog.Info($"Agent ready, version {hello.AgentVersion ?? "(unknown)"}, drive redirection available: {hello.DriveRedirectionAvailable?.ToString() ?? "(not said)"}, data of the client reaches the agent in the {(hello.ClientToAgentModel is null ? "(not said)" : ClientToAgentModel)} model, so transfer chunks go in {ChunkEncodings.Choose(ClientToAgentModel)}; transfer lines {(ReliableTransfer ? "numbered, the agent asks for the missing ones" : "not numbered")}.");
         State = AgentState.Ready;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

@@ -67,10 +67,12 @@ internal sealed class OwnedChannelData : IDisposable
 
     /// <summary>
     /// Sends <paramref name="text"/> on <paramref name="channelName"/>. <paramref name="firstChunk"/>
-    /// is the first chunk line of the text, or null. Returns the time spent inside the call
-    /// of the control, in ticks of <see cref="Stopwatch"/>. Throws what the control throws.
+    /// is the first chunk line of the text sent for the first time, or null.
+    /// <paramref name="holdLong"/> keeps a text of chunks sent again as long as a text of new
+    /// chunks, see <see cref="SentDataRetention{T}.Add"/>. Returns the time spent inside the
+    /// call of the control, in ticks of <see cref="Stopwatch"/>. Throws what the control throws.
     /// </summary>
-    public long Send(string channelName, string text, QueuedLine? firstChunk)
+    public long Send(string channelName, string text, QueuedLine? firstChunk, bool holdLong = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var owned = Resolve();
@@ -84,7 +86,7 @@ internal sealed class OwnedChannelData : IDisposable
         var bstr = Marshal.StringToBSTR(text);
 
         // Kept even when the call fails: nothing says that the control did not take it.
-        var evicted = _retained.Add(bstr, BstrBytes(text.Length), Environment.TickCount64, firstChunk);
+        var evicted = _retained.Add(bstr, BstrBytes(text.Length), Environment.TickCount64, firstChunk, holdLong);
         if (evicted.Count > 0)
         {
             ClientLog.Info(Invariant($"More than {_retained.MaxRetainedBytes} bytes of sent strings kept; the {evicted.Count} oldest are freed before their time."));

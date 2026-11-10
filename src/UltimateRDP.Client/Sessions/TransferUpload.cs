@@ -27,11 +27,24 @@ namespace UltimateRDP.Client.Sessions;
 /// acknowledgement <see cref="TransferAckWatch.FirstAckTimeout"/> after the first chunk
 /// went out, the upload fails, and the log says how the data was sent.
 /// </para>
+/// <para>
+/// Since 0.5.1 the short lines, transferBegin, fileBegin and fileEnd, are held until the
+/// next chunk and handed over with it, so that they leave in the same call of the control;
+/// they go on their own before the thread waits for room in the window, and at the end.
+/// With an agent that reads numbered lines (<see cref="Sequenced"/>), every line is kept in
+/// a <see cref="ReliableOutbox"/> until an acknowledgement covers it: the agent asks for
+/// missing lines (<see cref="OnResend"/>), and a thread that waits without any
+/// acknowledgement for <see cref="TransferAckWatch.ProbeInterval"/> sends its newest line
+/// again, which shows the agent a loss at the end of what was sent.
+/// </para>
 /// </remarks>
 internal sealed class TransferUpload
 {
     private const int ReadBufferSize = 1024 * 1024;
     private const int WaitSliceMilliseconds = 500;
+
+    /// <summary>Most characters of short lines held for the next chunk, for a folder of many empty files.</summary>
+    private const int MaxHeldCharacters = 100_000;
 
     /// <summary>Every file, hidden and system ones too, as a copy by Explorer would take them.</summary>
     private static readonly EnumerationOptions ListingOptions = new()
@@ -43,17 +56,23 @@ internal sealed class TransferUpload
     };
 
     private readonly Control _owner;
-    private readonly Func<Message, bool> _sendMessage;
-    private readonly Func<string, int, long, bool> _sendLine;
+    private readonly Func<IReadOnlyList<QueuedLine>, bool> _sendLines;
     private readonly IReadOnlyList<DropItem> _items;
     private readonly int _chunkSize;
     private readonly long _windowBytes;
     private readonly ChannelByteModel _model;
     private readonly string _chunkEncoding;
     private readonly object _gate = new();
+
+    /// <summary>Short lines waiting for the next chunk. Transfer thread only.</summary>
+    private readonly List<QueuedLine> _held = [];
+    private int _heldCharacters;
     private TransferSender? _sender;
     private TransferAckWatch? _watch;
+    private ReliableOutbox? _outbox;
     private int _linesSent;
+    private int _chunksComing;
+    private volatile bool _starting = true;
     private volatile bool _stopped;
     private volatile bool _ackMissing;
 
@@ -65,12 +84,9 @@ internal sealed class TransferUpload
     /// <param name="windowBytes">Most bytes in flight asked for, within the bounds of <see cref="TransferSender"/>.</param>
     /// <param name="model">Byte model detected on the data received from the agent, for the log.</param>
     /// <param name="chunkEncoding">How the chunks are written, one of <see cref="ChunkEncodings"/>.</param>
-    /// <param name="sendMessage">Sends a message on the UI thread; false when it failed.</param>
-    /// <param name="sendLine">
-    /// Sends a ready chunk line on the UI thread, with its file and the bytes of the transfer
-    /// sent once it is counted; false when it failed.
-    /// </param>
-    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, long windowBytes, ChannelByteModel model, string chunkEncoding, Func<Message, bool> sendMessage, Func<string, int, long, bool> sendLine)
+    /// <param name="sequenced">True when the agent reads numbered lines and asks for the missing ones.</param>
+    /// <param name="sendLines">Queues ready lines on the UI thread, in their order; false when it failed.</param>
+    public TransferUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, int chunkSize, long windowBytes, ChannelByteModel model, string chunkEncoding, bool sequenced, Func<IReadOnlyList<QueuedLine>, bool> sendLines)
     {
         _owner = owner;
         DragId = dragId;
@@ -80,11 +96,11 @@ internal sealed class TransferUpload
         _windowBytes = TransferSender.ClampWindowBytes(windowBytes);
         _model = model;
         _chunkEncoding = chunkEncoding;
-        _sendMessage = sendMessage;
-        _sendLine = sendLine;
+        Sequenced = sequenced;
+        _sendLines = sendLines;
     }
 
-    /// <summary>Raised once the files are listed and transferBegin went out.</summary>
+    /// <summary>Raised once the files are listed and transferBegin is ready to go out.</summary>
     public event Action<TransferUpload>? Planned;
 
     /// <summary>Raised when the client cannot go on: a file cannot be read, a send failed or the agent went silent.</summary>
@@ -93,6 +109,9 @@ internal sealed class TransferUpload
     public string DragId { get; }
 
     public string TransferId { get; }
+
+    /// <summary>True when the lines are numbered and kept until the agent processed them.</summary>
+    public bool Sequenced { get; }
 
     /// <summary>Number of files, folders being counted file by file. Known once <see cref="Planned"/> was raised.</summary>
     public int FileCount { get; private set; }
@@ -114,6 +133,13 @@ internal sealed class TransferUpload
 
     /// <summary>When the upload started, in <see cref="Environment.TickCount64"/> milliseconds.</summary>
     public long StartTicks { get; } = Environment.TickCount64;
+
+    /// <summary>
+    /// True while the transfer thread is about to hand over a chunk: from the start until
+    /// its first lines are handed over, and from the moment the window has room for the next
+    /// chunk until that chunk is queued. Short lines on their way may wait for it.
+    /// </summary>
+    public bool LargeLineComing => !_stopped && (_starting || Volatile.Read(ref _chunksComing) > 0);
 
     /// <summary>
     /// Size of a folder, counted for at most <paramref name="budget"/> so that the start of a
@@ -168,7 +194,8 @@ internal sealed class TransferUpload
 
     /// <summary>
     /// An acknowledgement of the agent. UI thread. Returns the bytes of the transfer
-    /// acknowledged so far, or null when the acknowledgement was ignored.
+    /// acknowledged so far, or null when the acknowledgement was ignored. Its <c>seq</c>
+    /// frees the lines kept for a resend.
     /// </summary>
     public long? OnAck(FileAckMessage ack)
     {
@@ -181,6 +208,11 @@ internal sealed class TransferUpload
                 return null;
             }
 
+            if (ack.Seq is { } seq)
+            {
+                _outbox?.Acknowledge(seq);
+            }
+
             acknowledged = _sender.AcknowledgedBytes;
             _watch?.OnAck(Environment.TickCount64);
             Monitor.PulseAll(_gate);
@@ -188,6 +220,45 @@ internal sealed class TransferUpload
 
         Progress?.Report(Environment.TickCount64, acknowledged);
         return acknowledged;
+    }
+
+    /// <summary>
+    /// The agent asks for lines again. UI thread. Returns the lines still kept, in order,
+    /// marked as sent again, for the caller to queue.
+    /// </summary>
+    public IReadOnlyList<QueuedLine> OnResend(TransferResendMessage request)
+    {
+        IReadOnlyList<QueuedLine> lines;
+        lock (_gate)
+        {
+            if (_outbox is null || _stopped)
+            {
+                ClientLog.Info(Invariant($"Transfer {TransferId}: the agent asked for lines {request.From} to {request.To}, which this transfer does not keep. Ignored."));
+                return [];
+            }
+
+            lines = _outbox.Take(request.From, request.To);
+        }
+
+        if (lines.Count == 0)
+        {
+            ClientLog.Info(Invariant($"Transfer {TransferId}: the agent asked for lines {request.From} to {request.To}, already acknowledged or never sent; nothing to send again."));
+            return lines;
+        }
+
+        ClientLog.Info(Invariant($"Transfer {TransferId}: resending lines {lines[0].Seq} to {lines[^1].Seq} asked by the agent, {lines.Count} line(s) of {lines.Sum(line => (long)line.Text.Length)} characters, the first one {lines[0].Type}."));
+        return lines;
+    }
+
+    /// <summary>What was sent again, for the summary of the transfer. UI thread.</summary>
+    public string DescribeResends()
+    {
+        lock (_gate)
+        {
+            return _outbox is { } outbox
+                ? Invariant($"{outbox.ResentLines} line(s) sent again for {outbox.Requests} request(s) of the agent, the newest line sent again {outbox.Probes} time(s) after a silence")
+                : "lines not numbered, the agent cannot ask for lost ones";
+        }
     }
 
     /// <summary>A call of the control that carried lines of this transfer failed. UI thread.</summary>
@@ -217,7 +288,8 @@ internal sealed class TransferUpload
             TransferBeginMessage begin;
             lock (_gate)
             {
-                _sender = new TransferSender(TransferId, planned, _chunkSize, _windowBytes, _chunkEncoding);
+                _sender = new TransferSender(TransferId, planned, _chunkSize, _windowBytes, _chunkEncoding, Sequenced);
+                _outbox = Sequenced ? new ReliableOutbox() : null;
                 begin = _sender.Begin();
                 _watch = new TransferAckWatch(Environment.TickCount64);
             }
@@ -229,12 +301,11 @@ internal sealed class TransferUpload
                 Files = planned;
                 FileSizes = [.. planned.Select(file => file.Size)];
                 Progress = new TransferProgress(begin.Bytes, Environment.TickCount64);
-                if (SendMessage(begin))
-                {
-                    Planned?.Invoke(this);
-                }
+                Planned?.Invoke(this);
             });
 
+            // transferBegin leaves with the first chunk, in the same call.
+            Hold(begin, $"{MessageTypes.TransferBegin} {TransferId}");
             var buffer = new byte[_chunkSize];
             foreach (var (path, file) in files)
             {
@@ -244,6 +315,7 @@ internal sealed class TransferUpload
                 }
             }
 
+            PostHeld();
             WaitForLastAcknowledgement();
         }
         catch (Exception ex)
@@ -311,7 +383,7 @@ internal sealed class TransferUpload
             begin = _sender!.BeginFile();
         }
 
-        Post(() => SendMessage(begin));
+        Hold(begin, Invariant($"{MessageTypes.FileBegin} {TransferId} file {begin.FileIndex}, {begin.Size} bytes"));
         try
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, ReadBufferSize, FileOptions.SequentialScan);
@@ -332,16 +404,21 @@ internal sealed class TransferUpload
                     return false;
                 }
 
-                string line;
-                long position;
+                // From here the chunk is on its way: short lines queued meanwhile may wait for it.
+                Interlocked.Increment(ref _chunksComing);
+                QueuedLine chunk;
                 lock (_gate)
                 {
-                    line = _sender!.EncodeChunk(buffer.AsSpan(0, count));
-                    position = _sender.SentBytes;
+                    var line = _sender!.EncodeChunk(buffer.AsSpan(0, count));
+                    chunk = new QueuedLine(line, MessageTypes.FileChunk, TransferId, _sender.SentBytes, Sequenced ? _sender.LastSeq : -1, Label: Invariant($"{MessageTypes.FileChunk} {TransferId} file {begin.FileIndex}"));
+                    _outbox?.Add(chunk);
                 }
 
-                var fileIndex = begin.FileIndex;
-                Post(() => SendLine(line, fileIndex, position));
+                _held.Add(chunk);
+                QueuedLine[] lines = [.. _held];
+                _held.Clear();
+                _heldCharacters = 0;
+                Post(() => SendLines(lines, countsChunk: true));
                 remaining -= count;
             }
 
@@ -366,8 +443,45 @@ internal sealed class TransferUpload
             end = _sender!.EndFile();
         }
 
-        Post(() => SendMessage(end));
+        Hold(end, Invariant($"{MessageTypes.FileEnd} {TransferId} file {end.FileIndex}"));
         return !_stopped;
+    }
+
+    /// <summary>
+    /// Builds the line of a short message and holds it for the next chunk; it is kept for a
+    /// resend when the lines are numbered. Transfer thread.
+    /// </summary>
+    private void Hold(Message message, string label)
+    {
+        var line = new QueuedLine(LineFraming.EncodeLine(message), message.Type, TransferId, Seq: ReliableInbox.SeqOf(message) ?? -1, Label: label);
+        if (line.Seq >= 0)
+        {
+            lock (_gate)
+            {
+                _outbox!.Add(line);
+            }
+        }
+
+        _held.Add(line);
+        _heldCharacters += line.Text.Length;
+        if (_heldCharacters >= MaxHeldCharacters)
+        {
+            PostHeld();
+        }
+    }
+
+    /// <summary>Hands the short lines held so far to the UI thread, on their own. Transfer thread.</summary>
+    private void PostHeld()
+    {
+        if (_held.Count == 0)
+        {
+            return;
+        }
+
+        QueuedLine[] lines = [.. _held];
+        _held.Clear();
+        _heldCharacters = 0;
+        Post(() => SendLines(lines, countsChunk: false));
     }
 
     /// <summary>Waits until a chunk of <paramref name="count"/> bytes fits in the window. False when stopped or failed.</summary>
@@ -380,6 +494,12 @@ internal sealed class TransferUpload
                 return false;
             }
 
+            if (!_stopped && !_sender!.CanSend(count))
+            {
+                // The agent may need these lines, a fileEnd, to send the acknowledgement that makes room.
+                PostHeld();
+            }
+
             while (!_stopped && !_sender!.CanSend(count))
             {
                 if (TimedOut(waitingForAck: true, "with the window full"))
@@ -387,6 +507,7 @@ internal sealed class TransferUpload
                     return false;
                 }
 
+                Probe("with the window full");
                 Monitor.Wait(_gate, WaitSliceMilliseconds);
             }
 
@@ -409,9 +530,26 @@ internal sealed class TransferUpload
                     return;
                 }
 
+                Probe("after the last file");
                 Monitor.Wait(_gate, WaitSliceMilliseconds);
             }
         }
+    }
+
+    /// <summary>
+    /// Sends the newest line again when the client waits and nothing was acknowledged for
+    /// <see cref="TransferAckWatch.ProbeInterval"/>: when the last call was lost, nothing
+    /// after it shows the agent the gap. Under the lock.
+    /// </summary>
+    private void Probe(string when)
+    {
+        if (_outbox is null || !_watch!.ProbeDue(Environment.TickCount64, waitingForAck: true) || _outbox.TakeNewest() is not { } newest)
+        {
+            return;
+        }
+
+        ClientLog.Info(Invariant($"Transfer {TransferId}: no acknowledgement for {TransferAckWatch.ProbeInterval.TotalSeconds:0} s {when}; sending line {newest.Seq} ({newest.Type}) again, so that the agent sees what it misses."));
+        Post(() => SendLines([newest], countsChunk: false));
     }
 
     /// <summary>
@@ -431,51 +569,55 @@ internal sealed class TransferUpload
             ? Invariant($"no acknowledgement {TransferAckWatch.FirstAckTimeout.TotalSeconds:0} s after the first chunk was sent")
             : Invariant($"no acknowledgement for {TransferAckWatch.AckTimeout.TotalSeconds:0} s");
         ClientLog.Warn(Invariant(
-            $"Transfer {TransferId}: {rule}, {when}. Byte model of the received data {_model}, chunk size {sender.ChunkSize} bytes in {sender.ChunkEncoding}, chunk lines of up to {sender.LongestChunkLine} characters, {Volatile.Read(ref _linesSent)} chunk line(s) sent, {sender.InFlightBytes} bytes in flight, {sender.AcknowledgedBytes} acknowledged."));
+            $"Transfer {TransferId}: {rule}, {when}. Byte model of the received data {_model}, chunk size {sender.ChunkSize} bytes in {sender.ChunkEncoding}, chunk lines of up to {sender.LongestChunkLine} characters, {Volatile.Read(ref _linesSent)} chunk line(s) sent, {sender.InFlightBytes} bytes in flight, {sender.AcknowledgedBytes} acknowledged{(_outbox is { } outbox ? Invariant($", {outbox.Count} line(s) kept from line {outbox.FirstSeq}") : string.Empty)}."));
         _ackMissing = true;
         Fail(LocalText.Of(timeout == TransferAckTimeout.FirstData ? nameof(Strings.TransferFirstAckMissing) : nameof(Strings.TransferAgentSilent)));
         return true;
     }
 
-    /// <summary>Sends on the UI thread; a refusal of the control fails the transfer.</summary>
-    private bool SendMessage(Message message)
+    /// <summary>
+    /// Queues lines on the UI thread; a refusal fails the transfer. <paramref name="countsChunk"/>
+    /// ends the wait announced by <see cref="LargeLineComing"/> for the chunk among them.
+    /// </summary>
+    private void SendLines(IReadOnlyList<QueuedLine> lines, bool countsChunk)
     {
-        if (_stopped)
+        try
         {
-            return false;
+            _starting = false;
+            if (_stopped)
+            {
+                return;
+            }
+
+            if (!_sendLines(lines))
+            {
+                Fail(LocalText.Of(nameof(Strings.TransferNotSent)));
+                return;
+            }
+
+            var chunks = lines.Count(line => line.IsChunk && !line.IsResend);
+            if (chunks == 0)
+            {
+                return;
+            }
+
+            if (Interlocked.Add(ref _linesSent, chunks) == chunks)
+            {
+                var first = lines.First(line => line.IsChunk);
+                ClientLog.Info(Invariant($"Transfer {TransferId}: first chunk line sent, {first.Text.Length} characters for chunks of {_chunkSize} bytes in {_chunkEncoding}, with {lines.Count - chunks} short line(s) in front of it."));
+            }
+
+            lock (_gate)
+            {
+                _watch?.OnChunkSent(Environment.TickCount64);
+            }
         }
-
-        if (_sendMessage(message))
+        finally
         {
-            return true;
-        }
-
-        Fail(LocalText.Of(nameof(Strings.TransferNotSent)));
-        return false;
-    }
-
-    /// <summary>Sends a chunk line on the UI thread; a refusal of the control fails the transfer.</summary>
-    private void SendLine(string line, int fileIndex, long position)
-    {
-        if (_stopped)
-        {
-            return;
-        }
-
-        if (!_sendLine(line, fileIndex, position))
-        {
-            Fail(LocalText.Of(nameof(Strings.TransferNotSent)));
-            return;
-        }
-
-        if (Interlocked.Increment(ref _linesSent) == 1)
-        {
-            ClientLog.Info(Invariant($"Transfer {TransferId}: first chunk line sent, {line.Length} characters for chunks of {_chunkSize} bytes in {_chunkEncoding}."));
-        }
-
-        lock (_gate)
-        {
-            _watch?.OnChunkSent(Environment.TickCount64);
+            if (countsChunk)
+            {
+                Interlocked.Decrement(ref _chunksComing);
+            }
         }
     }
 

@@ -58,7 +58,25 @@ internal sealed partial class SessionView
     {
         _agent.FileAckReceived += (_, ack) => OnFileAck(ack);
         _agent.TransferResultReceived += (_, result) => OnTransferResult(result);
+        _agent.TransferResendReceived += (_, request) => OnTransferResend(request);
         _agent.SendFailed += (_, lines) => OnSendFailed(lines);
+        _agent.LargeLineComing = () => _upload?.LargeLineComing == true;
+    }
+
+    /// <summary>The agent misses lines of the transfer: they go again, together, in order.</summary>
+    private void OnTransferResend(TransferResendMessage request)
+    {
+        if (_upload is not { } upload || request.TransferId != upload.TransferId)
+        {
+            ClientLog.Info(Invariant($"Transfer {request.TransferId}: the agent asked for lines {request.From} to {request.To}, but this transfer is not in progress. Ignored."));
+            return;
+        }
+
+        var lines = upload.OnResend(request);
+        if (lines.Count > 0 && !_agent.SendTransferLines(lines))
+        {
+            upload.OnSendFailed();
+        }
     }
 
     /// <summary>
@@ -96,13 +114,13 @@ internal sealed partial class SessionView
             _transferWindowBytes,
             _agent.Model,
             encoding,
-            message => _agent.SendTransfer(message, transferId),
-            (line, fileIndex, position) => _agent.SendTransferLine(line, transferId, fileIndex, position));
+            _agent.ReliableTransfer,
+            _agent.SendTransferLines);
         upload.Planned += OnTransferPlanned;
         upload.Failed += OnUploadFailed;
         _upload = upload;
         var window = TransferSender.EffectiveWindow(_transferWindowBytes, TransferSender.ClampChunkSize(_transferChunkBytes));
-        ClientLog.Info(Invariant($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s), chunks of {TransferSender.ClampChunkSize(_transferChunkBytes)} bytes, window of {window} bytes (setting {_transferWindowBytes}), chunks in {encoding}, {WireCost(encoding, _agent.ClientToAgentModel)}."));
+        ClientLog.Info(Invariant($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s), chunks of {TransferSender.ClampChunkSize(_transferChunkBytes)} bytes, window of {window} bytes (setting {_transferWindowBytes}), chunks in {encoding}, {WireCost(encoding, _agent.ClientToAgentModel)}, {(_agent.ReliableTransfer ? "numbered lines" : "lines not numbered")}."));
         _agent.BeginTransferMeasure(transferId, window);
         ShowDropStatus(LocalText.Of(nameof(Strings.TransferPreparing), items.Count));
         OpenProgressWindow(dragId, items, transfer: true);
@@ -418,6 +436,6 @@ internal sealed partial class SessionView
         var rate = TransferProgressText.MegabytesPerSecond(result.Bytes, seconds);
         var agentRate = TransferProgressText.MegabytesPerSecond(result.Bytes, result.Seconds);
         ClientLog.Info(Invariant(
-            $"Transfer {upload.TransferId} of drag {upload.DragId}: {result.Status}, {upload.FileCount} file(s), {result.Bytes} of {upload.TotalBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s from the drop; {result.Seconds:0.0} s and {agentRate:0.0} MB/s measured by the agent."));
+            $"Transfer {upload.TransferId} of drag {upload.DragId}: {result.Status}, {upload.FileCount} file(s), {result.Bytes} of {upload.TotalBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s from the drop; {result.Seconds:0.0} s and {agentRate:0.0} MB/s measured by the agent; {upload.DescribeResends()}."));
     }
 }
