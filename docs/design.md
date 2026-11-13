@@ -131,7 +131,9 @@ Pure logic shared by the two apps and covered by tests.
   over several connections since "Version 0.7", with `DirectPacer`,
   `DirectRateMeter` and `IDirectStorage`.
 * `RemoteAppLaunch`, `ScreenMapping`, `ProxyBounds`, `RemoteAppSessionRule` and
-  `RemoteAppExitWatch`: RemoteApp, described under "Version 0.8".
+  `RemoteAppExitWatch`: RemoteApp, described under "Version 0.8". `ClientDriveLetters` and
+  `SettingsLayers`: the drive letters of the client drives and the machine wide settings,
+  described there too.
 
 ### Protocol
 
@@ -384,13 +386,15 @@ Behaviour:
 6. Tray icon, shown as the `trayIcon` setting says (see below), with its
    menu: Stage files in the session before the drop, Fast transfer of large
    files (Auto, Always, Never), Direct connection for large files (Auto,
-   Never), Open log folder, About, Exit. About is a task
+   Never), Client drives on drive letters (Auto, Never, since 0.8), Open log
+   folder, About, Exit. About is a task
    dialog with the version, the publisher APROGSYS and its web site, and the
    project page, as links. Settings in
    `%LOCALAPPDATA%\UltimateRDP\agent.json` (`stageFiles`, `fastTransfer`,
-   `directTransfer`, and `fastTransferMinBytes`, `directPortRange`,
-   `logLevel`, `trayIcon` and `channelRead` which are only editable in the
-   file). Logs in
+   `directTransfer`, `mapClientDrives`, and `fastTransferMinBytes`,
+   `directPortRange`, `logLevel`, `trayIcon` and `channelRead` which are only
+   editable in the file), on top of the machine wide defaults of
+   `%ProgramData%\UltimateRDP\agent.json` since 0.8. Logs in
    `%LOCALAPPDATA%\UltimateRDP\logs\agent-<date>.log`, rotated by day, kept
    fourteen days.
 7. Command line:
@@ -612,7 +616,10 @@ the fallback for anything missing.
   corners and with a negative origin, the shell of a session, the applications left with and
   without `SysProcs` names in any case, the two checks, a drag in progress, a disconnection,
   the log lines on change only, the tray icon, the longer wait of the held drop, and the new
-  fields of the messages.
+  fields of the messages. The letters of the client drives (free letters, letters in use,
+  A and B, more drives than letters, the setting) and the merge of the machine and user
+  settings (key by key, case, null, the keys in force, the save of one key, files written by
+  hand, files refused).
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -3234,3 +3241,55 @@ To be measured in the first real test, each with the log line that answers it:
 8. That the channel and drive redirection work in RemoteApp mode as on a desktop: agent
    `Hello from client ... RemoteApp: the client says True` and `drive redirection available:
    True`.
+
+### Client drives on drive letters
+
+Decided by the owner earlier: an option of the agent, off by default, that gives the
+redirected drives of the client drive letters of the session while an UltimateRDP client is
+connected, for programs that want a letter. Documents, Desktop and the other folders of the
+profile are not redirected.
+
+* `mapClientDrives` in agent.json, `never` (the default) or `auto`, and the tray menu entry
+  "Client drives on drive letters" with Auto and Never.
+* When an UltimateRDP client speaks on a new channel, the agent lists the redirected drives
+  as the hello does, `\\tsclient\C` to `\\tsclient\Z`, three times 5 seconds apart at most
+  while none is visible yet. It reads the letters in use with `GetLogicalDrives` and
+  `WNetGetConnection`: local drives, mappings, and remembered mappings that are not available
+  now. A drive that a mapping of the session already reaches is left out.
+* `ClientDriveLetters.Choose` in Core gives each drive its own letter when that letter is free,
+  and the others the free letters from Z down to C, in two passes so that a drive that moves
+  never takes the letter of a later drive. A and B are skipped on both sides; drives beyond
+  the free letters get none.
+* Each mapping is `WNetAddConnection2` with `CONNECT_TEMPORARY`, no user name and no password:
+  it belongs to the logon session of the user, other users never see it, and it is not
+  remembered for the next logon.
+* The mappings go when the client disconnects, when the setting goes back to never, and when
+  the agent exits: `WNetCancelConnection2` without force, then with force, only for the
+  mappings this run made, which it keeps in memory and in
+  `%LOCALAPPDATA%\UltimateRDP\mapped-drives.json`. At the next start, a state file left by a
+  run that ended badly gives its letters back: each one is removed without force, and only
+  when it still points to the same share.
+* The work runs on the thread pool, one step after the other, since a call on `\\tsclient`
+  may wait for the client. Every failure is a warning in the log, never a dialog. With the
+  setting at never and no state file, nothing is created.
+
+### Machine wide settings
+
+The agent reads `%ProgramData%\UltimateRDP\agent.json` first when it exists, then the agent.json
+of the user, which overrides it key by key (`SettingsLayers.Merge` in Core): keys compared
+without case, as the settings are read, and a null of the user counting as not set. The agent
+never writes the machine file. The tray menu now writes only the key it changes into the file
+of the user, which keeps its other keys; before 0.8 it wrote every value that was not the
+default. A user may create files in `%ProgramData%`, so the machine file is only read when its
+owner is the Administrators group, SYSTEM or TrustedInstaller; another owner gives a warning
+with the `icacls` command that fixes it. The start line of the log lists the keys that come
+from the machine file, and `--status` says whether it exists.
+
+### Versions
+
+The protocol changes in two optional fields, `remoteApp` of the hello of the client and `rect`
+of `targetWindow`, which an older peer ignores. A client 0.8.0 with an agent 0.7.0 opens
+RemoteApp tabs, but the agent replays a drag with its proxy over the whole screen, which the
+server shows on the client, and its RemoteApp session never ends by itself: an agent 0.7.0
+must therefore not be started in RemoteApp sessions. The direct connection keeps version 2 of
+0.7.0.

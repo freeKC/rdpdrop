@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>0.7.1</Version>
+    <Version>0.8.0</Version>
     <Authors>APROGSYS</Authors>
     <Company>APROGSYS</Company>
     <Product>UltimateRDP</Product>

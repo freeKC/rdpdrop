@@ -52,7 +52,7 @@ RemoteApp sessions do not use the `Run` entry. To have the agent there too, see 
 Other options:
 
 - `--uninstall` stops the agent from starting with your session and stops the running copy. Run it from an elevated prompt to remove the all users entry as well.
-- `--status` prints the version, the `Run` entries under `HKEY_CURRENT_USER` and `HKEY_LOCAL_MACHINE`, the settings file and whether the agent runs in your session. It also says whether the session is a RemoteApp session, and whether the `SysProcs` value and the scheduled task of "RemoteApp programs" exist. It changes nothing.
+- `--status` prints the version, the `Run` entries under `HKEY_CURRENT_USER` and `HKEY_LOCAL_MACHINE`, the settings file, the machine settings file and whether the agent runs in your session. It also says whether the session is a RemoteApp session, and whether the `SysProcs` value and the scheduled task of "RemoteApp programs" exist. It changes nothing.
 - `--help` lists the options.
 
 To update on a server, stop every copy of the agent from an elevated prompt with `taskkill /im UltimateRDP.Agent.exe /f`, replace the executable, then let the users sign in again. To update your own copy, exit it from its tray menu or with `--uninstall`, replace the executable, then install it again. The client and the agent must have the same version.
@@ -288,6 +288,7 @@ By default the tray icon of the agent is visible only while an UltimateRDP clien
 - **Stage files in the session before the drop**: off by default. When on, the agent copies the files into the session before the drag starts, and the remote application receives local paths instead of `\\tsclient` paths. Turn it on for applications that refuse network paths. Large files take time to copy before the drag starts. When the files come through the channel, see below, they arrive as local copies anyway.
 - **Fast transfer of large files**: Auto, Always or Never. Auto, the default, sends the files through the UltimateRDP channel before the drop when they hold 10 MiB or more. Always does it for every drop, Never for none: the remote application then reads the files through drive redirection, as in version 0.3.
 - **Direct connection for large files**: Auto or Never. Auto, the default, offers the direct connection for a fast transfer, with the channel as the fallback. Never keeps every fast transfer in the channel. See "Direct connection for large files".
+- **Client drives on drive letters**: Auto or Never. Never, the default, leaves the drives of your computer as `\\tsclient\C` and so on. Auto gives them drive letters of the session while an UltimateRDP client is connected. See "Client drives on drive letters" below.
 - **Open log folder**, **About** and **Exit**.
 
 The menu follows the display language of Windows on the server.
@@ -307,7 +308,8 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
   "directConnections": 8,
   "directMaxMegabytesPerSecond": 0,
   "trayIcon": "auto",
-  "channelRead": "wts"
+  "channelRead": "wts",
+  "mapClientDrives": "never"
 }
 ```
 
@@ -322,9 +324,33 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
 | `directMaxMegabytesPerSecond` | 0, or a number of MB/s | `0` | A limit on the rate of a direct transfer, all its connections together; 0 means no limit. Only editable in the file. |
 | `logLevel` | `debug`, `info`, `warn`, `error` | `info` | The lowest level written to the log. Only editable in the file. |
 | `trayIcon` | `auto`, `always`, `never` | `auto` | `auto` shows the tray icon only while an UltimateRDP client is connected to the session. `always` shows it from the start of the agent. `never` never shows it: the agent is then controlled with `--uninstall` and its `Run` entry only. Only editable in the file. |
+| `mapClientDrives` | `never`, `auto` | `never` | The tray menu entry "Client drives on drive letters". |
 | `channelRead` | `wts`, `file` | `wts` | How the agent reads the channel. `wts` reads it with WTSVirtualChannelRead, 1600 bytes at a time. `file` is an experiment: the agent reads the file handle of the channel with a buffer of 64 KiB, takes out the channel headers it may find, logs which framing it found, and goes back to `wts` for the connection at the first inconsistency, with a warning. Only editable in the file. |
 
-An unknown value gives the default and a warning in the log. Restart the agent after editing the file by hand.
+An unknown value gives the default and a warning in the log. Restart the agent after editing the file by hand. When the tray menu changes a setting, it writes that key into your agent.json and keeps your other keys; comments in the file are not kept.
+
+### Machine wide settings
+
+An administrator can set defaults for every user of the server in `%ProgramData%\UltimateRDP\agent.json`, with the same keys. The agent reads that file first when it exists, then the agent.json of the user, whose keys win one by one. A key that the user does not set, or sets to `null`, comes from the machine file. The agent never writes the machine file; the tray menu only writes the file of the user. For example, to turn the drive letters on for everybody:
+
+```json
+{
+  "mapClientDrives": "auto"
+}
+```
+
+Since a user may create files in `%ProgramData%`, the agent only reads the machine file when its owner is the Administrators group, SYSTEM or TrustedInstaller, as for a file created from an elevated prompt. A file of another owner is left out, with a warning in the log that gives the `icacls` command to fix it. The start line of the agent log lists the keys that come from the machine file, and `--status` says whether the file exists. Restart the agents, or let the users sign in again, after a change.
+
+### Client drives on drive letters
+
+With `mapClientDrives` at `auto`, the agent maps each drive that your computer redirects, `\\tsclient\C`, `\\tsclient\D` and so on, to a drive letter of the session as soon as an UltimateRDP client is connected, so that programs which want a drive letter can use your files.
+
+- A drive keeps its own letter when that letter is free in the session, and gets the first free letter from Z down otherwise. C, the system drive of the session, is usually taken, so your C: drive often becomes Z:.
+- The agent never replaces a letter in use, whether a local drive or a mapping, and does not map a drive that a mapping of the session already reaches. It only maps the drives your computer redirects, and never A: or B:.
+- The letters are visible to you only, in your own session, and are not remembered for the next sign in.
+- They go away when the client disconnects, when you choose Never in the tray menu, and when the agent exits. If a file is open on a drive, the agent removes the letter all the same, but only a letter it made itself. A letter left by an agent that ended badly is removed at its next start, when it still points to the same drive.
+- Documents, Desktop and the other folders of the profile are not redirected.
+- Every failure is written to the log as a warning, and nothing is shown. The log has one line with the letters given, when the client connects.
 
 ## Direct connection for large files
 
@@ -560,7 +586,7 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 
 ## Status
 
-Version 0.7.1 is a test release.
+Version 0.8.0 is a test release. Its RemoteApp support and its drive letters were not tested against a real server at the time of the release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -570,7 +596,7 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 
 The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client. Version 0.4.3 fixes short messages that the Remote Desktop control sometimes lost just before a large one, which failed some transfers at their start. Version 0.4.4 measures where the time of a transfer goes, on both sides, and adds the settings `transferWindowBytes` and `channelRead` to test what limits it.
 
-Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps. Version 0.5.1 numbers the messages of a transfer, so that the agent asks for the ones the Remote Desktop control lost and the transfer goes on. Version 0.5.2 does the same for a message that arrives damaged. Version 0.6.0 sends large files through a direct TLS connection when the server opens its ports for it, since the channel stayed at 2 to 4 MB/s. Its first production test reached 135 to 180 MB/s for a few seconds, then about 20 MB/s, the limit of one TCP connection on that path; version 0.7.0 therefore uses several connections at once, and logs where the time of a transfer goes.
+Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps. Version 0.5.1 numbers the messages of a transfer, so that the agent asks for the ones the Remote Desktop control lost and the transfer goes on. Version 0.5.2 does the same for a message that arrives damaged. Version 0.6.0 sends large files through a direct TLS connection when the server opens its ports for it, since the channel stayed at 2 to 4 MB/s. Its first production test reached 135 to 180 MB/s for a few seconds, then about 20 MB/s, the limit of one TCP connection on that path; version 0.7.0 therefore uses several connections at once, and logs where the time of a transfer goes. Version 0.8.0 opens RemoteApp programs and takes drops on their windows, keeps the agent from holding a RemoteApp session open, can give the drives of the client letters of the session, and reads machine wide settings.
 
 Feedback that helps:
 
@@ -581,6 +607,7 @@ Feedback that helps:
 - How long the first drop on Explorer takes.
 - Whether drops land in the right place in full screen, with one monitor or all monitors.
 - Whether saved credentials work, and which kind you have in the Credential Manager.
+- With RemoteApp: whether the program opens, whether a drop on its windows lands where you released the button, and whether the session ends as before when the program closes, with both logs.
 
 Please send it through [GitHub issues](https://github.com/freeKC/ultimaterdp/issues), with both logs.
 
