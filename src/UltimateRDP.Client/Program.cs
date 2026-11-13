@@ -17,7 +17,7 @@ internal static class Program
     private static readonly TimeSpan HandOffTimeout = TimeSpan.FromSeconds(3);
 
     /// <summary>Time the first start waits for its window before it takes a file of a second start.</summary>
-    private static readonly TimeSpan WindowWait = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan WindowWait = TimeSpan.FromSeconds(5);
 
     [STAThread]
     private static int Main(string[] args)

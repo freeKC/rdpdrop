@@ -150,6 +150,8 @@ internal sealed class DirectDownload
             {
                 if (!_stopped)
                 {
+                    // Stopped first, so that the end of the receiver reports nothing of its own.
+                    _stopped = true;
                     ClientLog.Info($"Receive {SendId}: the direct connection cannot be used, {reason}.");
                     _receiver.Close("the direct connection cannot be used");
                     Post(() => NotAvailable?.Invoke(this, reason));
