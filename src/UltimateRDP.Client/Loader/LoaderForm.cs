@@ -390,8 +390,22 @@ internal sealed class LoaderForm : Form
         {
             _hiddenForDialog = false;
             NativeMethods.ShowWindow(Handle, NativeMethods.SwShowNoActivate);
+            BringToFrontWithoutFocus();
             ClientLog.Info($"Loader of {_label} shown again after {ElapsedMilliseconds} ms: no window waits for an answer any more.");
         }
+    }
+
+    /// <summary>
+    /// Puts the loader above the windows of other applications without activating it, since
+    /// 0.10.0: while it was hidden for a dialog, the user may have clicked elsewhere, and a window
+    /// shown again keeps its old place in the z order. It goes topmost and back at once, which
+    /// leaves it first among the windows that are not topmost; the keyboard stays where it is.
+    /// </summary>
+    private void BringToFrontWithoutFocus()
+    {
+        const uint flags = NativeMethods.SwpNoMove | NativeMethods.SwpNoSize | NativeMethods.SwpNoActivate;
+        NativeMethods.SetWindowPos(Handle, NativeMethods.HwndTopMost, 0, 0, 0, 0, flags);
+        NativeMethods.SetWindowPos(Handle, NativeMethods.HwndNoTopMost, 0, 0, 0, 0, flags);
     }
 
     /// <summary>The first visible top level window that waits for an answer, described for the log, or null.</summary>

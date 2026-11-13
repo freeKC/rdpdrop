@@ -57,6 +57,25 @@ internal static class NativeMethods
         public int Bottom;
     }
 
+    /// <summary>HWND_TOPMOST of SetWindowPos.</summary>
+    public static readonly IntPtr HwndTopMost = new(-1);
+
+    /// <summary>HWND_NOTOPMOST of SetWindowPos.</summary>
+    public static readonly IntPtr HwndNoTopMost = new(-2);
+
+    /// <summary>SWP_NOSIZE of SetWindowPos.</summary>
+    public const uint SwpNoSize = 0x0001;
+
+    /// <summary>SWP_NOMOVE of SetWindowPos.</summary>
+    public const uint SwpNoMove = 0x0002;
+
+    /// <summary>SWP_NOACTIVATE of SetWindowPos.</summary>
+    public const uint SwpNoActivate = 0x0010;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool EnumChildWindows(IntPtr hwndParent, EnumWindowsProc callback, IntPtr lParam);
