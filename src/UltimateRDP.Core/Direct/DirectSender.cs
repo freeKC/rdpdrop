@@ -50,6 +50,7 @@ public sealed record DirectSendOutcome(DirectSendStatus Status, bool Acknowledge
 /// <param name="QueueEmptySeconds">Time the writers waited for a block from the reader, summed over the connections.</param>
 /// <param name="QueueFullSeconds">Time the reader waited for room in the queue, all connections being busy.</param>
 /// <param name="Rates">Bytes per second written to the connections: average, first and last seconds.</param>
+/// <param name="PacedSeconds">Time the writers waited for the limit of <see cref="DirectSender.Pacer"/>, summed over the connections.</param>
 public sealed record DirectSendStats(
     int Connections,
     IReadOnlyList<long> BytesPerConnection,
@@ -58,7 +59,8 @@ public sealed record DirectSendStats(
     double WriteSeconds,
     double QueueEmptySeconds,
     double QueueFullSeconds,
-    DirectRates Rates);
+    DirectRates Rates,
+    double PacedSeconds = 0);
 
 /// <summary>
 /// One connection of a direct transfer, its TLS handshake done, as the caller of
@@ -175,6 +177,7 @@ public sealed class DirectSender
     private long _writeTicks;
     private long _emptyTicks;
     private long _fullTicks;
+    private long _pacedMilliseconds;
 
     /// <param name="listFiles">
     /// Lists the files, in the order they are sent, once the agent accepted connection 0, so
@@ -227,6 +230,19 @@ public sealed class DirectSender
     /// <summary>One connection per started share of this many bytes; the tests use less than the 32 MiB of the policy.</summary>
     internal long BytesPerConnection { get; init; } = DirectTransferPolicy.BytesPerConnection;
 
+    /// <summary>
+    /// Limits the rate of all the connections together, since 0.9.0 for the files that the
+    /// agent sends: after each block a writer takes its bytes and waits the time it is told.
+    /// Null for no limit.
+    /// </summary>
+    public DirectPacer? Pacer { get; init; }
+
+    /// <summary>What the log lines call the side that receives: the agent, or the client since 0.9.0.</summary>
+    public string Peer { get; init; } = "agent";
+
+    /// <summary>How a writer waits for the pacer; the tests record the waits instead of sleeping.</summary>
+    internal Action<int> PaceWait { get; init; } = Thread.Sleep;
+
     /// <summary>Bytes the agent acknowledged so far.</summary>
     public long AcknowledgedBytes => Interlocked.Read(ref _acknowledgedBytes);
 
@@ -273,7 +289,8 @@ public sealed class DirectSender
             Seconds(Interlocked.Read(ref _writeTicks)),
             Seconds(Interlocked.Read(ref _emptyTicks)),
             Seconds(Interlocked.Read(ref _fullTicks)),
-            Meter.Rates());
+            Meter.Rates(),
+            Interlocked.Read(ref _pacedMilliseconds) / 1000.0);
     }
 
     /// <summary>
@@ -306,6 +323,56 @@ public sealed class DirectSender
 
             Meter.Stop();
         }
+    }
+
+    /// <summary>
+    /// Runs the transfer over connections that the other side opened, as the agent does for
+    /// the files it sends to the client since 0.9.0: <paramref name="control"/> is connection 0,
+    /// whose token the caller checked and answered with the ready frame. The other connections
+    /// come with <see cref="Attach"/> while it runs. Never throws for the connections, the other
+    /// side or the files, and closes every connection before it returns.
+    /// </summary>
+    public DirectSendOutcome RunAccepted(DirectConnection control)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        try
+        {
+            return AfterReady(control, new DirectFrameReader(control.Stream), null);
+        }
+        finally
+        {
+            CloseAll();
+            lock (_gate)
+            {
+                _watchdog?.Dispose();
+            }
+
+            Meter.Stop();
+        }
+    }
+
+    /// <summary>
+    /// Adds connection <paramref name="index"/> above 0 to a transfer of <see cref="RunAccepted"/>,
+    /// its token checked and answered by the caller: a writer of its own takes blocks from the
+    /// queue once the data flows. False, with the connection closed, when the transfer is over
+    /// or the index is taken.
+    /// </summary>
+    public bool Attach(int index, DirectConnection connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        lock (_gate)
+        {
+            if (_stopping || _final is not null || index <= 0 || index >= _slots.Length || _slots[index] is not null)
+            {
+                connection.Dispose();
+                return false;
+            }
+
+            _slots[index] = new Slot(connection);
+        }
+
+        StartWriter(index);
+        return true;
     }
 
     private static double Seconds(long ticks) => ticks / (double)Stopwatch.Frequency;
@@ -344,6 +411,12 @@ public sealed class DirectSender
         }
 
         control.OnReady();
+        return AfterReady(control, reader, openConnection);
+    }
+
+    /// <summary>Connection 0 is accepted: the list, the other connections, then the data.</summary>
+    private DirectSendOutcome AfterReady(DirectConnection control, DirectFrameReader reader, Func<int, CancellationToken, DirectConnection?>? openConnection)
+    {
         lock (_gate)
         {
             _slots[0] = new Slot(control);
@@ -562,6 +635,11 @@ public sealed class DirectSender
                 Meter.Add(block.Length);
                 _pool.Add(held);
                 held = null;
+                if (Pacer?.Take(block.Length) is > 0 and var wait)
+                {
+                    Interlocked.Add(ref _pacedMilliseconds, wait);
+                    PaceWait((int)Math.Min(wait, 1000));
+                }
             }
 
             var end = DirectFrames.EndPayload(slot.Frames);
@@ -856,14 +934,14 @@ public sealed class DirectSender
 
                     default:
                         _protocolBroken = true;
-                        Broken($"The agent sent a {type} frame of {payload.Length} bytes that this client does not expect.");
+                        Broken($"The {Peer} sent a {type} frame of {payload.Length} bytes that this side does not expect.");
                         return;
                 }
             }
 
             if (!_stopping)
             {
-                Broken("The agent closed connection 0 before its final frame.");
+                Broken($"The {Peer} closed connection 0 before its final frame.");
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or NotSupportedException)
@@ -918,7 +996,7 @@ public sealed class DirectSender
             }
             else
             {
-                Info?.Invoke(FormattableString.Invariant($"The cancel frame could not be sent within {CancelWait.TotalSeconds:0} s: a write on connection 0 is blocked. The connections close; the agent sees them close."));
+                Info?.Invoke(FormattableString.Invariant($"The cancel frame could not be sent within {CancelWait.TotalSeconds:0} s: a write on connection 0 is blocked. The connections close; the {Peer} sees them close."));
             }
         }
 
@@ -1016,7 +1094,7 @@ public sealed class DirectSender
                 DropStatus.Cancelled => DirectSendStatus.AgentCancelled,
                 _ => DirectSendStatus.AgentFailed,
             };
-            return new DirectSendOutcome(status, _acknowledged, result, status == DirectSendStatus.Succeeded ? "The agent has every file." : $"The agent ended the transfer, {result.Failure}: {result.Message}");
+            return new DirectSendOutcome(status, _acknowledged, result, status == DirectSendStatus.Succeeded ? $"The {Peer} has every file." : $"The {Peer} ended the transfer, {result.Failure}: {result.Message}");
         }
 
         return Outcome(DirectSendStatus.Broken, (_protocolBroken ? "Protocol error: " : string.Empty) + (_brokenDetail ?? "The connection ended."));

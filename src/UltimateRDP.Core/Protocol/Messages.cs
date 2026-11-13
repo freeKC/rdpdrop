@@ -24,6 +24,9 @@ namespace UltimateRDP.Core.Protocol;
 [JsonDerivedType(typeof(FileAckMessage), MessageTypes.FileAck)]
 [JsonDerivedType(typeof(TransferResultMessage), MessageTypes.TransferResult)]
 [JsonDerivedType(typeof(TransferResendMessage), MessageTypes.TransferResend)]
+[JsonDerivedType(typeof(SendOfferMessage), MessageTypes.SendOffer)]
+[JsonDerivedType(typeof(SendAckMessage), MessageTypes.SendAck)]
+[JsonDerivedType(typeof(SendCancelMessage), MessageTypes.SendCancel)]
 public abstract record Message
 {
     /// <summary>
@@ -101,6 +104,15 @@ public static class MessageTypes
 
     /// <summary>Type of <see cref="TransferResendMessage"/>.</summary>
     public const string TransferResend = "transferResend";
+
+    /// <summary>Type of <see cref="SendOfferMessage"/>.</summary>
+    public const string SendOffer = "sendOffer";
+
+    /// <summary>Type of <see cref="SendAckMessage"/>.</summary>
+    public const string SendAck = "sendAck";
+
+    /// <summary>Type of <see cref="SendCancelMessage"/>.</summary>
+    public const string SendCancel = "sendCancel";
 }
 
 /// <summary>
@@ -134,6 +146,11 @@ public static class MessageTypes
 /// RemoteApp mode. The agent then replays each drag at the drop, with a small proxy window.
 /// Not written when the session is a desktop; an older agent ignores it.
 /// </param>
+/// <param name="AcceptsFiles">
+/// In the hello of the client, since 0.9.0: true when the client receives files that the
+/// session sends (<see cref="SendOfferMessage"/>). Only then does the agent offer to send
+/// files, and show the Send To shortcut. Not written otherwise; an older agent ignores it.
+/// </param>
 public sealed record HelloMessage(
     int Version,
     string? ClientVersion = null,
@@ -142,14 +159,15 @@ public sealed record HelloMessage(
     string? ClientLanguage = null,
     string? ClientToAgentModel = null,
     bool? ReliableTransfer = null,
-    bool? RemoteApp = null) : Message(MessageTypes.Hello)
+    bool? RemoteApp = null,
+    bool? AcceptsFiles = null) : Message(MessageTypes.Hello)
 {
     /// <summary>
     /// Builds the hello sent by the client. <paramref name="remoteApp"/> says that the
-    /// connection runs a RemoteApp program.
+    /// connection runs a RemoteApp program, <paramref name="acceptsFiles"/> that the client receives files from the session.
     /// </summary>
-    public static HelloMessage FromClient(string clientVersion, string? clientLanguage = null, bool remoteApp = false) =>
-        new(ProtocolConstants.ProtocolVersion, ClientVersion: clientVersion, ClientLanguage: clientLanguage, RemoteApp: remoteApp ? true : null);
+    public static HelloMessage FromClient(string clientVersion, string? clientLanguage = null, bool remoteApp = false, bool acceptsFiles = false) =>
+        new(ProtocolConstants.ProtocolVersion, ClientVersion: clientVersion, ClientLanguage: clientLanguage, RemoteApp: remoteApp ? true : null, AcceptsFiles: acceptsFiles ? true : null);
 
     /// <summary>
     /// Builds the hello sent by the agent, with the byte model it detected on the data of

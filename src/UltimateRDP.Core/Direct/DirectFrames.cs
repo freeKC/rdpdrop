@@ -72,6 +72,19 @@ public enum DirectFrameType : byte
     End = 12,
 }
 
+/// <summary>
+/// Which way the files go on a direct connection, said by the token frame of each
+/// connection, which the client always sends. Since 0.9.0.
+/// </summary>
+public enum DirectRole : byte
+{
+    /// <summary>The client sends files to the agent: the direction of a drop, the only one before 0.9.0. Its token frame has no role byte.</summary>
+    ClientSends = 0,
+
+    /// <summary>The client receives the files that the session sends: its token frame ends with this byte, and its proof covers it.</summary>
+    ClientReceives = 1,
+}
+
 /// <summary>Why a direct transfer did not succeed.</summary>
 public enum DirectFailure : byte
 {
@@ -171,14 +184,20 @@ public static class DirectFrames
     /// <summary>Bytes of a SHA-256, and of the proof of a token.</summary>
     public const int HashLength = 32;
 
-    /// <summary>Bytes of the payload of a token frame of version 2.</summary>
+    /// <summary>Bytes of the payload of a token frame of version 2 when the client sends, as in 0.7.0.</summary>
     public const int TokenPayloadLength = 2 + HashLength;
+
+    /// <summary>Bytes of the payload of a token frame of version 2 when the client receives: the role byte comes last.</summary>
+    public const int ReceiveTokenPayloadLength = TokenPayloadLength + 1;
 
     /// <summary>Longest text of a cancel or final frame, in bytes; longer texts are cut.</summary>
     public const int MaxTextBytes = 4096;
 
     /// <summary>The text the proof of a connection signs, followed by the index byte.</summary>
     private static readonly byte[] ProofLabel = Encoding.ASCII.GetBytes("UltimateRDP direct v2");
+
+    /// <summary>The text the proof signs when the client receives, so that a proof of one direction is never one of the other.</summary>
+    private static readonly byte[] ReceiveProofLabel = Encoding.ASCII.GetBytes("UltimateRDP direct v2 receive");
 
     /// <summary>Number of blocks of a file of <paramref name="size"/> bytes; 0 for an empty file.</summary>
     public static long BlockCount(long size) => (size + BlockSize - 1) / BlockSize;
@@ -225,22 +244,61 @@ public static class DirectFrames
     /// the token, over "UltimateRDP direct v2" followed by the index byte. The token itself
     /// never goes on a connection, and each connection has a proof of its own.
     /// </summary>
-    public static byte[] ConnectionProof(ReadOnlySpan<byte> token, byte index)
+    public static byte[] ConnectionProof(ReadOnlySpan<byte> token, byte index, DirectRole role = DirectRole.ClientSends)
     {
-        Span<byte> message = stackalloc byte[ProofLabel.Length + 1];
-        ProofLabel.CopyTo(message);
+        var label = role == DirectRole.ClientReceives ? ReceiveProofLabel : ProofLabel;
+        Span<byte> message = stackalloc byte[label.Length + 1];
+        label.CopyTo(message);
         message[^1] = index;
         return HMACSHA256.HashData(token, message);
     }
 
-    /// <summary>The payload of the token frame of connection <paramref name="index"/>.</summary>
-    public static byte[] TokenPayload(ReadOnlySpan<byte> token, byte index)
+    /// <summary>
+    /// The payload of the token frame of connection <paramref name="index"/>: version 2, the
+    /// index, the proof, and since 0.9.0 the role byte when the client receives. The frame
+    /// of a client that sends is the one of 0.7.0, byte for byte.
+    /// </summary>
+    public static byte[] TokenPayload(ReadOnlySpan<byte> token, byte index, DirectRole role = DirectRole.ClientSends)
     {
-        var payload = new byte[TokenPayloadLength];
+        var payload = new byte[role == DirectRole.ClientReceives ? ReceiveTokenPayloadLength : TokenPayloadLength];
         payload[0] = ProtocolVersion;
         payload[1] = index;
-        ConnectionProof(token, index).CopyTo(payload.AsSpan(2));
+        ConnectionProof(token, index, role).CopyTo(payload.AsSpan(2));
+        if (role == DirectRole.ClientReceives)
+        {
+            payload[^1] = (byte)DirectRole.ClientReceives;
+        }
+
         return payload;
+    }
+
+    /// <summary>
+    /// Reads a token frame of version 2: its index, its role and its proof. False when it is
+    /// of another version or malformed; <paramref name="version"/> then says what came.
+    /// </summary>
+    public static bool TryParseToken(ReadOnlySpan<byte> payload, out byte version, out byte index, out DirectRole role, out ReadOnlySpan<byte> proof)
+    {
+        version = payload.Length > 0 ? payload[0] : (byte)0;
+        index = 0;
+        role = DirectRole.ClientSends;
+        proof = default;
+        if (version != ProtocolVersion)
+        {
+            return false;
+        }
+
+        if (payload.Length == ReceiveTokenPayloadLength && payload[^1] == (byte)DirectRole.ClientReceives)
+        {
+            role = DirectRole.ClientReceives;
+        }
+        else if (payload.Length != TokenPayloadLength)
+        {
+            return false;
+        }
+
+        index = payload[1];
+        proof = payload.Slice(2, HashLength);
+        return true;
     }
 
     /// <summary>The payload of the begin frame.</summary>

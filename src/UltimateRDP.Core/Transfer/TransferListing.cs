@@ -1,15 +1,15 @@
 using UltimateRDP.Core.Protocol;
-using UltimateRDP.Core.Transfer;
 
-namespace UltimateRDP.Client.Sessions;
+namespace UltimateRDP.Core.Transfer;
 
 /// <summary>
 /// The files of the dropped items, in the order they are sent, with their path on this
 /// computer and their path in the transfer: folders file by file, hidden and system files
 /// included, junctions and symbolic links to folders skipped. Shared by the transfer through
-/// the channel and the transfer through the direct connection.
+/// the channel and the transfer through the direct connection, on the client for a drop and
+/// on the agent for the files sent to the client since 0.9.0.
 /// </summary>
-internal static class TransferListing
+public static class TransferListing
 {
     /// <summary>Every file, hidden and system ones too, as a copy by Explorer would take them.</summary>
     public static readonly EnumerationOptions Options = new()
@@ -71,7 +71,7 @@ internal static class TransferListing
 }
 
 /// <summary>A dropped item that cannot be listed.</summary>
-internal sealed class TransferListingException(string path, Exception inner) : IOException(inner.Message, inner)
+public sealed class TransferListingException(string path, Exception inner) : IOException(inner.Message, inner)
 {
     /// <summary>The path of the dropped item on this computer.</summary>
     public string ItemPath { get; } = path;

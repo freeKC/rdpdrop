@@ -69,7 +69,7 @@ public sealed class DirectReceiver
 
     private readonly object _gate = new();
     private readonly Lock _controlWrite = new();
-    private readonly byte[] _token;
+    private readonly DirectTokenGate _tokens;
     private readonly IDirectStorage _storage;
     private readonly Func<long> _clock;
     private readonly Func<DirectReceiver, string?> _describe;
@@ -88,7 +88,6 @@ public sealed class DirectReceiver
     private long _endTicks;
     private int _busy;
     private bool _cleanedUp;
-    private bool _tokenCleared;
     private volatile DirectReceiverState _state = DirectReceiverState.AwaitingControl;
     private long _receivedBytes;
     private long _readTicks;
@@ -125,7 +124,7 @@ public sealed class DirectReceiver
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(clockMilliseconds);
         ArgumentNullException.ThrowIfNull(describe);
-        _token = token.ToArray();
+        _tokens = new DirectTokenGate(token, maxConnections, DirectRole.ClientSends);
         MaxConnections = maxConnections;
         Items = items;
         _storage = storage;
@@ -199,6 +198,21 @@ public sealed class DirectReceiver
 
     /// <summary>True when the client cancelled through the channel rather than with a cancel frame.</summary>
     public bool CancelledThroughChannel { get; private set; }
+
+    /// <summary>True when <see cref="Cancel"/> ended the transfer, on the side that receives.</summary>
+    public bool CancelledHere { get; private set; }
+
+    /// <summary>The files of the list, once connection 0 sent it whole; empty before.</summary>
+    public IReadOnlyList<TransferFile> ListedFiles
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _files.Select(slot => slot.File)];
+            }
+        }
+    }
 
     /// <summary>True when <see cref="Close"/> ended the transfer, from the agent side.</summary>
     public bool ClosedByAgent { get; private set; }
@@ -305,12 +319,13 @@ public sealed class DirectReceiver
                 return new DirectServeResult(-1, $"The first frame is {type}, not a token.");
             }
 
-            if (Register(payload.Span, stream) is { } refusal)
+            var refusal = Register(payload.Span, stream);
+            if (refusal.Reason is { } reason)
             {
-                return new DirectServeResult(-1, refusal.Reason);
+                return new DirectServeResult(-1, reason);
             }
 
-            index = payload.Span[1];
+            index = refusal.Index;
             if (index == 0)
             {
                 WriteControl(DirectFrameType.Ready, []);
@@ -322,14 +337,7 @@ public sealed class DirectReceiver
             }
 
             authenticated?.Invoke(index);
-            if (index == 0)
-            {
-                RunControl(reader);
-            }
-            else
-            {
-                RunData(index, reader);
-            }
+            Run(index, reader);
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or NotSupportedException)
         {
@@ -342,6 +350,79 @@ public sealed class DirectReceiver
         }
 
         return new DirectServeResult(index, null);
+    }
+
+    /// <summary>
+    /// Runs connection <paramref name="index"/>, whose token frame the caller sent and whose
+    /// ready frame it read: the side that opened the connection receives, as the client does
+    /// for the files that the session sends since 0.9.0. Connection 0 comes first. Returns when
+    /// the connection is over; never throws for what the other side sends.
+    /// </summary>
+    public DirectServeResult Attach(int index, Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        lock (_gate)
+        {
+            if (IsFinished)
+            {
+                return new DirectServeResult(-1, "The transfer is over.");
+            }
+
+            if (index < 0 || index >= MaxConnections || _connections[index] is not null || (index != 0 && _connections[0] is null))
+            {
+                return new DirectServeResult(-1, $"Connection {index} cannot be attached now.");
+            }
+
+            _connections[index] = new Connection(stream);
+            if (index == 0)
+            {
+                _state = DirectReceiverState.AwaitingBegin;
+            }
+        }
+
+        try
+        {
+            Run(index, new DirectFrameReader(stream));
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or NotSupportedException)
+        {
+            OnConnectionError(index, ex);
+        }
+
+        return new DirectServeResult(index, null);
+    }
+
+    /// <summary>
+    /// The side that receives cancels the transfer, for <paramref name="reason"/>, in English:
+    /// the final frame says cancelled, the connections close and what was written is deleted.
+    /// Nothing happens once it is over.
+    /// </summary>
+    public void Cancel(string reason)
+    {
+        lock (_gate)
+        {
+            if (IsFinished)
+            {
+                return;
+            }
+
+            CancelReason = reason;
+            CancelledHere = true;
+        }
+
+        Finish(DirectReceiverState.Cancelled, DirectFailure.None, null, null);
+    }
+
+    private void Run(int index, DirectFrameReader reader)
+    {
+        if (index == 0)
+        {
+            RunControl(reader);
+        }
+        else
+        {
+            RunData(index, reader);
+        }
     }
 
     /// <summary>
@@ -407,66 +488,29 @@ public sealed class DirectReceiver
 
     private static double Seconds(long ticks) => ticks / (double)Stopwatch.Frequency;
 
-    /// <summary>Checks the token frame of a new connection and registers it; null when accepted.</summary>
-    private Refused? Register(ReadOnlySpan<byte> payload, Stream stream)
+    /// <summary>Checks the token frame of a new connection and registers it; the index when accepted, otherwise why not.</summary>
+    private Refused Register(ReadOnlySpan<byte> payload, Stream stream)
     {
-        if (payload.Length != DirectFrames.TokenPayloadLength || payload[0] != DirectFrames.ProtocolVersion)
-        {
-            return new Refused(payload.Length > 0 && payload[0] != DirectFrames.ProtocolVersion
-                ? $"The client speaks version {payload[0]} of the direct connection; this agent speaks {DirectFrames.ProtocolVersion}."
-                : "The token frame is malformed.");
-        }
-
-        var index = payload[1];
         lock (_gate)
         {
             if (IsFinished)
             {
-                return new Refused("The transfer is over.");
+                return new Refused("The transfer is over.", -1);
             }
 
-            if (_tokenCleared)
+            if (_tokens.Check(payload, out var index) is { } refusal)
             {
-                return new Refused("Every connection of the offer was used.");
-            }
-
-            if (index >= MaxConnections)
-            {
-                return new Refused($"Connection {index} is beyond the {MaxConnections} connection(s) of the offer.");
-            }
-
-            // Compared in constant time, before anything that depends on the index, so that the
-            // answer tells nothing to a client without the token.
-            if (!CryptographicOperations.FixedTimeEquals(payload[2..], DirectFrames.ConnectionProof(_token, index)))
-            {
-                return new Refused("The token is not the one of the offer.");
-            }
-
-            if (index != 0 && _connections[0] is null)
-            {
-                return new Refused($"Connection {index} came before connection 0.");
-            }
-
-            if (_connections[index] is not null)
-            {
-                return new Refused($"Connection {index} was already used.");
+                return new Refused(refusal, -1);
             }
 
             _connections[index] = new Connection(stream);
-            if (_connections.All(connection => connection is not null))
-            {
-                // Every index was used: the token cannot open anything more.
-                CryptographicOperations.ZeroMemory(_token);
-                _tokenCleared = true;
-            }
-
             if (index == 0)
             {
                 _state = DirectReceiverState.AwaitingBegin;
             }
-        }
 
-        return null;
+            return new Refused(null, index);
+        }
     }
 
     /// <summary>Reads connection 0: the list, then blocks, trailers, its end frame or a cancel.</summary>
@@ -1251,11 +1295,7 @@ public sealed class DirectReceiver
         {
             files = _files;
             finished = _finishStamp;
-            if (_tokenCleared is false)
-            {
-                CryptographicOperations.ZeroMemory(_token);
-                _tokenCleared = true;
-            }
+            _tokens.Clear();
         }
 
         foreach (var slot in files)
@@ -1299,7 +1339,8 @@ public sealed class DirectReceiver
         }
     }
 
-    private sealed record Refused(string Reason);
+    /// <summary>The answer to a token frame: a reason when refused, the index when accepted.</summary>
+    private readonly record struct Refused(string? Reason, int Index);
 
     /// <summary>One accepted connection.</summary>
     private sealed class Connection(Stream stream)
