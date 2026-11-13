@@ -3960,3 +3960,106 @@ of check boxes and radio buttons at the DPI of the window, which is the DPI of t
 100 % previews come from a process started with `__COMPAT_LAYER=DpiUnaware`, the 200 % ones from a
 process on a monitor at 200 %; `files.txt` notes a mismatch. Switching the DPI awareness of the
 thread was tried and gave labels and text boxes of different scales.
+
+### One connection per server and account
+
+Windows gives a user one session per server. With 0.9.3, a RemoteApp launcher clicked again while
+its program ran, or in the 15 to 20 seconds Windows keeps the session after the last window, made
+the running client open a second tab and a second connection with the same account, which took the
+session of the first; then the second ended too. The log of the user:
+
+```
+16:33:31.951 first window of the program (session 1 running)
+16:33:38.157 "A second start hands ...remoteapp...rdp to this one"
+16:33:39.551 session 1: OnDisconnected reason=3 extended=5 (replaced by another connection)
+16:33:39.912 session 2: OnConnected
+16:33:42.107 session 2: OnDisconnected reason=2 extended=12 (logged off by the user)
+```
+
+As mstsc shares a RemoteApp session, a launch now uses the connection that runs. In Core:
+
+- `ConnectionTarget`: host of `full address` as written (without case), port (`full address`,
+  else `server port`, else 3389), gateway when `gatewayusagemethod` is 1 or 2, user and domain
+  (from `domain` or a `DOMAIN\user` name, without case). `Matches(existing, launch)`: same host,
+  port and gateway; a launch without a user takes the account of the connection; two different
+  users never match; domains are compared when both are given.
+- `SharedRemoteAppConnection<T>`: the phase of the connection (connecting, logged on, ended) and
+  its launches. `Join` gives `StartNow` when logged on (with or without a window left), `Queued`
+  while it connects or logs on (so a second click during the warning of Windows or the certificate
+  question adds no dialog), `OpenOwn` once it ended. `OnLoggedOn` gives the queue in order, started
+  after the program of the tab. `OnEnded` gives back the queued launches and the started ones
+  without a window or a result, which open their own connection, unless the user closed the tab.
+- `JoinedProgramStart`: the loader of a launch that joined. It starts at ServerStartProgram with
+  the number of windows of programs open, and ends at a new window, at a failure result, 3 s after
+  an Ok result without a new window (a program may only bring its window to the front), or after
+  30 s.
+
+`MainForm.JoinsExistingConnection` decides before a tab is created; `SessionView.JoinRemoteApp`
+starts or queues, matches each OnRemoteProgramResult to the launch of its program, and raises the
+end of each start and the launches left at the end. The tab and the tooltip of the notification
+icon name every program of the connection; the windows are counted for the connection, not per
+program, since the control does not say which program a window belongs to. A desktop opened again
+while a desktop tab to the same target runs selects that tab with a notice: a second connection
+would take its session, so there is no case where it helps. Reason 3 with extended reason 5 has
+its own text, "This session was taken over by another connection with the same account.", and
+the client never shows a second end message while one waits.
+
+The log says each decision: `RemoteApp launch of X joins the connection of Y: same target (...)`,
+`started on the existing connection of ...`, `queued until the logon of the connection of ...`,
+`opens its own connection: different account`, and how each start ended.
+
+Not verified without a real server: ServerStartProgram on a connection that already shows a
+program, and on one whose last window just closed and that Windows is about to end; in the second
+case, if the server ends the session anyway, the launch opens its own connection.
+
+### The warning of Windows before a RemoteApp program
+
+The first real run of the 0.9.3 loader showed, at each RemoteApp start, a dialog of the control,
+class `#32770`, titled "RemoteApp": the publisher of the connection is unknown, the list of the
+shared resources, and a Connect button. The loader hid for it as designed; it also explains the 4
+to 5 s between two OnConnecting events of earlier runs.
+
+The interop of the control has, on `IMsRdpClientNonScriptable3` and later,
+`ShowRedirectionWarningDialog`, and on `IMsRdpClientNonScriptable4` and later
+`RedirectionWarningType` (Default, Unsigned, Unknown, User, ThirdPartySigned, Trusted),
+`MarkRdpSettingsSecure`, `PublisherCertificateChain`, `LaunchedViaClientShellInterface` and
+`TrustedZoneSite`. `ShowRedirectionWarningDialog` is the documented switch of that dialog;
+`RedirectionWarningType` Trusted is the kind of warning of a trusted publisher. With `--trusted`
+the client sets `ShowRedirectionWarningDialog` to false and `RedirectionWarningType` to Trusted
+before Connect; without it, it sets nothing, as before. Whether the dialog of this server goes away
+with them can only be seen on a real server.
+
+The reasoning: a .bat file or a shortcut is already code the user chose to run, so a flag in it
+gives an attacker nothing the .bat file did not give; a .rdp file is data that can come by mail,
+so no key of a .rdp file reaches these properties, and a .rdp file opened without the flag keeps
+the warning of Windows. A list `trustedServers` in client.json was left out: the host comes from
+the .rdp file, so such a list would let a file chosen by someone else skip the warning for that
+host. The question about the certificate of the server is another dialog, governed by
+`authentication level` and the certificate, and is never turned off. One line per connection says
+whether the warning is left to Windows or turned off, and why.
+
+### The loader in front
+
+The loader hides while a dialog waits for an answer and shows again afterwards. A window shown
+again keeps its place in the z order, and the user has clicked elsewhere meanwhile, so the loader
+now goes topmost and back at once, with `SWP_NOACTIVATE`: first among the windows that are not
+topmost, over the main window when it is owned by it, and the keyboard stays where it is.
+
+### The brand
+
+`Brand` in Core holds "UltimateRDP by Aprogsys", the same in every language. It stands where the
+name is shown alone as a brand: the second line of the loader ("UltimateRDP" with " by Aprogsys"
+after it in the lighter colour when nothing is named yet), the About dialogs, the tooltips of the
+two notification icons, the title of the launcher generator and the first comment line of a
+launcher. Window titles, tabs, files, processes, logs, registry values and folders keep
+"UltimateRDP". The brand line is short and never cut; the name of what opens, below it, ends
+with an ellipsis (previews `loader-remoteapp-long-*`).
+
+### Agent: a client without the channel
+
+With the Windows client in a RemoteApp session, the agent starts, its channel open fails with
+error 50 (not supported: the client does not offer the channel), it stays idle, and the session
+ends as usual: the server disconnects 19 s after the last window, the agent exits at once, and the
+session is gone 8 s later. The log said "A policy may block the channel" as a warning; it now says
+once, as information, that the client of the session is probably not UltimateRDP
+(`ChannelRetryPolicy.IsNotOffered`).

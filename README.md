@@ -492,6 +492,7 @@ or a shortcut whose target is `"C:\Tools\UltimateRDP\UltimateRDP.exe" "C:\Users\
 - When you close the last window of the program, the server keeps the session about 20 seconds, then ends it, and UltimateRDP exits by itself without a message. Until then, only the notification icon is left.
 - When the connection fails, or ends for another reason, a message says why; when it failed before the logon, the UltimateRDP window shows too, with the reason in its tab and Session, Connect.
 - Starting UltimateRDP again with another file hands it to the copy that runs: one copy per user runs at a time.
+- From version 0.10.0, a RemoteApp launch to a server where a RemoteApp tab already runs, with the same account, starts its program on that connection, as the Microsoft client does: see "One connection per server and account".
 - `--show` shows the UltimateRDP window anyway, and `--hidden` keeps it out of sight for a desktop file too. A desktop file shows the window by default.
 - `--ask-credentials` asks for the password, see "Saved credentials".
 
@@ -547,16 +548,23 @@ The administrator adds the agent to `SysProcs` as well, so that Windows itself d
 
 4. Test with the test account, as described below.
 
-5. Only then, start it for every user:
+5. Only then, start it for every user. Change the task object and write it back whole:
 
    ```powershell
-   $users     = (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-545').Translate([System.Security.Principal.NTAccount]).Value
-   $trigger   = New-ScheduledTaskTrigger -AtLogOn
-   $principal = New-ScheduledTaskPrincipal -GroupId $users -RunLevel Limited
-   Set-ScheduledTask -TaskPath '\UltimateRDP\' -TaskName 'Agent' -Trigger $trigger -Principal $principal
+   $users = (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-545').Translate([System.Security.Principal.NTAccount]).Value
+   $task = Get-ScheduledTask -TaskPath '\UltimateRDP\' -TaskName 'Agent'
+   $task.Triggers = @(New-ScheduledTaskTrigger -AtLogOn)
+   $task.Principal = New-ScheduledTaskPrincipal -GroupId $users -RunLevel Limited
+   $task | Set-ScheduledTask
    ```
 
-   The first line gives the local name of the Users group, which depends on the language of Windows.
+   The first line gives the local name of the Users group, which depends on the language of Windows. `Set-ScheduledTask -Trigger ... -Principal ...` with these values returned without an error on a French Windows Server and left the trigger and the principal of the test account in place, so check what the scheduler stored:
+
+   ```powershell
+   Export-ScheduledTask -TaskPath '\UltimateRDP\' -TaskName 'Agent'
+   ```
+
+   The XML must show `<GroupId>S-1-5-32-545</GroupId>` and `<LogonTrigger />` without a user. `Get-ScheduledTask` alone can show values that are not the stored ones.
 
 After an update of the agent in another folder, point the task to it:
 
@@ -577,6 +585,8 @@ Removing the task does not stop the agents already running; they end with their 
 
 `UltimateRDP.Agent.exe --status`, run in a session, says whether it is a RemoteApp session, whether the `SysProcs` value of the agent exists and whether the task `\UltimateRDP\Agent` exists. It only reads.
 
+Seen in production with the Windows client (mstsc) in a RemoteApp session: the agent starts, finds no UltimateRDP channel (error 50, which its log notes once as information: the client of the session is probably not UltimateRDP), stays idle, and the session ends as usual: the server disconnects it 19 seconds after the last window closed, the agent exits at once, and the session is gone 8 seconds later.
+
 ### Testing on one account
 
 Before the task exists for everybody, with the test account only:
@@ -587,6 +597,17 @@ Before the task exists for everybody, with the test account only:
 4. The day after step 5 of "On the server", compare the number of sessions, and of disconnected ones, with the output of its step 1.
 
 If a session stays open after its program closed, remove the task first, see above, then report it with the agent log of that session.
+
+### One connection per server and account
+
+Windows gives a user one session per server. A second connection with the same account takes that session from the first, which ends with "disconnected because another connection was made to the remote computer"; with version 0.9.3, a RemoteApp launcher clicked a second time while its program ran ended both connections without starting the program. From version 0.10.0:
+
+- A RemoteApp launch to the same server, port and gateway as a RemoteApp tab that runs, with the same account, starts its program on that connection: at once when the session is logged on, even with no window of a program left in its last seconds; after the logon, and after the program of the tab, while it still connects, logs on, or waits for the warning of Windows or the certificate question. A launch without a user name takes the account of the tab; two different user names open their own connections.
+- The loader of that launch says "Starting {program}..." until a new window of a program appears, or the server reports a failure, or a few seconds after the server answered without a new window (a program may only bring its window to the front), or 30 seconds at most. It has no Cancel, which would close the connection of the other programs.
+- If the connection ends before the program of a launch showed, that launch opens its own connection, unless you closed the tab.
+- The tab and the tooltip of the notification icon name every program of the connection.
+- Opening a desktop again while a desktop tab to the same target and account runs selects that tab, with a notice in its status line, instead of a second connection that would take its session.
+- When another connection takes a session anyway, for example from another computer, the tab says "This session was taken over by another connection with the same account.", and only one message shows at a time.
 
 ## Launchers
 
@@ -614,6 +635,7 @@ From version 0.10.0, one .bat file is enough to give a connection to the people 
 | `--printers` | `on` or `off` | `redirectprinters` |
 | `--audio` | `local`, `remote` or `off` | `audiomode` 0, 1 or 2 |
 | `--ask-credentials` | | asks for the password, see "Saved credentials" |
+| `--trusted` | | no Windows warning about the publisher and the shared resources for this launch, see below |
 | `--show`, `--hidden` | | the main window, see "From a shortcut or a .bat file" |
 | `--help`, `/?` | | shows this list and opens nothing |
 
@@ -625,6 +647,7 @@ The rules:
 - Every value is checked before anything opens: a host name or an IP address for `--server` and `--gateway`, a number in range, at most 256 characters for names (1024 for a program, 2048 for arguments), no control characters, no quotes except in `--remoteapp-args`, and no value that starts with `--` except the arguments. A wrong option shows a message that says which and why, and nothing connects.
 - There is no option for a password, on purpose: a command line can be read by other programs of the computer, and it stays in the .bat file, in shortcuts and in logs. Windows uses the credential saved for the server (see "Saved credentials"), or asks for the password. `--password` is refused with a message that says so.
 - A second start hands its options to the UltimateRDP that already runs, as it does with a file.
+- `--trusted`: before a RemoteApp connection, Windows shows a warning about the publisher of the connection and the resources it shares, with a Connect button, for a .rdp file that is not signed. `--trusted` turns it off for this launch (the control properties `ShowRedirectionWarningDialog` and `RedirectionWarningType`). A .bat file or a shortcut is code the user chose to run, so the flag gives nothing to its author that the .bat file did not already give; a .rdp file is data that can come by mail, so no key of a .rdp file turns the warning off, and a launch without `--trusted` keeps the warning of Windows as before. The question about the certificate of the server is another dialog and always shows when Windows asks it. The client log says, for each connection, whether the warning is left to Windows or turned off, and why.
 - A session opened with options does not go to File, Recent, since the options would be lost there; File, Reopen opens it again with the same options.
 - Full screen at the start and a fixed desktop size are not offered: the client starts every session in its window and sizes the desktop to the window, whatever the file says (`screen mode id`, `desktopwidth`, `desktopheight`).
 
@@ -644,14 +667,14 @@ start "" "%LOCALAPPDATA%\UltimateRDP\client-0.10.0\UltimateRDP.exe" --server "se
 
 ### The launcher generator
 
-File, **Create a launcher (.bat)...** opens a dialog filled from the active tab, if any. The first view holds the name of the launcher, the server, the port (3389), the user, what it opens (the remote desktop or a RemoteApp program) and the program. **Advanced options** shows the name and the arguments of the program, the domain, the gateway, the main window, "Always ask for the password", the display and redirection choices of the table above ("Default" leaves the choice to the client and the .rdp file), where the launcher finds UltimateRDP.exe, and what to write:
+File, **Create a launcher (.bat)...** opens a dialog filled from the active tab, if any. The first view holds the name of the launcher, the server, the port (3389), the user, what it opens (the remote desktop or a RemoteApp program) and the program. **Advanced options** shows the name and the arguments of the program, the domain, the gateway, the main window, "Always ask for the password", "Do not show the Windows warning (trusted server)" (off by default, it adds `--trusted`), the display and redirection choices of the table above ("Default" leaves the choice to the client and the .rdp file), where the launcher finds UltimateRDP.exe, and what to write:
 
 - UltimateRDP.exe: this program (the path of the running UltimateRDP.exe, the default), next to the launcher (`%~dp0UltimateRDP.exe`), or a path you type, where variables such as `%LOCALAPPDATA%` or `%ProgramFiles%` stay as written and take their value on the computer that runs the launcher.
 - One .bat file that carries every option (the default), or a .bat file and a .rdp file beside it, named after the .bat file; the .bat file then opens `%~dp0<name>.rdp`. The .rdp file is written in UTF-16, as the Microsoft client writes them.
 
 The dialog shows the text of the .bat file as you type, or which field is wrong. **Fill from the current session** and **Fill from a .rdp file...** fill the fields from the settings of the active tab or of a file. **Save as...** writes the file, **Copy** puts its text in the clipboard, and **Test** starts this UltimateRDP with the options of the launcher, which opens the connection in the running client. The launcher holds no password, and the dialog has no field for one.
 
-The .bat file starts with `@echo off`, `chcp 65001 >nul` when a character of the file is outside ASCII, a comment in the language of the client that says what it opens and that it holds no password, `setlocal DisableDelayedExpansion`, and `start "" "<UltimateRDP.exe>" <options>`. It is written in UTF-8 without a byte order mark, with CRLF line ends. Each value is quoted so that cmd.exe gives it to UltimateRDP exactly as typed and cannot run anything else: see "Security notes".
+The .bat file starts with `@echo off`, `chcp 65001 >nul` when a character of the file is outside ASCII, a comment that starts with "UltimateRDP by Aprogsys" and its version and says, in the language of the client, what it opens and that it holds no password, `setlocal DisableDelayedExpansion`, and `start "" "<UltimateRDP.exe>" <options>`. It is written in UTF-8 without a byte order mark, with CRLF line ends. Each value is quoted so that cmd.exe gives it to UltimateRDP exactly as typed and cannot run anything else: see "Security notes".
 
 ## How it works
 
@@ -676,6 +699,8 @@ Messages are JSON objects sent as ASCII lines, except the `u15` chunks, and each
 
 ## Troubleshooting
 
+- **The first start of a new version takes several seconds before anything shows.** That time passes before the process exists: an antivirus analyses a new executable of about 120 MB at its first start. The next starts show the loader in about 0.1 s.
+- **A launcher clicked twice.** From version 0.10.0 the second click starts the program on the connection that runs; see "One connection per server and account".
 - **The agent never becomes ready.** Run `UltimateRDP.Agent.exe --status` in the session: it says whether the agent runs there and where it is set to start from. The tray icon only appears once the client is connected, so its absence before that is normal. A server policy may also block virtual channels: the agent log then has a warning that it cannot open the channel.
 - **"The agent did not acknowledge the drag".** The agent did not answer the start of the drag within a second. A slow connection or a busy agent can cause it, and so can an agent that exited or restarted in the session, which the client cannot see otherwise. The client then looks for the agent again: the agent label goes to "Agent: waiting", and back to "Agent ready" when the agent answers. When the status bar says "The session does not accept simulated input", the session may be locked, or a policy may block simulated input. Please report it with both logs.
 - **The target shows no drop feedback, or the status bar says "Nothing under the cursor accepted the files."** The application under the cursor may not accept files at that place. Some applications also refuse network paths such as `\\tsclient\C\...`. For those, turn on "Stage files in the session before the drop" in the agent tray menu.
