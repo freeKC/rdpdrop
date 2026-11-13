@@ -75,6 +75,13 @@ internal sealed class ClientSettings
     /// </summary>
     public string DirectTransfer { get; set; } = DirectTransferPolicy.ToSetting(DirectTransferMode.Auto);
 
+    /// <summary>
+    /// The most connections of a direct transfer, 1 to 16, 8 by default. The client opens one
+    /// connection per started 32 MiB of the transfer, within this setting and the offer of
+    /// the agent. Only editable in the file.
+    /// </summary>
+    public int DirectConnections { get; set; } = DirectTransferPolicy.DefaultConnections;
+
     /// <summary>The mode of <see cref="DirectTransfer"/>.</summary>
     [JsonIgnore]
     public DirectTransferMode DirectTransferMode => DirectTransferPolicy.Parse(DirectTransfer, out _);
@@ -130,7 +137,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, direct connection {DirectTransfer}, log level {LogLevel}";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, direct connection {DirectTransfer} with up to {DirectConnections} connection(s), log level {LogLevel}";
 
     private ClientSettings Normalized()
     {
@@ -161,6 +168,13 @@ internal sealed class ClientSettings
         }
 
         DirectTransfer = DirectTransferPolicy.ToSetting(directTransfer);
+        var directConnections = DirectTransferPolicy.ParseConnections(DirectConnections, out recognized);
+        if (!recognized)
+        {
+            ClientLog.Warn($"The directConnections setting {DirectConnections} is not from 1 to {DirectTransferPolicy.MaxConnections}; using {DirectTransferPolicy.DefaultConnections}.");
+        }
+
+        DirectConnections = directConnections;
         RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;
     }

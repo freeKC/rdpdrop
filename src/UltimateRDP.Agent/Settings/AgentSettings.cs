@@ -21,7 +21,7 @@ internal sealed class AgentSettings
     private volatile FastTransferMode _fastTransfer;
     private volatile DirectTransferMode _directTransfer;
 
-    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead, DirectTransferMode directTransfer, (int First, int Last) directPortRange)
+    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead, DirectTransferMode directTransfer, (int First, int Last) directPortRange, int directConnections, int directMaxMegabytesPerSecond)
     {
         _path = path;
         _logger = logger;
@@ -33,6 +33,8 @@ internal sealed class AgentSettings
         ChannelRead = channelRead;
         _directTransfer = directTransfer;
         DirectPortRange = directPortRange;
+        DirectConnections = directConnections;
+        DirectMaxMegabytesPerSecond = directMaxMegabytesPerSecond;
     }
 
     /// <summary>
@@ -64,6 +66,19 @@ internal sealed class AgentSettings
     /// time, "3400-3449" by default. Only editable in the file; read at startup.
     /// </summary>
     public (int First, int Last) DirectPortRange { get; }
+
+    /// <summary>
+    /// The most connections a direct transfer may use, 1 to 16, 8 by default; the client uses
+    /// fewer for a small transfer. Only editable in the file; read at startup.
+    /// </summary>
+    public int DirectConnections { get; }
+
+    /// <summary>
+    /// A limit on the rate of a direct transfer, all its connections together, in millions of
+    /// bytes per second, to protect the server; 0, the default, for no limit. Only editable in
+    /// the file; read at startup.
+    /// </summary>
+    public int DirectMaxMegabytesPerSecond { get; }
 
     /// <summary>Lowest level written to the log. Only editable in the file.</summary>
     public LogLevel LogLevel { get; }
@@ -104,6 +119,8 @@ internal sealed class AgentSettings
         var channelRead = ChannelReadMode.Wts;
         var directTransfer = DirectTransferMode.Auto;
         (int First, int Last) directPortRange = (DirectTransferPolicy.DefaultFirstPort, DirectTransferPolicy.DefaultLastPort);
+        var directConnections = DirectTransferPolicy.DefaultConnections;
+        var directMaxMegabytesPerSecond = 0;
         try
         {
             if (FileExists(path))
@@ -144,6 +161,18 @@ internal sealed class AgentSettings
                         logger.Warn($"The directPortRange setting \"{data.DirectPortRange}\" is not a range of at most {DirectTransferPolicy.MaxPorts} ports from {DirectTransferPolicy.MinPort} to 65535; using \"{DirectTransferPolicy.DefaultPortRange}\".");
                     }
 
+                    directConnections = DirectTransferPolicy.ParseConnections(data.DirectConnections, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The directConnections setting {data.DirectConnections} is not from 1 to {DirectTransferPolicy.MaxConnections}; using {DirectTransferPolicy.DefaultConnections}.");
+                    }
+
+                    directMaxMegabytesPerSecond = DirectTransferPolicy.ParseMaxMegabytesPerSecond(data.DirectMaxMegabytesPerSecond, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The directMaxMegabytesPerSecond setting {data.DirectMaxMegabytesPerSecond} is not from 0 to {DirectTransferPolicy.MaxMegabytesPerSecond}; using 0, no limit.");
+                    }
+
                     if (data.FastTransferMinBytes is { } minBytes)
                     {
                         if (minBytes >= 0)
@@ -163,7 +192,7 @@ internal sealed class AgentSettings
             logger.Warn($"Could not read the settings file {path}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange);
+        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange, directConnections, directMaxMegabytesPerSecond);
     }
 
     /// <summary>
@@ -198,7 +227,7 @@ internal sealed class AgentSettings
 
     /// <summary>Readable summary for the log.</summary>
     public override string ToString() =>
-        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}";
+        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)} with up to {DirectConnections} connection(s){(DirectMaxMegabytesPerSecond > 0 ? $" and at most {DirectMaxMegabytesPerSecond} MB/s" : string.Empty)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}";
 
     private bool Save()
     {
@@ -212,6 +241,8 @@ internal sealed class AgentSettings
             ChannelRead = ChannelRead == ChannelReadMode.Wts ? null : ChannelReadModes.ToSetting(ChannelRead),
             DirectTransfer = DirectTransfer == DirectTransferMode.Auto ? null : DirectTransferPolicy.ToSetting(DirectTransfer),
             DirectPortRange = DirectPortRange == (DirectTransferPolicy.DefaultFirstPort, DirectTransferPolicy.DefaultLastPort) ? null : DirectTransferPolicy.ToSetting(DirectPortRange),
+            DirectConnections = DirectConnections == DirectTransferPolicy.DefaultConnections ? null : DirectConnections,
+            DirectMaxMegabytesPerSecond = DirectMaxMegabytesPerSecond == 0 ? null : DirectMaxMegabytesPerSecond,
         };
 
         lock (_saveGate)
@@ -286,5 +317,11 @@ internal sealed class AgentSettings
 
         /// <summary>Ports of the direct connection, such as "3400-3449", the default when absent.</summary>
         public string? DirectPortRange { get; set; }
+
+        /// <summary>Most connections of a direct transfer, 1 to 16; 8 when absent.</summary>
+        public int? DirectConnections { get; set; }
+
+        /// <summary>Limit of a direct transfer in millions of bytes per second; 0 or absent for no limit.</summary>
+        public int? DirectMaxMegabytesPerSecond { get; set; }
     }
 }

@@ -90,4 +90,52 @@ public static class DirectTransferPolicy
         range.First == range.Last
             ? range.First.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{range.First}-{range.Last}");
+
+    /// <summary>Connections of a direct transfer when the setting <c>directConnections</c> is absent, on both sides.</summary>
+    public const int DefaultConnections = 8;
+
+    /// <summary>Most connections the setting <c>directConnections</c> allows.</summary>
+    public const int MaxConnections = 16;
+
+    /// <summary>The client opens one connection per started share of this many bytes of the transfer.</summary>
+    public const long BytesPerConnection = 32L * 1024 * 1024;
+
+    /// <summary>Highest value of the setting <c>directMaxMegabytesPerSecond</c>.</summary>
+    public const int MaxMegabytesPerSecond = 100_000;
+
+    /// <summary>
+    /// Reads the setting <c>directConnections</c>: 1 to <see cref="MaxConnections"/>. A missing
+    /// value gives <see cref="DefaultConnections"/> and counts as recognized; a value out of
+    /// range gives <see cref="DefaultConnections"/> and <paramref name="recognized"/> false.
+    /// </summary>
+    public static int ParseConnections(int? value, out bool recognized)
+    {
+        recognized = value is null or (>= 1 and <= MaxConnections);
+        return value is >= 1 and <= MaxConnections ? value.Value : DefaultConnections;
+    }
+
+    /// <summary>
+    /// Reads the setting <c>directMaxMegabytesPerSecond</c>: 0 for no limit, the default, up to
+    /// <see cref="MaxMegabytesPerSecond"/>. A value out of range gives 0 and
+    /// <paramref name="recognized"/> false.
+    /// </summary>
+    public static int ParseMaxMegabytesPerSecond(int? value, out bool recognized)
+    {
+        recognized = value is null or (>= 0 and <= MaxMegabytesPerSecond);
+        return value is >= 0 and <= MaxMegabytesPerSecond ? value.Value : 0;
+    }
+
+    /// <summary>
+    /// The connections the client opens for a transfer of <paramref name="totalBytes"/>: the
+    /// minimum of what the agent offers, of the setting of the client, and of one connection
+    /// per started <see cref="BytesPerConnection"/> bytes; always at least one.
+    /// </summary>
+    public static int ConnectionsFor(int offered, int setting, long totalBytes) => ConnectionsFor(offered, setting, totalBytes, BytesPerConnection);
+
+    /// <summary>As <see cref="ConnectionsFor(int, int, long)"/>, with one connection per started <paramref name="bytesPerConnection"/> bytes.</summary>
+    internal static int ConnectionsFor(int offered, int setting, long totalBytes, long bytesPerConnection)
+    {
+        var bySize = Math.Max(1, (totalBytes + bytesPerConnection - 1) / bytesPerConnection);
+        return (int)Math.Clamp(Math.Min(Math.Min(offered, setting), bySize), 1, MaxConnections);
+    }
 }
