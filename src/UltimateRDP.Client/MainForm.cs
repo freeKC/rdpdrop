@@ -30,6 +30,7 @@ internal sealed partial class MainForm : Form
         TextAlign = ContentAlignment.MiddleCenter,
     };
 
+    private MenuClickAway? _menuClickAway;
     private readonly ToolStripMenuItem _sessionMenu = new();
     private readonly ToolStripMenuItem _connectItem = new();
     private readonly ToolStripMenuItem _disconnectItem = new();
@@ -89,6 +90,7 @@ internal sealed partial class MainForm : Form
         // DPI when it is created, and would be scaled a second time.
         Controls.Add(menu);
         MainMenuStrip = menu;
+        _menuClickAway = new MenuClickAway(menu);
 
         // In pixels of the monitor the window opens on, so after the auto scaling above;
         // set again in OnLoad.
@@ -212,6 +214,7 @@ internal sealed partial class MainForm : Form
 
         _tray?.Dispose();
         _tray = null;
+        _menuClickAway?.Dispose();
         base.OnFormClosed(e);
     }
 
