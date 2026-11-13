@@ -84,6 +84,9 @@ public sealed record LauncherDraft
     /// <summary>Asks for the password at every connection.</summary>
     public bool AskPassword { get; init; }
 
+    /// <summary>The launcher passes <c>--trusted</c>: no warning of Windows about the publisher and the shared resources.</summary>
+    public bool Trusted { get; init; }
+
     /// <summary>The main window.</summary>
     public LaunchWindow Window { get; init; } = LaunchWindow.Auto;
 
@@ -241,7 +244,7 @@ public sealed record LauncherDraft
             LauncherExeKind.WithVariables => TypedExe.Trim(),
             _ => null,
         };
-        var options = new LaunchOptions(null, Window, AskPassword, null) { Connection = connection };
+        var options = new LaunchOptions(null, Window, AskPassword, null) { Connection = connection, Trusted = Trusted };
         var spec = new LauncherSpec(ExeKind, exe, options, WithRdpFile ? RdpFileName : null, comments);
         var problem = LauncherBatch.Check(spec, out _);
         error = problem switch

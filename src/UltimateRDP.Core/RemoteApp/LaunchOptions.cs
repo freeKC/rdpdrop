@@ -41,6 +41,14 @@ public sealed record LaunchOptions(string? Path, LaunchWindow Window, bool AskCr
     /// <summary>The options of a connection; <see cref="ConnectionOptions.None"/> without any.</summary>
     public ConnectionOptions Connection { get; init; } = ConnectionOptions.None;
 
+    /// <summary>
+    /// True with <c>--trusted</c>, since 0.10.0: the warning of Windows about the publisher and the
+    /// shared resources is not shown for this launch. A .bat file or a shortcut is code the user
+    /// chose to run, so the flag gives nothing its author did not have; a .rdp file is data that
+    /// can come by mail, so no key of a .rdp file ever sets it.
+    /// </summary>
+    public bool Trusted { get; init; }
+
     /// <summary>True with <c>--help</c> or <c>/?</c>: the client shows its options and opens nothing.</summary>
     public bool Help { get; init; }
 
@@ -55,6 +63,7 @@ public sealed record LaunchOptions(string? Path, LaunchWindow Window, bool AskCr
         var window = LaunchWindow.Auto;
         var ask = false;
         var help = false;
+        var trusted = false;
         var connection = ConnectionOptions.None;
         var given = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < args.Count; i++)
@@ -80,6 +89,12 @@ public sealed record LaunchOptions(string? Path, LaunchWindow Window, bool AskCr
             if (arg.Equals(AskCredentialsOption, StringComparison.OrdinalIgnoreCase))
             {
                 ask = true;
+                continue;
+            }
+
+            if (arg.Equals(LaunchOptionNames.Trusted, StringComparison.OrdinalIgnoreCase))
+            {
+                trusted = true;
                 continue;
             }
 
@@ -141,7 +156,7 @@ public sealed record LaunchOptions(string? Path, LaunchWindow Window, bool AskCr
             return Refused(error);
         }
 
-        return new LaunchOptions(path, window, ask, null) { Connection = connection };
+        return new LaunchOptions(path, window, ask, null) { Connection = connection, Trusted = trusted };
     }
 
     /// <summary>
@@ -159,6 +174,11 @@ public sealed record LaunchOptions(string? Path, LaunchWindow Window, bool AskCr
         if (AskCredentials)
         {
             args.Add(AskCredentialsOption);
+        }
+
+        if (Trusted)
+        {
+            args.Add(LaunchOptionNames.Trusted);
         }
 
         foreach (var (option, value) in ConnectionArguments(Connection))

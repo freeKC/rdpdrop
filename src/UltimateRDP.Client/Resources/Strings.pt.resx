@@ -111,6 +111,7 @@ Início.
 --ask-credentials: pedir a senha a cada conexão
 --show: mostrar a janela principal, também para um programa RemoteApp
 --hidden: manter a janela principal oculta, também para uma área de trabalho
+--trusted: sem aviso do Windows sobre o editor e os recursos compartilhados para este início; um arquivo .rdp nunca o desativa
 --help, /?: esta lista
 
 Não há opção para senha: o Windows usa a credencial salva para o servidor ou pede a senha.</value>
@@ -482,6 +483,12 @@ A próxima conexão vai solicitá-las novamente. A sessão aberta não é afetad
   </data>
   <data name="LauncherTooLong" xml:space="preserve">
     <value>A linha de comando do iniciador é mais longa do que o cmd.exe lê: encurte os argumentos.</value>
+  </data>
+  <data name="LauncherTrusted" xml:space="preserve">
+    <value>Não mostrar o aviso do Windows (servidor confiável)</value>
+  </data>
+  <data name="LauncherTrustedHint" xml:space="preserve">
+    <value>Adiciona --trusted: o Windows não pergunta sobre o editor e os recursos compartilhados antes de abrir o programa. A pergunta sobre o certificado do servidor continua aparecendo. Um arquivo .rdp nunca pode fazer isso.</value>
   </data>
   <data name="LauncherUser" xml:space="preserve">
     <value>Usuário:</value>

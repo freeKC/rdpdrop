@@ -378,7 +378,7 @@ public static class LauncherBatch
         var position = 0;
         while (position < index)
         {
-            position += args[position] is LaunchOptionNames.Show or LaunchOptionNames.Hidden or LaunchOptionNames.AskCredentials ? 1 : 2;
+            position += args[position] is LaunchOptionNames.Show or LaunchOptionNames.Hidden or LaunchOptionNames.AskCredentials or LaunchOptionNames.Trusted ? 1 : 2;
         }
 
         return position == index;

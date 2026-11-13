@@ -23,7 +23,8 @@ public sealed record SendRequest(IReadOnlyList<string> Paths);
 /// <c>--server</c>. Null or empty without any; with neither a file nor a server the window of
 /// the client shows.
 /// </param>
-public sealed record OpenRequest(string? Path, LaunchWindow Window, bool AskCredentials, ConnectionOptions? Connection = null);
+/// <param name="Trusted"><c>--trusted</c>, since 0.10.0.</param>
+public sealed record OpenRequest(string? Path, LaunchWindow Window, bool AskCredentials, ConnectionOptions? Connection = null, bool Trusted = false);
 
 /// <summary>The answer to a request.</summary>
 /// <param name="Ok">True when the request was taken.</param>

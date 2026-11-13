@@ -200,6 +200,7 @@ internal sealed partial class SessionView : UserControl
 
             var desktop = RdpSettingsApplier.Apply(_rdp, RdpFile, options, createChannel: !_channelCreated, _remoteApp);
             ApplySavedCredentials();
+            RdpSettingsApplier.ApplyRedirectionWarning(_rdp, Source.Trusted, Host);
             _display.OnConnecting(desktop);
             _sessionUsesAllMonitors = _useAllMonitors;
             _channelCreated = true;

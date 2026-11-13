@@ -12,6 +12,13 @@ public static class LaunchOptionNames
     /// <summary>Asks for the password at every connection.</summary>
     public const string AskCredentials = "--ask-credentials";
 
+    /// <summary>
+    /// Since 0.10.0: the warning of Windows about the publisher and the shared resources of a
+    /// RemoteApp connection is not shown for this launch. Only the command line can ask for it,
+    /// never a key of a .rdp file.
+    /// </summary>
+    public const string Trusted = "--trusted";
+
     /// <summary>Shows the list of the options.</summary>
     public const string Help = "--help";
 

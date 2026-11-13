@@ -111,6 +111,7 @@ Start.
 --ask-credentials: bij elke verbinding om het wachtwoord vragen
 --show: het hoofdvenster tonen, ook voor een RemoteApp-programma
 --hidden: het hoofdvenster verborgen houden, ook voor een bureaublad
+--trusted: geen Windows-waarschuwing over de uitgever en de gedeelde bronnen voor deze start; een .rdp-bestand schakelt die nooit uit
 --help, /?: deze lijst
 
 Er is geen optie voor een wachtwoord: Windows gebruikt de opgeslagen referentie voor de server of vraagt om het wachtwoord.</value>
@@ -482,6 +483,12 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   </data>
   <data name="LauncherTooLong" xml:space="preserve">
     <value>De opdrachtregel van het startbestand is langer dan cmd.exe leest: maak de argumenten korter.</value>
+  </data>
+  <data name="LauncherTrusted" xml:space="preserve">
+    <value>De Windows-waarschuwing niet tonen (vertrouwde server)</value>
+  </data>
+  <data name="LauncherTrustedHint" xml:space="preserve">
+    <value>Voegt --trusted toe: Windows vraagt niets over de uitgever en de gedeelde bronnen voordat het programma opent. De vraag over het certificaat van de server verschijnt nog steeds. Een .rdp-bestand kan dit nooit.</value>
   </data>
   <data name="LauncherUser" xml:space="preserve">
     <value>Gebruiker:</value>

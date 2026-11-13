@@ -9,7 +9,8 @@ namespace UltimateRDP.Client.Sessions;
 /// </summary>
 /// <param name="Path">The .rdp file, or null.</param>
 /// <param name="Connection">The options of the command line; <see cref="ConnectionOptions.None"/> without any.</param>
-internal sealed record SessionSource(string? Path, ConnectionOptions Connection)
+/// <param name="Trusted"><c>--trusted</c> on the command line, since 0.10.0: no warning of Windows about the publisher and the shared resources.</param>
+internal sealed record SessionSource(string? Path, ConnectionOptions Connection, bool Trusted = false)
 {
     /// <summary>A session opened from a .rdp file only.</summary>
     public static SessionSource FromFile(string path) => new(path, ConnectionOptions.None);

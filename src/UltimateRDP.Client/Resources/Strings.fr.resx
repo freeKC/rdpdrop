@@ -111,6 +111,7 @@ Démarrage.
 --ask-credentials : demander le mot de passe à chaque connexion
 --show : afficher la fenêtre principale, aussi pour un programme RemoteApp
 --hidden : garder la fenêtre principale cachée, aussi pour un bureau
+--trusted : pas d'avertissement de Windows sur l'éditeur et les ressources partagées pour ce lancement ; un fichier .rdp ne le désactive jamais
 --help, /? : cette liste
 
 Il n'y a pas d'option pour un mot de passe : Windows utilise l'identifiant enregistré pour le serveur, ou demande le mot de passe.</value>
@@ -482,6 +483,12 @@ La prochaine connexion les demandera de nouveau. La session ouverte n'est pas to
   </data>
   <data name="LauncherTooLong" xml:space="preserve">
     <value>La ligne de commande du lanceur est plus longue que ce que lit cmd.exe : raccourcissez les arguments.</value>
+  </data>
+  <data name="LauncherTrusted" xml:space="preserve">
+    <value>Ne pas afficher l'avertissement de Windows (serveur de confiance)</value>
+  </data>
+  <data name="LauncherTrustedHint" xml:space="preserve">
+    <value>Ajoute --trusted : Windows ne pose pas de question sur l'éditeur et les ressources partagées avant l'ouverture du programme. La question sur le certificat du serveur s'affiche toujours. Un fichier .rdp ne peut jamais le faire.</value>
   </data>
   <data name="LauncherUser" xml:space="preserve">
     <value>Utilisateur :</value>

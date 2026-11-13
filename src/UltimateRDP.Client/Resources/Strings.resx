@@ -119,6 +119,7 @@ Start.
 --ask-credentials: ask for the password at every connection
 --show: show the main window, also for a RemoteApp program
 --hidden: keep the main window hidden, also for a desktop
+--trusted: no Windows warning about the publisher and the shared resources for this launch; a .rdp file never turns it off
 --help, /?: this list
 
 There is no option for a password: Windows uses the credential saved for the server, or asks for the password.</value>
@@ -514,6 +515,12 @@ The next connection asks for them again. The open session is not affected.</valu
   </data>
   <data name="LauncherTooLong" xml:space="preserve">
     <value>The command line of the launcher is longer than cmd.exe reads: shorten the arguments.</value>
+  </data>
+  <data name="LauncherTrusted" xml:space="preserve">
+    <value>Do not show the Windows warning (trusted server)</value>
+  </data>
+  <data name="LauncherTrustedHint" xml:space="preserve">
+    <value>Adds --trusted: Windows does not ask about the publisher and the shared resources before the program opens. The question about the certificate of the server still shows. A .rdp file can never do this.</value>
   </data>
   <data name="LauncherUser" xml:space="preserve">
     <value>User:</value>

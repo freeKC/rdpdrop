@@ -285,6 +285,38 @@ internal static class RdpSettingsApplier
         extended.set_Property(name, ref value);
     }
 
+    /// <summary>
+    /// The warning of Windows about the publisher and the shared resources of the connection,
+    /// which the control shows before a RemoteApp connection, since 0.10.0. With
+    /// <c>--trusted</c> on the command line it is turned off through
+    /// IMsRdpClientNonScriptable3.ShowRedirectionWarningDialog and
+    /// IMsRdpClientNonScriptable4.RedirectionWarningType (trusted publisher); otherwise nothing is
+    /// set and Windows decides, as before. No key of a .rdp file reaches this. The question about
+    /// the certificate of the server is another dialog and is never turned off here. One line of
+    /// the log says what was decided and why.
+    /// </summary>
+    public static void ApplyRedirectionWarning(RdpControl control, bool trusted, string host)
+    {
+        if (!trusted)
+        {
+            ClientLog.Info($"Windows warning about the publisher and the shared resources ({host}): left to Windows, the launch has no --trusted; a .rdp file never turns it off.");
+            return;
+        }
+
+        var log = new List<string>();
+        if (control.GetOcx() is IMsRdpClientNonScriptable5 nonScriptable)
+        {
+            TrySet(log, "showRedirectionWarningDialog=False", () => nonScriptable.ShowRedirectionWarningDialog = false);
+            TrySet(log, "redirectionWarningType=Trusted", () => nonScriptable.RedirectionWarningType = RedirectionWarningType.RedirectionWarningTypeTrusted);
+        }
+        else
+        {
+            log.Add("IMsRdpClientNonScriptable5 not available, left to Windows");
+        }
+
+        ClientLog.Info($"Windows warning about the publisher and the shared resources ({host}): not shown, --trusted on the command line ({string.Join("; ", log)}); the certificate question of the server is not affected.");
+    }
+
     private static void ApplyGateway(RdpControl control, RdpFile file, List<string> log)
     {
         var transport = control.TransportSettings4;

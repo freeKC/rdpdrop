@@ -111,6 +111,7 @@ Avvio.
 --ask-credentials: chiedere la password a ogni connessione
 --show: mostrare la finestra principale, anche per un programma RemoteApp
 --hidden: tenere nascosta la finestra principale, anche per un desktop
+--trusted: nessun avviso di Windows sull'editore e sulle risorse condivise per questo avvio; un file .rdp non lo disattiva mai
 --help, /?: questo elenco
 
 Non esiste un'opzione per la password: Windows usa le credenziali salvate per il server o chiede la password.</value>
@@ -482,6 +483,12 @@ La prossima connessione le richiederà di nuovo. La sessione aperta non viene mo
   </data>
   <data name="LauncherTooLong" xml:space="preserve">
     <value>La riga di comando del file di avvio è più lunga di quanto legge cmd.exe: accorciare gli argomenti.</value>
+  </data>
+  <data name="LauncherTrusted" xml:space="preserve">
+    <value>Non mostrare l'avviso di Windows (server attendibile)</value>
+  </data>
+  <data name="LauncherTrustedHint" xml:space="preserve">
+    <value>Aggiunge --trusted: Windows non chiede nulla sull'editore e sulle risorse condivise prima di aprire il programma. La domanda sul certificato del server appare comunque. Un file .rdp non può mai farlo.</value>
   </data>
   <data name="LauncherUser" xml:space="preserve">
     <value>Utente:</value>

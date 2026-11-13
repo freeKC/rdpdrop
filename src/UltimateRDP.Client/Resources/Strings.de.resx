@@ -111,6 +111,7 @@ Start.
 --ask-credentials: bei jeder Verbindung nach dem Kennwort fragen
 --show: das Hauptfenster zeigen, auch für ein RemoteApp-Programm
 --hidden: das Hauptfenster verborgen lassen, auch für einen Desktop
+--trusted: keine Windows-Warnung zu Herausgeber und freigegebenen Ressourcen für diesen Start; eine .rdp-Datei schaltet sie nie ab
 --help, /?: diese Liste
 
 Es gibt keine Option für ein Kennwort: Windows verwendet die für den Server gespeicherten Anmeldeinformationen oder fragt nach dem Kennwort.</value>
@@ -482,6 +483,12 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
   </data>
   <data name="LauncherTooLong" xml:space="preserve">
     <value>Die Befehlszeile der Startdatei ist länger, als cmd.exe liest: kürzen Sie die Argumente.</value>
+  </data>
+  <data name="LauncherTrusted" xml:space="preserve">
+    <value>Die Windows-Warnung nicht anzeigen (vertrauenswürdiger Server)</value>
+  </data>
+  <data name="LauncherTrustedHint" xml:space="preserve">
+    <value>Fügt --trusted hinzu: Windows fragt vor dem Öffnen des Programms nicht nach dem Herausgeber und den freigegebenen Ressourcen. Die Frage zum Zertifikat des Servers erscheint weiterhin. Eine .rdp-Datei kann das nie.</value>
   </data>
   <data name="LauncherUser" xml:space="preserve">
     <value>Benutzer:</value>

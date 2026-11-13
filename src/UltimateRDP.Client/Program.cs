@@ -54,7 +54,7 @@ internal static class Program
         }
 
         var path = options.Error is null && options.Path is { } given ? FullPath(given) : null;
-        var source = options.Error is null && options.HasConnection ? new SessionSource(path, options.Connection) : null;
+        var source = options.Error is null && options.HasConnection ? new SessionSource(path, options.Connection, options.Trusted) : null;
 
         // One client per user and session: a second start hands its file to the first one,
         // which shows the loader of the new session itself.
@@ -168,7 +168,7 @@ internal static class Program
     {
         try
         {
-            var request = new OpenRequest(source?.Path, options.Window, options.AskCredentials, source is null || source.Connection.IsEmpty ? null : source.Connection);
+            var request = new OpenRequest(source?.Path, options.Window, options.AskCredentials, source is null || source.Connection.IsEmpty ? null : source.Connection, source?.Trusted ?? false);
             var answer = LocalMessages.DecodeAnswer(SameUserPipe.Call(PipePurpose, LocalMessages.Encode(request), HandOffTimeout));
             if (answer is { Ok: true })
             {

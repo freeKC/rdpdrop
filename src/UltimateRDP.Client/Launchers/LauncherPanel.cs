@@ -52,6 +52,7 @@ internal sealed class LauncherPanel : UserControl
     private readonly TextBox _displayName = new();
     private readonly TextBox _arguments = new();
     private readonly CheckBox _askPassword = new() { AutoSize = true };
+    private readonly CheckBox _trusted = new() { AutoSize = true };
     private readonly ComboBox _window = NewCombo();
     private readonly ComboBox _multimon = NewCombo();
     private readonly ComboBox _scaleChoice = NewCombo();
@@ -175,6 +176,7 @@ internal sealed class LauncherPanel : UserControl
         Arguments = _arguments.Text,
         Gateway = _gateway.Text,
         AskPassword = _askPassword.Checked,
+        Trusted = _trusted.Checked,
         Window = Selected<LaunchWindow>(_window),
         Multimon = Selected<bool?>(_multimon),
         Scale = Selected<int?>(_scaleChoice),
@@ -216,6 +218,7 @@ internal sealed class LauncherPanel : UserControl
             _arguments.Text = draft.Arguments;
             _gateway.Text = draft.Gateway;
             _askPassword.Checked = draft.AskPassword;
+            _trusted.Checked = draft.Trusted;
             Select(_window, draft.Window);
             Select(_multimon, draft.Multimon);
             Select(_scaleChoice, draft.Scale);
@@ -396,6 +399,8 @@ internal sealed class LauncherPanel : UserControl
         Row(true, (Strings.LauncherWindowsKeys, _windowsKeys, 1), (Strings.LauncherAudio, _audio, 1));
         Row(true, (Strings.LauncherClipboard, _clipboard, 1), (Strings.LauncherDrives, _drives, 1));
         Row(true, (Strings.LauncherPrinters, _printers, 1));
+        Row(true, (null, _trusted, 3));
+        Row(true, (null, Hint(Strings.LauncherTrustedHint), 3));
         Row(true, (Strings.LauncherExe, _exeRunning, 3));
         Row(true, (null, _exeNext, 3));
         Row(true, (null, _exeTyped, 3));
@@ -516,6 +521,7 @@ internal sealed class LauncherPanel : UserControl
         _kindRemoteApp.Text = Strings.LauncherKindRemoteApp;
         _showAdvanced.Text = Strings.LauncherAdvanced;
         _askPassword.Text = Strings.LauncherAskPassword;
+        _trusted.Text = Strings.LauncherTrusted;
         _exeRunning.Text = LocalText.Of(nameof(Strings.LauncherExeRunning), _runningExe).ToString();
         _toolTip.SetToolTip(_exeRunning, _runningExe);
         _exeNext.Text = Strings.LauncherExeNext;
@@ -566,7 +572,7 @@ internal sealed class LauncherPanel : UserControl
             box.TextChanged += (_, _) => UpdatePreview();
         }
 
-        foreach (var check in new ButtonBase[] { _kindDesktop, _kindRemoteApp, _askPassword, _exeRunning, _exeNext, _exeTyped, _outputBat, _outputBatRdp })
+        foreach (var check in new ButtonBase[] { _kindDesktop, _kindRemoteApp, _askPassword, _trusted, _exeRunning, _exeNext, _exeTyped, _outputBat, _outputBatRdp })
         {
             switch (check)
             {

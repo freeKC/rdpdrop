@@ -89,7 +89,7 @@ internal sealed partial class MainForm
             return;
         }
 
-        var source = new SessionSource(request.Path, connection);
+        var source = new SessionSource(request.Path, connection, request.Trusted);
         var hidden = new LaunchOptions(request.Path, request.Window, request.AskCredentials, null).StartsHidden(Describe(source)?.Program is not null);
         ClientLog.Info($"A second start hands {source} to this one, {(hidden ? "without the main window" : "with the main window")}, ask for the password {request.AskCredentials}.");
         if (hidden)
