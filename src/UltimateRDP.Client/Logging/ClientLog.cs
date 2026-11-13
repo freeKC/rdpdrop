@@ -72,11 +72,32 @@ internal static class ClientLog
                 }
 
                 var path = Path.Combine(Directory, FilePrefix + now.ToString(DateFormat, CultureInfo.InvariantCulture) + FileExtension);
-                File.AppendAllText(path, line, Utf8NoBom);
+                AppendShared(path, Utf8NoBom.GetBytes(line));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // Nowhere to report it; drop the line.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Appends with the file shared for writing: a second start of the client, which hands its
+    /// file to the first one and exits, writes a few lines to the same file meanwhile.
+    /// </summary>
+    private static void AppendShared(string path, byte[] bytes)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 1);
+                stream.Write(bytes);
+                return;
+            }
+            catch (IOException) when (attempt < 4)
+            {
+                Thread.Sleep(attempt * 5);
             }
         }
     }

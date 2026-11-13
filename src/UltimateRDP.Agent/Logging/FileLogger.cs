@@ -17,6 +17,9 @@ internal enum LogLevel
 /// log must not stop the agent. Each line goes to the file at once, so nothing waits in
 /// memory when the process ends. Without a usable folder (no full path, or a folder
 /// that cannot be created) the lines are dropped and the agent runs without a log.
+/// Since 0.9.0 every line gives the session of the agent with its thread, as in
+/// <c>[S3 12]</c>, and the processes of one user take turns on the file through a mutex
+/// of that user across sessions.
 /// </summary>
 internal sealed class FileLogger
 {
@@ -26,13 +29,24 @@ internal sealed class FileLogger
     private const string FileExtension = ".log";
     private const string DateFormat = "yyyyMMdd";
 
+    /// <summary>Wait for the other writers of the user, at most.</summary>
+    private const int MutexWaitMilliseconds = 1000;
+
+    /// <summary>Opens of the file tried before the line is dropped.</summary>
+    private const int MaxOpenAttempts = 4;
+
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
+    /// <summary>The session of the agent, in every line, since the agents of one user in several sessions write the same file.</summary>
+    private static readonly string SessionId = System.Diagnostics.Process.GetCurrentProcess().SessionId.ToString(CultureInfo.InvariantCulture);
 
     private readonly object _gate = new();
     private readonly string _directory;
     private readonly bool _usable;
     private DateOnly _currentDay;
     private DateOnly _failedDay;
+    private Mutex? _fileMutex;
+    private bool _fileMutexFailed;
 
     public FileLogger(string directory)
     {
@@ -71,7 +85,9 @@ internal sealed class FileLogger
                 .Append(now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture))
                 .Append(' ')
                 .Append(LevelText(level))
-                .Append(" [")
+                .Append(" [S")
+                .Append(SessionId)
+                .Append(' ')
                 .Append(Environment.CurrentManagedThreadId.ToString(CultureInfo.InvariantCulture))
                 .Append("] ")
                 .Append(message)
@@ -80,43 +96,110 @@ internal sealed class FileLogger
 
             lock (_gate)
             {
-                var today = DateOnly.FromDateTime(now);
-                if (today == _failedDay)
+                var held = AcquireFileMutex();
+                try
                 {
-                    // The folder could not be created today; try again tomorrow only.
-                    return;
+                    WriteLocked(now, line);
                 }
-
-                if (today != _currentDay)
+                finally
                 {
-                    try
+                    if (held)
                     {
-                        System.IO.Directory.CreateDirectory(_directory);
-                    }
-                    catch (Exception)
-                    {
-                        _failedDay = today;
-                        return;
-                    }
-
-                    _currentDay = today;
-                    try
-                    {
-                        DeleteOldFiles(today);
-                    }
-                    catch (Exception)
-                    {
-                        // The old files are tried again tomorrow; today's line still goes out.
+                        _fileMutex!.ReleaseMutex();
                     }
                 }
-
-                var path = Path.Combine(_directory, FilePrefix + now.ToString(DateFormat, CultureInfo.InvariantCulture) + FileExtension);
-                File.AppendAllText(path, line, Utf8NoBom);
             }
         }
         catch (Exception)
         {
             // Nowhere to report it; drop the line.
+        }
+    }
+
+    /// <summary>
+    /// The agents of one user in several sessions, a desktop and a RemoteApp session for
+    /// example, and a copy started with --send, write the same file: a mutex of the user
+    /// across sessions makes them take turns. Without it, a line is still written, and the
+    /// file is opened so that another writer does not make it fail.
+    /// </summary>
+    private bool AcquireFileMutex()
+    {
+        if (_fileMutex is null && !_fileMutexFailed)
+        {
+            try
+            {
+                using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                _fileMutex = new Mutex(false, @"Global\UltimateRDP.AgentLog." + (identity.User?.Value ?? "unknown"));
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException)
+            {
+                _fileMutexFailed = true;
+            }
+        }
+
+        if (_fileMutex is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _fileMutex.WaitOne(MutexWaitMilliseconds);
+        }
+        catch (AbandonedMutexException)
+        {
+            // A writer ended without releasing it; this one owns it now.
+            return true;
+        }
+    }
+
+    private void WriteLocked(DateTime now, string line)
+    {
+        var today = DateOnly.FromDateTime(now);
+        if (today == _failedDay)
+        {
+            // The folder could not be created today; try again tomorrow only.
+            return;
+        }
+
+        if (today != _currentDay)
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(_directory);
+            }
+            catch (Exception)
+            {
+                _failedDay = today;
+                return;
+            }
+
+            _currentDay = today;
+            try
+            {
+                DeleteOldFiles(today);
+            }
+            catch (Exception)
+            {
+                // The old files are tried again tomorrow; today's line still goes out.
+            }
+        }
+
+        var path = Path.Combine(_directory, FilePrefix + now.ToString(DateFormat, CultureInfo.InvariantCulture) + FileExtension);
+        var bytes = Utf8NoBom.GetBytes(line);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                // Shared for writing too: a writer without the mutex, or a reader, does not make the open fail.
+                using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 1);
+                stream.Write(bytes);
+                return;
+            }
+            catch (IOException) when (attempt < MaxOpenAttempts)
+            {
+                Thread.Sleep(attempt * 5);
+            }
         }
     }
 
