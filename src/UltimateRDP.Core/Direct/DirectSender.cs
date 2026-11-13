@@ -133,6 +133,9 @@ public sealed class DirectSender
     /// <summary>An open or a first read of a file slower than this is logged: it holds the whole transfer.</summary>
     private static readonly TimeSpan SlowFile = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>A file that takes this long from its open to its first block is shown to the user, through <see cref="FileWaiting"/>.</summary>
+    public static readonly TimeSpan FileWaitNotice = TimeSpan.FromSeconds(2);
+
     /// <summary>Blocks in the queue per connection.</summary>
     private const int BlocksPerConnection = 2;
 
@@ -159,6 +162,10 @@ public sealed class DirectSender
     private volatile bool _stopping;
     private volatile Stream? _source;
     private volatile string? _waitingOn;
+    private readonly Lock _noticeGate = new();
+    private string? _noticePath;
+    private long _noticeSince;
+    private bool _noticeShown;
     private long _closedAt;
     private long _acknowledgedBytes;
     private long _readTicks;
@@ -196,6 +203,14 @@ public sealed class DirectSender
 
     /// <summary>A line for the log at the info level, in English, raised on any thread of the sender.</summary>
     public event Action<string>? Info;
+
+    /// <summary>
+    /// Raised with the relative path of a file when its open and its first read have taken
+    /// <see cref="FileWaitNotice"/> without a block, as when Windows checks a large file, and
+    /// again with null once its first block is read or the transfer stops. Raised on a timer
+    /// or on the reader thread; the handler must return quickly.
+    /// </summary>
+    public event Action<string?>? FileWaiting;
 
     /// <summary>The files, in the order they are sent, once listed.</summary>
     public IReadOnlyList<TransferFile> Files { get; private set; } = [];
@@ -587,6 +602,7 @@ public sealed class DirectSender
     private void ReadFiles()
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var notice = new Timer(_ => CheckFileWait(), null, TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250));
         var digest = new byte[DirectFrames.HashLength];
         Slot control;
         lock (_gate)
@@ -632,6 +648,57 @@ public sealed class DirectSender
 
     /// <summary>Reads one file into the queue. False when the transfer stops.</summary>
     private bool SendFile(int index, TransferFile file, IncrementalHash hash)
+    {
+        try
+        {
+            BeginFileWait(file.RelativePath);
+            return SendFileBlocks(index, file, hash);
+        }
+        finally
+        {
+            EndFileWait();
+        }
+    }
+
+    /// <summary>From the open of a file to its first block, a wait that the user may see.</summary>
+    private void BeginFileWait(string relativePath)
+    {
+        lock (_noticeGate)
+        {
+            _noticePath = relativePath;
+            _noticeSince = Stopwatch.GetTimestamp();
+            _noticeShown = false;
+        }
+    }
+
+    /// <summary>The first block of the file was read, or the file is over: the notice ends.</summary>
+    private void EndFileWait()
+    {
+        lock (_noticeGate)
+        {
+            _noticePath = null;
+            if (_noticeShown)
+            {
+                _noticeShown = false;
+                FileWaiting?.Invoke(null);
+            }
+        }
+    }
+
+    /// <summary>On a timer while the reader runs: a wait for a file past <see cref="FileWaitNotice"/> is told once.</summary>
+    private void CheckFileWait()
+    {
+        lock (_noticeGate)
+        {
+            if (_noticePath is { } path && !_noticeShown && !_stopping && Seconds(Stopwatch.GetTimestamp() - _noticeSince) >= FileWaitNotice.TotalSeconds)
+            {
+                _noticeShown = true;
+                FileWaiting?.Invoke(path);
+            }
+        }
+    }
+
+    private bool SendFileBlocks(int index, TransferFile file, IncrementalHash hash)
     {
         if (_stopping)
         {
@@ -708,6 +775,11 @@ public sealed class DirectSender
                 finally
                 {
                     _waitingOn = null;
+                }
+
+                if (offset == 0)
+                {
+                    EndFileWait();
                 }
 
                 var read = Stopwatch.GetTimestamp() - start;

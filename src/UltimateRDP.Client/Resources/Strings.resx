@@ -478,6 +478,10 @@ Reconnect now?</value>
   <data name="TransferDirectLost" xml:space="preserve">
     <value>The direct connection was lost. Try again.</value>
   </data>
+  <data name="TransferOpeningFile" xml:space="preserve">
+    <value>Opening {0}... Windows may be checking the file.</value>
+    <comment>{0} is the name of a file whose opening or first read takes more than 2 seconds, on the computer of the user.</comment>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>The transfer stopped: the session was disconnected.</value>
   </data>

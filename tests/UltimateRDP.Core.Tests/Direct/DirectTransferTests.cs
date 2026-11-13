@@ -829,6 +829,38 @@ public class DirectTransferTests(ITestOutputHelper output)
         Assert.Equal(a, storage.Inner.Content("a.bin"));
     }
 
+    [Fact]
+    public void A_file_slow_to_open_is_told_after_two_seconds_and_until_its_first_block()
+    {
+        var a = Data(2 * Block, 1);
+        var b = Data(10, 2);
+        var waits = new ConcurrentQueue<(long Milliseconds, string? Path)>();
+        var watch = Stopwatch.StartNew();
+        var run = Run(
+            [new("a.bin", a.Length), new(@"Folder\b.txt", b.Length)],
+            [a, b],
+            created: sender => sender.FileWaiting += path => waits.Enqueue((watch.ElapsedMilliseconds, path)),
+            open: index =>
+            {
+                if (index == 0)
+                {
+                    // As Windows checking a large executable: the open takes long.
+                    Thread.Sleep(2600);
+                }
+
+                return new MemoryStream(index == 0 ? a : b, writable: false);
+            });
+        output.WriteLine(string.Join("; ", waits.Select(wait => $"{wait.Milliseconds} ms {wait.Path ?? "(end)"}")));
+
+        Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
+        var told = waits.ToArray();
+        Assert.Equal(2, told.Length);
+        Assert.Equal("a.bin", told[0].Path);
+        Assert.InRange(told[0].Milliseconds, 1900, 2600);
+        Assert.Null(told[1].Path);
+        Assert.True(told[1].Milliseconds >= 2600);
+    }
+
     private static (Stream Stream, DirectFrameReader Reader) Open(Agent agent, byte index)
     {
         var stream = agent.Connect();

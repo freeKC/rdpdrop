@@ -424,6 +424,9 @@ Se reconnecter maintenant ?</value>
   <data name="TransferDirectLost" xml:space="preserve">
     <value>La connexion directe a été perdue. Réessayez.</value>
   </data>
+  <data name="TransferOpeningFile" xml:space="preserve">
+    <value>Ouverture de {0}... Windows vérifie peut-être le fichier.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>Le transfert s'est arrêté : la session a été déconnectée.</value>
   </data>

@@ -424,6 +424,9 @@ Nu opnieuw verbinden?</value>
   <data name="TransferDirectLost" xml:space="preserve">
     <value>De directe verbinding is verbroken. Probeer het opnieuw.</value>
   </data>
+  <data name="TransferOpeningFile" xml:space="preserve">
+    <value>{0} wordt geopend... Windows controleert het bestand mogelijk.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>De overdracht is gestopt: de verbinding met de sessie is verbroken.</value>
   </data>

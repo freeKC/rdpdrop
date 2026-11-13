@@ -161,6 +161,7 @@ internal sealed partial class SessionView
         var upload = new DirectUpload(this, dragId, transferId, items, direct, Host, _directConnections);
         upload.Planned += OnDirectPlanned;
         upload.Acknowledged += OnDirectAcknowledged;
+        upload.FileWaiting += OnDirectFileWaiting;
         upload.FellBack += OnDirectFellBack;
         upload.Failed += OnDirectFailed;
         upload.Completed += OnDirectCompleted;
@@ -191,6 +192,51 @@ internal sealed partial class SessionView
         {
             ShowTransferProgress(upload);
         }
+    }
+
+    /// <summary>
+    /// A file takes long to open or to give its first block, as when Windows checks a large
+    /// file: the window and the status bar say so until its first block is read, then show
+    /// the stage of the transfer again.
+    /// </summary>
+    private void OnDirectFileWaiting(DirectUpload upload, string? relativePath)
+    {
+        if (upload != _direct)
+        {
+            return;
+        }
+
+        var window = ProgressWindowOf(upload);
+        if (relativePath is not null)
+        {
+            var text = LocalText.Of(nameof(Strings.TransferOpeningFile), Path.GetFileName(relativePath));
+            ClientLog.Info($"Transfer {upload.TransferId}: {relativePath} has not given its first block after {DirectSender.FileWaitNotice.TotalSeconds:0} s; the window says so.");
+            window?.ShowFileWait(text);
+            ShowTransferStatus(LocalText.Joined(text, LocalText.Of(nameof(Strings.TransferDirect))));
+            return;
+        }
+
+        window?.ShowFileWait(null);
+        if (upload.HasAcknowledgement)
+        {
+            ShowTransferProgress(upload);
+        }
+        else
+        {
+            ShowTransferStatus(LocalText.Joined(LocalText.Of(nameof(Strings.TransferPreparing), upload.Items.Count), LocalText.Of(nameof(Strings.TransferDirect))));
+        }
+    }
+
+    /// <summary>A text of the transfer in the status bar; while a drag hovers over the session, it waits, as the progress does.</summary>
+    private void ShowTransferStatus(LocalText text)
+    {
+        if (_dropTextBeforeDrag is not null)
+        {
+            _dropTextBeforeDrag = text;
+            return;
+        }
+
+        ShowDropStatus(text);
     }
 
     /// <summary>The direct connection cannot be used: the same drop goes on through the channel.</summary>

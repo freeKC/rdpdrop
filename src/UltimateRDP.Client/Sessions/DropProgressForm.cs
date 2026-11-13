@@ -60,6 +60,7 @@ internal sealed class DropProgressForm : Form
 
     /// <summary>True while the files go through the direct connection: the status says so on its second line.</summary>
     private bool _direct;
+    private LocalText? _fileWait;
     private long _noticeUntil;
     private long? _closeAt;
     private Rectangle _area;
@@ -326,6 +327,16 @@ internal sealed class DropProgressForm : Form
         }
     }
 
+    /// <summary>
+    /// A file takes long to open: while the transfer runs, the status says so instead of the
+    /// stage, until null ends it.
+    /// </summary>
+    public void ShowFileWait(LocalText? text)
+    {
+        _fileWait = text;
+        Render();
+    }
+
     /// <summary>Writes every text again in the current user interface language.</summary>
     public void ApplyTexts() => Render();
 
@@ -430,7 +441,7 @@ internal sealed class DropProgressForm : Form
         SetText(_fileLabel, _fileText());
         SetTip(_fileLabel, _fileTip());
         SetText(_countLabel, _countText());
-        var status = _statusText();
+        var status = _fileWait is { } wait && IsRunning ? wait.ToString() : _statusText();
         if (_direct && IsRunning)
         {
             status += Environment.NewLine + Strings.TransferDirect;

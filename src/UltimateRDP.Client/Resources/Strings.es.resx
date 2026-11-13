@@ -424,6 +424,9 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
   <data name="TransferDirectLost" xml:space="preserve">
     <value>Se perdió la conexión directa. Vuelva a intentarlo.</value>
   </data>
+  <data name="TransferOpeningFile" xml:space="preserve">
+    <value>Abriendo {0}... Es posible que Windows esté comprobando el archivo.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>La transferencia se detuvo: la sesión se desconectó.</value>
   </data>

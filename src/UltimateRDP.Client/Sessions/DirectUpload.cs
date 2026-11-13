@@ -79,6 +79,12 @@ internal sealed class DirectUpload : IUploadView
     /// <summary>Raised after each acknowledgement of the agent, once <see cref="Progress"/> knows it.</summary>
     public event Action<DirectUpload>? Acknowledged;
 
+    /// <summary>
+    /// Raised with the relative path of a file whose open and first read take more than
+    /// <see cref="DirectSender.FileWaitNotice"/>, and with null once its first block is read.
+    /// </summary>
+    public event Action<DirectUpload, string?>? FileWaiting;
+
     /// <summary>Raised when the direct connection cannot be used: the files must go through the channel. The text says why, in English.</summary>
     public event Action<DirectUpload, string>? FellBack;
 
@@ -115,6 +121,9 @@ internal sealed class DirectUpload : IUploadView
     public long TotalBytes { get; private set; }
 
     public TransferProgress? Progress { get; private set; }
+
+    /// <summary>True once the agent acknowledged data. UI thread only.</summary>
+    public bool HasAcknowledgement { get; private set; }
 
     public IReadOnlyList<TransferFile> Files { get; private set; } = [];
 
@@ -356,8 +365,10 @@ internal sealed class DirectUpload : IUploadView
         sender.Ready += () => ClientLog.Info($"Transfer {TransferId}: connection 0 to {Endpoint} with {Tls}; the agent accepted the token.");
         sender.Started += () => OnStarted(sender);
         sender.Info += line => ClientLog.Info($"Transfer {TransferId}: {line}");
+        sender.FileWaiting += path => Post(() => FileWaiting?.Invoke(this, path));
         sender.Acknowledged += ack => Post(() =>
         {
+            HasAcknowledgement = true;
             Progress?.Report(Environment.TickCount64, ack.TotalBytes);
             Acknowledged?.Invoke(this);
         });

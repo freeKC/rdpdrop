@@ -424,6 +424,9 @@ Jetzt neu verbinden?</value>
   <data name="TransferDirectLost" xml:space="preserve">
     <value>Die Direktverbindung wurde unterbrochen. Versuchen Sie es erneut.</value>
   </data>
+  <data name="TransferOpeningFile" xml:space="preserve">
+    <value>{0} wird geöffnet... Windows prüft die Datei möglicherweise.</value>
+  </data>
   <data name="TransferInterrupted" xml:space="preserve">
     <value>Die Übertragung wurde beendet: Die Sitzung wurde getrennt.</value>
   </data>
