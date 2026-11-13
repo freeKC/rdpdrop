@@ -364,7 +364,7 @@ The channel takes the files, as in version 0.5.2, when:
 - the client or the agent runs a version before 0.6.0, one side runs 0.6.0 and the other 0.7.0, or one of them has the setting `directTransfer` at `never`;
 - no port of the range is free on the server.
 
-When a connection breaks later, the transfer stops with "The direct connection was lost. Try again." and nothing is dropped. The client log says at the info level which path a transfer took and why the direct connection was not used. The status bar and the progress window show "Direct connection" while the files go through it, and keep the preparing stage until the agent acknowledged the first data.
+When a connection breaks later, the transfer stops with "The direct connection was lost. Try again." and nothing is dropped. The client log says at the info level which path a transfer took and why the direct connection was not used. The status bar and the progress window show "Direct connection" while the files go through it, and keep the preparing stage until the agent acknowledged the first data; when a file takes more than 2 seconds to open, they say "Opening ... Windows may be checking the file." until it is read.
 
 When you cancel, the client tells the agent, waits at most a second for its answer, then closes every connection, even when a connection or the read of a file is stuck. The agent deletes what it received and logs the transfer as cancelled.
 
@@ -459,7 +459,7 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 
 ## Status
 
-Version 0.7.0 is a test release.
+Version 0.7.1 is a test release.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 

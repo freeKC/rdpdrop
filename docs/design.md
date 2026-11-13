@@ -1,6 +1,6 @@
 # UltimateRDP design
 
-Date: 2026-11-05, updated on 2026-11-13 for version 0.7.0.
+Date: 2026-11-05, updated on 2026-11-13 for version 0.7.1.
 
 ## Goal
 
@@ -14,7 +14,8 @@ through the UltimateRDP channel before the drop, which is faster; see
 "Version 0.4" below. Since version 0.6, they travel through a direct TLS
 connection between the client and the agent when the network allows it, with
 the channel as the fallback; see "Version 0.6". Since version 0.7, that
-connection is several TCP connections at once; see "Version 0.7".
+connection is several TCP connections at once; see "Version 0.7", and
+"Version 0.7.1" for its release after a cancel.
 
 Scope:
 
@@ -2925,3 +2926,99 @@ about 20 MB/s with one; the statistics lines of both logs will tell.
 ### Versions
 
 Both sides ship together as 0.7.0. The channel path of 0.5.2 does not change.
+
+## Version 0.7.1
+
+### What was measured
+
+The first production test of 0.7.0 confirmed the direct path: 255 to 296 MB/s sustained over 8
+connections for several seconds, as the lines of every second showed. It also showed two
+defects.
+
+After a cancelled direct transfer the agent kept the direct connection of the session in use
+for about 25 seconds, so that every drop in that time went through the channel at about 2 MB/s.
+The client ended its side 50 ms after the cancel. The agent logged its last line of the rate
+right at the cancel, then nothing of that transfer for 24.8 s, then "Deleted the staging folder
+...-direct (after a transfer that did not end)" and, 5 ms later, its end line, Cancelled by the
+client through the channel, with 2937061376 of 3624122168 bytes in 37.7 s. A drag in between
+was told that the transfer "still uses the direct connection". A second cancel gave the same
+24.9 s with 1203765248 bytes received: the wait does not grow with the data.
+
+The client took 22623 ms to open a file of 3.6 GB, an executable, before its first block; the
+same file opened in 0.26 s forty seconds later. The progress window showed "Preparing..." for 22
+seconds without saying why.
+
+### The cause of the 25 seconds
+
+The end of the transfer itself was not late: the rate meter stopped at the cancel, which is why
+the lines of every second stop there, and the 37.7 s of the end line end at the cancel. The
+listener of 0.7.0 freed the direct connection of the session only once its thread had waited for
+`DirectReceiver.Ended`, and that event came only after the clean up of the files: waiting until
+no thread wrote or read them, closing them, then deleting the staging folder of the transfer.
+Only then came the end line, after at most 2 more seconds of waiting for a `transferCancel` when
+the connections had closed first, and only then the release. The deletion line just before the
+end line in the production log is the end of that clean up. On the server, the clean up of the
+large partial file took 24.8 s.
+
+Which of its steps took the time on the server cannot be read from the logs of 0.7.0. Over
+loopback on this development computer, with the same file and the cancel in the same order (the
+sockets of the client reset before the agent reads a cancel frame, then the `transferCancel`
+0.7 s later), the clean up took about 0.1 s, and the release came after the 0.7 s of the
+classification. A likely reason, not proven, is that Windows checks the partial executable when
+the agent closes or deletes it, as the client took 22.6 s to open the same file the first time.
+
+The same reading of the code showed a second risk: the clean up ran on the thread that ended
+the transfer. When that was the channel thread, for a `transferCancel` reaching a transfer that
+still ran, or the close of the listener at the end of the drag, the channel would have waited
+for the file system too.
+
+### The release
+
+In 0.7.1 the end of a transfer and the clean up of its files are separate:
+
+* `DirectReceiver` closes the connections other than 0 first, then sends the final frame on
+  connection 0 when there is one, with a send timeout of 1 second set through its new event
+  `Finishing`, closes connection 0 when it carries no final frame, and raises `Stopped`.
+* The clean up of the files then runs on a thread of its own, whatever thread ended the
+  transfer, and raises `Ended` with its times (`DirectCleanUpTimes`): the wait until no thread
+  writes or reads the files, their close, and the deletion of the folder.
+* The listener waits for `Stopped` only, and frees the direct connection of the session at
+  once. After a success it also waits for `Ended`, which is immediate: the verifier closed each
+  file as it checked it, and nothing is deleted. Then it writes the end line, which may still
+  wait up to 2 s for a `transferCancel` to classify a cancel, and once the files are done one
+  more line with their times.
+* A new offer may start as soon as the connection is free. Its listener takes the first free
+  port of the range, as before: when the port of the transfer that just ended cannot be bound
+  yet, it takes the next one.
+
+The end line gains how long after the end the direct connection was free, and says that the
+files that came "are being deleted". The new line reads:
+
+```
+Transfer <id>: the files of the direct connection were closed and deleted <n> ms after its end: <n> ms until no thread wrote or read them, <n> ms closing them, <n> ms deleting the folder.
+```
+
+The next production log therefore names the step that takes the time on the server.
+
+Measured over loopback with the real listener, 8 connections and the same 3.6 GB file, cancelled
+after 1.2 GB: the direct connection was free 0 ms after the transfer stopped, 17 ms after the
+cancel of the client, with the cancel frame and with the sockets reset first; a new offer started
+12 ms later, on the same port; the files were deleted about 90 ms after the end. In the tests, a
+storage whose deletion takes 3 seconds: the transfer stops 0 to 22 ms after a cancel through the
+channel or a lost connection while the deletion goes on, and a transfer that succeeds does not
+wait for it.
+
+### A file slow to open
+
+`DirectSender` raises `FileWaiting` with the relative path of a file when its open and its first
+read have taken 2 seconds without a block, and with null once its first block is read. The
+progress window and the status bar then show "Opening <file name>... Windows may be checking the
+file." instead of their stage, then the stage again: "Preparing..." before the first
+acknowledgement, the progress after it. It is a new text of the client, in the seven languages.
+The line of 0.7.0 that gives the time of a slow open or first read stays, and the client log also
+says when the notice is shown.
+
+### Versions
+
+Both sides ship as 0.7.1; the protocol does not change, so either side works with the other at
+0.7.0. The fix of the release is on the agent, the notice on the client.
