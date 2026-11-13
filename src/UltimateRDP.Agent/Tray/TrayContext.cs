@@ -1,4 +1,5 @@
 using UltimateRDP.Agent.Channel;
+using UltimateRDP.Agent.Drives;
 using UltimateRDP.Agent.Drops;
 using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Logging;
@@ -36,6 +37,7 @@ internal sealed class TrayContext : ApplicationContext
     private AgentServices? _services;
     private bool _servicesStopped;
     private AgentTrayIcon? _tray;
+    private ClientDriveMapper? _drives;
     private bool _clientConnected;
     private bool _exiting;
 
@@ -59,6 +61,11 @@ internal sealed class TrayContext : ApplicationContext
         _window.Disconnected = _watcher.OnDisconnected;
 
         StagingFolder.DeleteOldFoldersInBackground(logger, AgentInfo.StagingDirectory);
+        if (ClientDriveMapper.HasLeftovers(AgentInfo.MappedDrivesPath))
+        {
+            Drives().RemoveLeftovers();
+        }
+
         _watcher.Start(_window.Handle);
         UpdateTray();
         _loop.Start(Handle);
@@ -159,6 +166,33 @@ internal sealed class TrayContext : ApplicationContext
     {
         _clientConnected = present;
         UpdateTray();
+
+        // Created only when the setting asks for it, or once it exists.
+        if (_drives is not null || _settings.MapClientDrives == MapClientDrivesMode.Auto)
+        {
+            Drives().OnClientPresence(present);
+        }
+    }
+
+    /// <summary>The mapper of the client drives, created at its first use. UI thread.</summary>
+    private ClientDriveMapper Drives() => _drives ??= new ClientDriveMapper(_logger, _settings, AgentInfo.MappedDrivesPath);
+
+    /// <summary>The tray menu changed "Client drives on drive letters".</summary>
+    private void OnMapClientDrivesChanged(MapClientDrivesMode mode)
+    {
+        if (_drives is null)
+        {
+            // Without a mapper nothing was mapped; it starts with the presence the context knows.
+            if (mode != MapClientDrivesMode.Auto)
+            {
+                return;
+            }
+
+            Drives().OnClientPresence(_clientConnected);
+            return;
+        }
+
+        _drives.OnModeChanged(mode);
     }
 
     private void UpdateTray()
@@ -172,7 +206,7 @@ internal sealed class TrayContext : ApplicationContext
         {
             if (_tray is null)
             {
-                _tray = new AgentTrayIcon(_logger, _settings, () => Exit("the Exit menu"));
+                _tray = new AgentTrayIcon(_logger, _settings, () => Exit("the Exit menu"), OnMapClientDrivesChanged);
                 WakeMessageLoop();
             }
 
@@ -214,6 +248,7 @@ internal sealed class TrayContext : ApplicationContext
         }
 
         services?.Stop(wait);
+        _drives?.Stop(wait);
         _loop.Stop(wait);
     }
 

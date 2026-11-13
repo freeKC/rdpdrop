@@ -45,6 +45,13 @@ internal static partial class Kernel32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool ProcessIdToSessionId(uint dwProcessId, out uint pSessionId);
 
+    /// <summary>
+    /// The drive letters in use in the logon session, one bit per letter from A: local drives
+    /// and the mappings of the session.
+    /// </summary>
+    [LibraryImport("kernel32.dll")]
+    public static partial uint GetLogicalDrives();
+
     /// <summary>DUPLICATE_SAME_ACCESS: the copy has the access of the source handle.</summary>
     public const int DuplicateSameAccess = 2;
 

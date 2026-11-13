@@ -219,6 +219,12 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   <data name="StatusLogs" xml:space="preserve">
     <value>Journaux : {0}</value>
   </data>
+  <data name="StatusMachineSettings" xml:space="preserve">
+    <value>Paramètres de l'ordinateur : {0}</value>
+  </data>
+  <data name="StatusMachineSettingsAbsent" xml:space="preserve">
+    <value>Paramètres de l'ordinateur : {0} (absent)</value>
+  </data>
   <data name="StatusNotRunning" xml:space="preserve">
     <value>Agent en cours d'exécution dans cette session ({0}) : non</value>
   </data>
@@ -341,6 +347,9 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   </data>
   <data name="TrayFastTransferNever" xml:space="preserve">
     <value>Jamais</value>
+  </data>
+  <data name="TrayMapClientDrives" xml:space="preserve">
+    <value>Lecteurs du poste sur des lettres de lecteur</value>
   </data>
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Ouvrir le dossier des journaux</value>

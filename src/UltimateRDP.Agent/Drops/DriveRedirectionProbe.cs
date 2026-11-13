@@ -64,6 +64,32 @@ internal sealed class DriveRedirectionProbe
         }
     }
 
+    /// <summary>
+    /// The letters of the redirected drives of the client, \\tsclient\C through
+    /// \\tsclient\Z, in order, checked now and for at most <see cref="Timeout"/>; a check that
+    /// does not finish in time gives no drive. Not cached. Thread safe.
+    /// </summary>
+    public IReadOnlyList<char> ListDrives()
+    {
+        var task = Task.Factory.StartNew(
+            () => Enumerable.Range('C', 'Z' - 'C' + 1)
+                .Select(letter => (char)letter)
+                .AsParallel()
+                .Where(letter => Exists(ClientPathMapper.TsClientRoot + letter))
+                .OrderBy(letter => letter)
+                .ToList(),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+        if (!task.Wait(Timeout))
+        {
+            _logger.Warn($"Listing the redirected drives took more than {Timeout.TotalSeconds:0} seconds; none is mapped this time.");
+            return [];
+        }
+
+        return task.Result;
+    }
+
     private static bool Probe()
     {
         // Letters are checked in parallel: a missing one can take a moment to answer.

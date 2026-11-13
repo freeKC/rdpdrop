@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Core.Agent;
@@ -6,9 +7,12 @@ using UltimateRDP.Core.Agent;
 namespace UltimateRDP.Agent.Settings;
 
 /// <summary>
-/// Settings stored in %LOCALAPPDATA%\UltimateRDP\agent.json. Loading never fails: a missing
-/// or unreadable file gives the defaults. Thread safe: the values are read by drag
-/// threads and changed from the tray menu.
+/// Settings stored in %LOCALAPPDATA%\UltimateRDP\agent.json, on top of the machine wide
+/// defaults of %ProgramData%\UltimateRDP\agent.json when an administrator wrote that file: each
+/// key of the file of the user wins over the same key of the machine file
+/// (<see cref="SettingsLayers"/>). Loading never fails: a missing or unreadable file gives the
+/// defaults. The tray menu only writes the file of the user, and only the key it changes.
+/// Thread safe: the values are read by drag threads and changed from the tray menu.
 /// </summary>
 internal sealed class AgentSettings
 {
@@ -20,11 +24,16 @@ internal sealed class AgentSettings
     private volatile bool _stageFiles;
     private volatile FastTransferMode _fastTransfer;
     private volatile DirectTransferMode _directTransfer;
+    private volatile MapClientDrivesMode _mapClientDrives;
+    private readonly JsonObject _user;
 
-    private AgentSettings(string path, FileLogger logger, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead, DirectTransferMode directTransfer, (int First, int Last) directPortRange, int directConnections, int directMaxMegabytesPerSecond)
+    private AgentSettings(string path, FileLogger logger, JsonObject user, IReadOnlyList<string> machineKeys, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead, DirectTransferMode directTransfer, (int First, int Last) directPortRange, int directConnections, int directMaxMegabytesPerSecond, MapClientDrivesMode mapClientDrives)
     {
         _path = path;
         _logger = logger;
+        _user = user;
+        MachineKeys = machineKeys;
+        _mapClientDrives = mapClientDrives;
         LogLevel = logLevel;
         _stageFiles = stageFiles;
         TrayIcon = trayIcon;
@@ -80,6 +89,15 @@ internal sealed class AgentSettings
     /// </summary>
     public int DirectMaxMegabytesPerSecond { get; }
 
+    /// <summary>
+    /// "Client drives on drive letters": whether the redirected drives of the client get
+    /// letters of the session while an UltimateRDP client is connected. Never by default.
+    /// </summary>
+    public MapClientDrivesMode MapClientDrives => _mapClientDrives;
+
+    /// <summary>The keys that come from the machine file, because the file of the user does not set them.</summary>
+    public IReadOnlyList<string> MachineKeys { get; }
+
     /// <summary>Lowest level written to the log. Only editable in the file.</summary>
     public LogLevel LogLevel { get; }
 
@@ -106,11 +124,18 @@ internal sealed class AgentSettings
     }
 
     /// <summary>
-    /// Reads the file. Never throws and never shows anything: a missing, unreadable or
-    /// malformed file gives the defaults and a warning in the log.
+    /// Reads the machine file at <paramref name="machinePath"/>, when it exists, then the file
+    /// of the user at <paramref name="path"/>, and merges them key by key. Never throws and
+    /// never shows anything: a missing, unreadable or malformed file is left out, with a
+    /// warning in the log for one that exists.
     /// </summary>
-    public static AgentSettings Load(string path, FileLogger logger)
+    public static AgentSettings Load(string path, FileLogger logger, string? machinePath = null)
     {
+        var user = ReadObject(path, logger);
+        var machine = ReadObject(machinePath ?? AgentInfo.MachineSettingsPath, logger);
+        var machineKeys = SettingsLayers.MachineKeysInForce(machine, user);
+        var merged = SettingsLayers.Merge(machine, user);
+        var mapClientDrives = MapClientDrivesMode.Never;
         var logLevel = LogLevel.Info;
         var stageFiles = false;
         var trayIcon = TrayIconMode.Auto;
@@ -123,9 +148,8 @@ internal sealed class AgentSettings
         var directMaxMegabytesPerSecond = 0;
         try
         {
-            if (FileExists(path))
             {
-                var data = JsonSerializer.Deserialize<SettingsData>(WithoutByteOrderMark(File.ReadAllBytes(path)), JsonOptions);
+                var data = merged.Deserialize<SettingsData>(JsonOptions);
                 if (data is not null)
                 {
                     // A number out of range would silence the log entirely.
@@ -173,6 +197,12 @@ internal sealed class AgentSettings
                         logger.Warn($"The directMaxMegabytesPerSecond setting {data.DirectMaxMegabytesPerSecond} is not from 0 to {DirectTransferPolicy.MaxMegabytesPerSecond}; using 0, no limit.");
                     }
 
+                    mapClientDrives = ClientDriveLetters.Parse(data.MapClientDrives, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The mapClientDrives setting \"{data.MapClientDrives}\" is unknown; using \"never\". Use \"never\" or \"auto\".");
+                    }
+
                     if (data.FastTransferMinBytes is { } minBytes)
                     {
                         if (minBytes >= 0)
@@ -189,10 +219,38 @@ internal sealed class AgentSettings
         }
         catch (Exception ex)
         {
-            logger.Warn($"Could not read the settings file {path}; using the defaults. {ex.Message}");
+            logger.Warn($"Could not read the settings of {path}{(machine is null ? string.Empty : " and " + (machinePath ?? AgentInfo.MachineSettingsPath))}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange, directConnections, directMaxMegabytesPerSecond);
+        return new AgentSettings(path, logger, user ?? new JsonObject(new JsonNodeOptions { PropertyNameCaseInsensitive = true }), machineKeys, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange, directConnections, directMaxMegabytesPerSecond, mapClientDrives);
+    }
+
+    /// <summary>
+    /// The JSON object of a settings file, or null when the file does not exist, cannot be
+    /// read or is not a JSON object; the last two give a warning.
+    /// </summary>
+    private static JsonObject? ReadObject(string path, FileLogger logger)
+    {
+        if (!FileExists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var value = SettingsLayers.ParseObject(File.ReadAllBytes(path), out var error);
+            if (value is null)
+            {
+                logger.Warn($"Could not read the settings file {path}; it is left out. {error}");
+            }
+
+            return value;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or System.Security.SecurityException)
+        {
+            logger.Warn($"Could not read the settings file {path}; it is left out. {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>
@@ -202,7 +260,7 @@ internal sealed class AgentSettings
     public bool SetStageFiles(bool value)
     {
         _stageFiles = value;
-        return Save();
+        return Save("stageFiles", JsonValue.Create(value));
     }
 
     /// <summary>
@@ -212,7 +270,7 @@ internal sealed class AgentSettings
     public bool SetFastTransfer(FastTransferMode value)
     {
         _fastTransfer = value;
-        return Save();
+        return Save("fastTransfer", JsonValue.Create(FastTransferPolicy.ToSetting(value)));
     }
 
     /// <summary>
@@ -222,29 +280,29 @@ internal sealed class AgentSettings
     public bool SetDirectTransfer(DirectTransferMode value)
     {
         _directTransfer = value;
-        return Save();
+        return Save("directTransfer", JsonValue.Create(DirectTransferPolicy.ToSetting(value)));
+    }
+
+    /// <summary>
+    /// Changes <see cref="MapClientDrives"/> and saves the file. Returns false when the file
+    /// could not be written; the new value is used anyway until the agent exits.
+    /// </summary>
+    public bool SetMapClientDrives(MapClientDrivesMode value)
+    {
+        _mapClientDrives = value;
+        return Save("mapClientDrives", JsonValue.Create(ClientDriveLetters.ToSetting(value)));
     }
 
     /// <summary>Readable summary for the log.</summary>
     public override string ToString() =>
-        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)} with up to {DirectConnections} connection(s){(DirectMaxMegabytesPerSecond > 0 ? $" and at most {DirectMaxMegabytesPerSecond} MB/s" : string.Empty)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}";
+        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)} with up to {DirectConnections} connection(s){(DirectMaxMegabytesPerSecond > 0 ? $" and at most {DirectMaxMegabytesPerSecond} MB/s" : string.Empty)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}, client drives on letters {ClientDriveLetters.ToSetting(MapClientDrives)}{(MachineKeys.Count == 0 ? string.Empty : ", from the machine settings: " + string.Join(", ", MachineKeys))}";
 
-    private bool Save()
+    /// <summary>
+    /// Writes <paramref name="key"/> into the file of the user, which keeps its other keys as
+    /// they are. The machine file is never written.
+    /// </summary>
+    private bool Save(string key, JsonNode? value)
     {
-        var data = new SettingsData
-        {
-            LogLevel = LogLevel == LogLevel.Info ? null : LogLevel,
-            StageFiles = StageFiles,
-            TrayIcon = TrayIcon == TrayIconMode.Auto ? null : TrayIconModes.ToSetting(TrayIcon),
-            FastTransfer = FastTransfer == FastTransferMode.Auto ? null : FastTransferPolicy.ToSetting(FastTransfer),
-            FastTransferMinBytes = FastTransferMinBytes == FastTransferPolicy.DefaultMinBytes ? null : FastTransferMinBytes,
-            ChannelRead = ChannelRead == ChannelReadMode.Wts ? null : ChannelReadModes.ToSetting(ChannelRead),
-            DirectTransfer = DirectTransfer == DirectTransferMode.Auto ? null : DirectTransferPolicy.ToSetting(DirectTransfer),
-            DirectPortRange = DirectPortRange == (DirectTransferPolicy.DefaultFirstPort, DirectTransferPolicy.DefaultLastPort) ? null : DirectTransferPolicy.ToSetting(DirectPortRange),
-            DirectConnections = DirectConnections == DirectTransferPolicy.DefaultConnections ? null : DirectConnections,
-            DirectMaxMegabytesPerSecond = DirectMaxMegabytesPerSecond == 0 ? null : DirectMaxMegabytesPerSecond,
-        };
-
         lock (_saveGate)
         {
             try
@@ -254,9 +312,10 @@ internal sealed class AgentSettings
                     throw new IOException("The folder of the user profile is unknown.");
                 }
 
+                SettingsLayers.SetUserValue(_user, key, value);
                 Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
                 var temp = _path + ".tmp";
-                File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(data, JsonOptions));
+                File.WriteAllText(temp, _user.ToJsonString(JsonOptions));
                 File.Move(temp, _path, overwrite: true);
                 return true;
             }
@@ -267,13 +326,6 @@ internal sealed class AgentSettings
             }
         }
     }
-
-    /// <summary>
-    /// A file saved by hand, with Notepad for example, may start with the UTF-8 byte order
-    /// mark, which the JSON reader refuses.
-    /// </summary>
-    private static ReadOnlySpan<byte> WithoutByteOrderMark(byte[] bytes) =>
-        bytes.AsSpan().StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]) ? bytes.AsSpan(3) : bytes;
 
     private static JsonSerializerOptions CreateJsonOptions()
     {
@@ -323,5 +375,8 @@ internal sealed class AgentSettings
 
         /// <summary>Limit of a direct transfer in millions of bytes per second; 0 or absent for no limit.</summary>
         public int? DirectMaxMegabytesPerSecond { get; set; }
+
+        /// <summary>"never" or "auto". Never when absent. Read as text, like <see cref="TrayIcon"/>.</summary>
+        public string? MapClientDrives { get; set; }
     }
 }

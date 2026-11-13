@@ -25,14 +25,19 @@ internal sealed class AgentTrayIcon : IDisposable
     private readonly (ToolStripMenuItem Item, FastTransferMode Mode)[] _fastTransferModes;
     private readonly ToolStripMenuItem _directTransferItem;
     private readonly (ToolStripMenuItem Item, DirectTransferMode Mode)[] _directTransferModes;
+    private readonly ToolStripMenuItem _mapDrivesItem;
+    private readonly (ToolStripMenuItem Item, MapClientDrivesMode Mode)[] _mapDrivesModes;
+    private readonly Action<MapClientDrivesMode> _mapDrivesChanged;
 
     /// <param name="logger">The log.</param>
     /// <param name="settings">The settings changed from the menu.</param>
     /// <param name="exit">Runs when the user chooses Exit.</param>
-    public AgentTrayIcon(FileLogger logger, AgentSettings settings, Action exit)
+    /// <param name="mapDrivesChanged">Runs when the user changes "Client drives on drive letters".</param>
+    public AgentTrayIcon(FileLogger logger, AgentSettings settings, Action exit, Action<MapClientDrivesMode> mapDrivesChanged)
     {
         _logger = logger;
         _settings = settings;
+        _mapDrivesChanged = mapDrivesChanged;
 
         _stageItem = new ToolStripMenuItem(Strings.TrayStageFiles, null, (_, _) => ToggleStageFiles());
         _fastTransferModes =
@@ -60,12 +65,25 @@ internal sealed class AgentTrayIcon : IDisposable
             _directTransferItem.DropDownItems.Add(item);
         }
 
+        _mapDrivesModes =
+        [
+            (new ToolStripMenuItem(Strings.TrayFastTransferAuto), MapClientDrivesMode.Auto),
+            (new ToolStripMenuItem(Strings.TrayFastTransferNever), MapClientDrivesMode.Never),
+        ];
+        _mapDrivesItem = new ToolStripMenuItem(Strings.TrayMapClientDrives);
+        foreach (var (item, mode) in _mapDrivesModes)
+        {
+            item.Click += (_, _) => SetMapClientDrives(mode);
+            _mapDrivesItem.DropDownItems.Add(item);
+        }
+
         _menu = new ContextMenuStrip();
         _menu.Items.AddRange(
         [
             _stageItem,
             _fastTransferItem,
             _directTransferItem,
+            _mapDrivesItem,
             new ToolStripSeparator(),
             new ToolStripMenuItem(Strings.TrayOpenLogFolder, null, (_, _) => OpenLogFolder()),
             new ToolStripMenuItem(Strings.TrayAbout, null, (_, _) => ShowAbout()),
@@ -111,6 +129,19 @@ internal sealed class AgentTrayIcon : IDisposable
         {
             item.Checked = _settings.DirectTransfer == mode;
         }
+
+        foreach (var (item, mode) in _mapDrivesModes)
+        {
+            item.Checked = _settings.MapClientDrives == mode;
+        }
+    }
+
+    private void SetMapClientDrives(MapClientDrivesMode mode)
+    {
+        _settings.SetMapClientDrives(mode);
+        _logger.Info($"Client drives on drive letters: {ClientDriveLetters.ToSetting(mode)}.");
+        UpdateChecks();
+        _mapDrivesChanged(mode);
     }
 
     private void SetDirectTransfer(DirectTransferMode mode)

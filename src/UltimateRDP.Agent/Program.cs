@@ -241,7 +241,7 @@ internal static class Program
     {
         var notSet = LocalText.Of(nameof(Strings.StatusNotSet));
         var settingsExist = AgentSettings.FileExists(AgentInfo.SettingsPath);
-        var trayIcon = settingsExist ? AgentSettings.Load(AgentInfo.SettingsPath, logger).TrayIcon : TrayIconMode.Auto;
+        var trayIcon = AgentSettings.Load(AgentInfo.SettingsPath, logger).TrayIcon;
         var session = SessionId();
 
         LocalText[] lines =
@@ -251,6 +251,7 @@ internal static class Program
             LocalText.Of(nameof(Strings.StatusRunCurrentUser), RunKey(CurrentUserRoot), (object?)StartupRegistration.Read(Registry.CurrentUser) ?? notSet),
             LocalText.Of(nameof(Strings.StatusRunAllUsers), RunKey(LocalMachineRoot), (object?)StartupRegistration.Read(Registry.LocalMachine) ?? notSet),
             LocalText.Of(settingsExist ? nameof(Strings.StatusSettings) : nameof(Strings.StatusSettingsAbsent), AgentInfo.SettingsPath),
+            LocalText.Of(AgentSettings.FileExists(AgentInfo.MachineSettingsPath) ? nameof(Strings.StatusMachineSettings) : nameof(Strings.StatusMachineSettingsAbsent), AgentInfo.MachineSettingsPath),
             LocalText.Of(nameof(Strings.StatusTrayIcon), TrayIconModes.ToSetting(trayIcon)),
             LocalText.Of(nameof(Strings.StatusLogs), AgentInfo.LogDirectory),
             LocalText.Of(IsRunningInThisSession() ? nameof(Strings.StatusRunning) : nameof(Strings.StatusNotRunning), session),

@@ -37,6 +37,18 @@ internal static class AgentInfo
     /// <summary>%LOCALAPPDATA%\UltimateRDP\agent.json</summary>
     public static string SettingsPath { get; } = Path.Combine(DataDirectory, "agent.json");
 
+    /// <summary>
+    /// %ProgramData%\UltimateRDP\agent.json: machine wide defaults that an administrator may
+    /// write; each key of the file of the user wins over them. The agent only reads it.
+    /// </summary>
+    public static string MachineSettingsPath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "UltimateRDP",
+        "agent.json");
+
+    /// <summary>%LOCALAPPDATA%\UltimateRDP\mapped-drives.json: the drive letters this agent mapped, for the next start after a crash.</summary>
+    public static string MappedDrivesPath { get; } = Path.Combine(DataDirectory, "mapped-drives.json");
+
     /// <summary>%LOCALAPPDATA%\UltimateRDP\staging, local copies offered to drags in the session.</summary>
     public static string StagingDirectory { get; } = Path.Combine(DataDirectory, "staging");
 
