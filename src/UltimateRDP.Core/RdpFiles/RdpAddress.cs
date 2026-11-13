@@ -1,14 +1,15 @@
 using System.Globalization;
 
-namespace UltimateRDP.Client.Rdp;
+namespace UltimateRDP.Core.RdpFiles;
 
 /// <summary>
 /// Splits the <c>full address</c> of a .rdp file into a host and an optional port.
 /// Accepts <c>host</c>, <c>host:port</c>, <c>[ipv6]</c>, <c>[ipv6]:port</c> and a bare
 /// IPv6 address (several colons, no brackets), which has no port.
 /// </summary>
-internal static class RdpAddress
+public static class RdpAddress
 {
+    /// <summary>The host and the port of <paramref name="fullAddress"/>; the port is null when it has none or an invalid one.</summary>
     public static (string Host, int? Port) Split(string fullAddress)
     {
         var text = fullAddress.Trim();

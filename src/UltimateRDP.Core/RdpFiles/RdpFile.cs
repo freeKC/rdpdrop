@@ -154,6 +154,17 @@ public sealed class RdpFile
     }
 
     /// <summary>
+    /// Reads the text of a file, with the encodings of <see cref="Load"/>, without parsing it:
+    /// options of the command line go on top of it.
+    /// </summary>
+    /// <exception cref="IOException">The file cannot be read.</exception>
+    public static string LoadText(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        return RdpFileEncoding.Decode(File.ReadAllBytes(path));
+    }
+
+    /// <summary>
     /// Parses the raw bytes of a file, detecting the encoding as <see cref="Load"/> does.
     /// </summary>
     public static RdpFile FromBytes(ReadOnlySpan<byte> bytes) => Parse(RdpFileEncoding.Decode(bytes));

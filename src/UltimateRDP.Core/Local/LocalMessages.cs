@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using UltimateRDP.Core.Launchers;
 using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.RemoteApp;
 using UltimateRDP.Core.Transfer;
@@ -14,10 +15,15 @@ namespace UltimateRDP.Core.Local;
 public sealed record SendRequest(IReadOnlyList<string> Paths);
 
 /// <summary>What a second start of the client hands to the first one: the file to open and its options.</summary>
-/// <param name="Path">The .rdp file, or null to show the window of the client.</param>
+/// <param name="Path">The .rdp file, or null.</param>
 /// <param name="Window">What <c>--show</c> or <c>--hidden</c> asked for.</param>
 /// <param name="AskCredentials">True with <c>--ask-credentials</c>.</param>
-public sealed record OpenRequest(string? Path, LaunchWindow Window, bool AskCredentials);
+/// <param name="Connection">
+/// The options of a connection, since 0.10.0: on top of <paramref name="Path"/>, or alone with
+/// <c>--server</c>. Null or empty without any; with neither a file nor a server the window of
+/// the client shows.
+/// </param>
+public sealed record OpenRequest(string? Path, LaunchWindow Window, bool AskCredentials, ConnectionOptions? Connection = null);
 
 /// <summary>The answer to a request.</summary>
 /// <param name="Ok">True when the request was taken.</param>
@@ -42,11 +48,19 @@ public static class LocalMessages
         return request?.Paths is { Count: > 0 and <= SendOfferMessage.MaxItems } paths && paths.All(IsAcceptablePath) ? request : null;
     }
 
-    /// <summary>An open request, or null when the bytes are not one.</summary>
+    /// <summary>
+    /// An open request, or null when the bytes are not one, its path is not a full local path,
+    /// or its connection does not follow the rules of the command line (<see cref="ConnectionOptions.Check"/>).
+    /// </summary>
     public static OpenRequest? DecodeOpen(byte[] bytes)
     {
         var request = Decode<OpenRequest>(bytes);
-        return request is not null && Enum.IsDefined(request.Window) && (request.Path is null || IsAcceptablePath(request.Path)) ? request : null;
+        return request is not null
+            && Enum.IsDefined(request.Window)
+            && (request.Path is null || IsAcceptablePath(request.Path))
+            && request.Connection?.Check(hasFile: request.Path is not null) is null
+                ? request
+                : null;
     }
 
     /// <summary>An answer, or null when the bytes are not one.</summary>
