@@ -237,6 +237,180 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>Volledig scherm is beschikbaar zodra er verbinding is.</value>
   </data>
+  <data name="LauncherAdvanced" xml:space="preserve">
+    <value>Geavanceerde opties</value>
+  </data>
+  <data name="LauncherArguments" xml:space="preserve">
+    <value>Argumenten:</value>
+  </data>
+  <data name="LauncherAskPassword" xml:space="preserve">
+    <value>Altijd om het wachtwoord vragen</value>
+  </data>
+  <data name="LauncherAudio" xml:space="preserve">
+    <value>Geluid:</value>
+  </data>
+  <data name="LauncherAudioLocal" xml:space="preserve">
+    <value>Op deze computer</value>
+  </data>
+  <data name="LauncherAudioOff" xml:space="preserve">
+    <value>Geen geluid</value>
+  </data>
+  <data name="LauncherAudioRemote" xml:space="preserve">
+    <value>Op de externe computer</value>
+  </data>
+  <data name="LauncherCannotCopy" xml:space="preserve">
+    <value>Het klembord kan niet worden gebruikt: {0}</value>
+  </data>
+  <data name="LauncherCannotSave" xml:space="preserve">
+    <value>{0} kan niet worden opgeslagen: {1}</value>
+  </data>
+  <data name="LauncherCannotStart" xml:space="preserve">
+    <value>UltimateRDP kan niet worden gestart: {0}</value>
+  </data>
+  <data name="LauncherChoiceDefault" xml:space="preserve">
+    <value>Standaard</value>
+  </data>
+  <data name="LauncherChoiceOff" xml:space="preserve">
+    <value>Uit</value>
+  </data>
+  <data name="LauncherChoiceOn" xml:space="preserve">
+    <value>Aan</value>
+  </data>
+  <data name="LauncherClipboard" xml:space="preserve">
+    <value>Klembord:</value>
+  </data>
+  <data name="LauncherClose" xml:space="preserve">
+    <value>Sluiten</value>
+  </data>
+  <data name="LauncherCommentDesktop" xml:space="preserve">
+    <value>Opent het externe bureaublad van {0} met UltimateRDP.</value>
+  </data>
+  <data name="LauncherCommentMadeWith" xml:space="preserve">
+    <value>Geschreven door UltimateRDP {0}; UltimateRDP.exe --help toont de opties.</value>
+  </data>
+  <data name="LauncherCommentPassword" xml:space="preserve">
+    <value>Dit bestand bevat geen wachtwoord: Windows gebruikt de opgeslagen referentie voor de server of vraagt om het wachtwoord.</value>
+  </data>
+  <data name="LauncherCommentRdpFile" xml:space="preserve">
+    <value>De verbinding staat in {0}, naast dit bestand.</value>
+  </data>
+  <data name="LauncherCommentRemoteApp" xml:space="preserve">
+    <value>Opent {0} van {1} met UltimateRDP.</value>
+  </data>
+  <data name="LauncherCopied" xml:space="preserve">
+    <value>De tekst van het startbestand staat op het klembord.</value>
+  </data>
+  <data name="LauncherCopy" xml:space="preserve">
+    <value>Kopiëren</value>
+  </data>
+  <data name="LauncherDisplayName" xml:space="preserve">
+    <value>Programmanaam:</value>
+  </data>
+  <data name="LauncherDomain" xml:space="preserve">
+    <value>Domein:</value>
+  </data>
+  <data name="LauncherDrives" xml:space="preserve">
+    <value>Stations:</value>
+  </data>
+  <data name="LauncherDrivesAll" xml:space="preserve">
+    <value>Alle stations</value>
+  </data>
+  <data name="LauncherDrivesNone" xml:space="preserve">
+    <value>Geen</value>
+  </data>
+  <data name="LauncherExe" xml:space="preserve">
+    <value>UltimateRDP.exe:</value>
+  </data>
+  <data name="LauncherExeInvalid" xml:space="preserve">
+    <value>UltimateRDP.exe: het pad mag niet leeg zijn, geen aanhalingstekens bevatten en niet op \ eindigen, en elk % moet een variabele zoals %LOCALAPPDATA% openen en sluiten.</value>
+  </data>
+  <data name="LauncherExeNext" xml:space="preserve">
+    <value>Naast het startbestand (%~dp0UltimateRDP.exe)</value>
+  </data>
+  <data name="LauncherExeRunning" xml:space="preserve">
+    <value>Dit programma: {0}</value>
+  </data>
+  <data name="LauncherExeTyped" xml:space="preserve">
+    <value>Dit pad:</value>
+  </data>
+  <data name="LauncherExeTypedHint" xml:space="preserve">
+    <value>Variabelen zoals %LOCALAPPDATA% of %ProgramFiles% blijven zoals ze geschreven zijn en krijgen hun waarde op de computer die het startbestand uitvoert.</value>
+  </data>
+  <data name="LauncherFieldInvalid" xml:space="preserve">
+    <value>{0}: {1}.</value>
+  </data>
+  <data name="LauncherFieldNeeded" xml:space="preserve">
+    <value>{0}: een waarde is nodig.</value>
+  </data>
+  <data name="LauncherFillFile" xml:space="preserve">
+    <value>Invullen vanuit een .rdp-bestand...</value>
+  </data>
+  <data name="LauncherFillSession" xml:space="preserve">
+    <value>Invullen vanuit de huidige sessie</value>
+  </data>
+  <data name="LauncherGateway" xml:space="preserve">
+    <value>Gateway:</value>
+  </data>
+  <data name="LauncherIntro" xml:space="preserve">
+    <value>Een startbestand is een .bat-bestand dat één verbinding met UltimateRDP opent: wie het krijgt, dubbelklikt er alleen op.</value>
+  </data>
+  <data name="LauncherKeysFullScreen" xml:space="preserve">
+    <value>Naar de externe computer in volledig scherm</value>
+  </data>
+  <data name="LauncherKeysLocal" xml:space="preserve">
+    <value>Naar deze computer</value>
+  </data>
+  <data name="LauncherKeysRemote" xml:space="preserve">
+    <value>Naar de externe computer</value>
+  </data>
+  <data name="LauncherKind" xml:space="preserve">
+    <value>Opent:</value>
+  </data>
+  <data name="LauncherKindDesktop" xml:space="preserve">
+    <value>Het externe bureaublad</value>
+  </data>
+  <data name="LauncherKindRemoteApp" xml:space="preserve">
+    <value>Een RemoteApp-programma</value>
+  </data>
+  <data name="LauncherMultimon" xml:space="preserve">
+    <value>Alle beeldschermen:</value>
+  </data>
+  <data name="LauncherName" xml:space="preserve">
+    <value>Naam:</value>
+  </data>
+  <data name="LauncherNameInvalid" xml:space="preserve">
+    <value>Naam: deze naam kan het .rdp-bestand naast het startbestand niet benoemen.</value>
+  </data>
+  <data name="LauncherOutput" xml:space="preserve">
+    <value>Schrijven:</value>
+  </data>
+  <data name="LauncherOutputBat" xml:space="preserve">
+    <value>Eén .bat-bestand met alle opties</value>
+  </data>
+  <data name="LauncherOutputBatRdp" xml:space="preserve">
+    <value>Een .bat-bestand met een .rdp-bestand ernaast</value>
+  </data>
+  <data name="LauncherPasswordNote" xml:space="preserve">
+    <value>Het startbestand bevat geen wachtwoord: Windows gebruikt de opgeslagen referentie voor de server of vraagt om het wachtwoord.</value>
+  </data>
+  <data name="LauncherPort" xml:space="preserve">
+    <value>Poort:</value>
+  </data>
+  <data name="LauncherPreview" xml:space="preserve">
+    <value>Voorbeeld:</value>
+  </data>
+  <data name="LauncherPrinters" xml:space="preserve">
+    <value>Printers:</value>
+  </data>
+  <data name="LauncherProgram" xml:space="preserve">
+    <value>Programma:</value>
+  </data>
+  <data name="LauncherProgramHint" xml:space="preserve">
+    <value>||Naam of Naam voor een programma dat op de server is gepubliceerd, of het pad ervan daar (met \ of :).</value>
+  </data>
+  <data name="LauncherReplaceRdp" xml:space="preserve">
+    <value>{0} bestaat al. Vervangen?</value>
+  </data>
   <data name="LaunchErrorInvalidValue" xml:space="preserve">
     <value>de waarde {1} van {0} is ongeldig: {2}.</value>
   </data>
@@ -263,6 +437,72 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   </data>
   <data name="LaunchErrorUnknownOption" xml:space="preserve">
     <value>de optie {0} bestaat niet.</value>
+  </data>
+  <data name="LauncherSave" xml:space="preserve">
+    <value>Opslaan als...</value>
+  </data>
+  <data name="LauncherSavedOne" xml:space="preserve">
+    <value>{0} is opgeslagen.</value>
+  </data>
+  <data name="LauncherSavedTwo" xml:space="preserve">
+    <value>{0} en {1} zijn opgeslagen.</value>
+  </data>
+  <data name="LauncherSaveFilter" xml:space="preserve">
+    <value>Startbestanden (*.bat)|*.bat</value>
+  </data>
+  <data name="LauncherSaveTitle" xml:space="preserve">
+    <value>Startbestand opslaan</value>
+  </data>
+  <data name="LauncherScale" xml:space="preserve">
+    <value>Schaal:</value>
+  </data>
+  <data name="LauncherScaleValue" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="LauncherServer" xml:space="preserve">
+    <value>Server:</value>
+  </data>
+  <data name="LauncherTest" xml:space="preserve">
+    <value>Testen</value>
+  </data>
+  <data name="LauncherTestStarted" xml:space="preserve">
+    <value>UltimateRDP wordt gestart met de opties van het startbestand.</value>
+  </data>
+  <data name="LauncherTestTip" xml:space="preserve">
+    <value>Opent de verbinding nu met deze UltimateRDP en de opties van het startbestand.</value>
+  </data>
+  <data name="LauncherTitle" xml:space="preserve">
+    <value>Startbestand maken</value>
+  </data>
+  <data name="LauncherTooLong" xml:space="preserve">
+    <value>De opdrachtregel van het startbestand is langer dan cmd.exe leest: maak de argumenten korter.</value>
+  </data>
+  <data name="LauncherUser" xml:space="preserve">
+    <value>Gebruiker:</value>
+  </data>
+  <data name="LauncherWillWriteOne" xml:space="preserve">
+    <value>Eén .bat-bestand dat alle opties bevat.</value>
+  </data>
+  <data name="LauncherWillWriteTwo" xml:space="preserve">
+    <value>{0} en {1}, in dezelfde map.</value>
+  </data>
+  <data name="LauncherWindow" xml:space="preserve">
+    <value>Hoofdvenster:</value>
+  </data>
+  <data name="LauncherWindowAuto" xml:space="preserve">
+    <value>Automatisch</value>
+  </data>
+  <data name="LauncherWindowHidden" xml:space="preserve">
+    <value>Altijd verborgen</value>
+  </data>
+  <data name="LauncherWindowShow" xml:space="preserve">
+    <value>Altijd zichtbaar</value>
+  </data>
+  <data name="LauncherWindowsKeys" xml:space="preserve">
+    <value>Windows-toetsen:</value>
+  </data>
+  <data name="LauncherWindowTip" xml:space="preserve">
+    <value>Automatisch: verborgen voor een RemoteApp-programma, dat alleen opent, en zichtbaar voor een bureaublad.</value>
   </data>
   <data name="LaunchRuleArguments" xml:space="preserve">
     <value>verwacht wordt een tekst van hoogstens {0} tekens, zonder stuurtekens</value>
@@ -350,6 +590,9 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   </data>
   <data name="MenuConnect" xml:space="preserve">
     <value>&amp;Verbinden</value>
+  </data>
+  <data name="MenuCreateLauncher" xml:space="preserve">
+    <value>&amp;Startbestand maken (.bat)...</value>
   </data>
   <data name="MenuDisconnect" xml:space="preserve">
     <value>Verbinding ver&amp;breken</value>

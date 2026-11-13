@@ -36,6 +36,12 @@ internal static class Program
             return LoaderPreview.Render(previewFolder);
         }
 
+        // Development aid: previews of the launcher generator as PNG files, without any window.
+        if (args is [Launchers.LauncherPreview.Switch, var launcherFolder, .. var launcherScales])
+        {
+            return Launchers.LauncherPreview.Render(launcherFolder, launcherScales);
+        }
+
         // Before anything slower: the two settings the loader needs, the single instance, then
         // the loader itself, so that something shows at once after a click on a shortcut.
         var early = ReadEarlySettings();

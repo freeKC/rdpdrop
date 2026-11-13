@@ -237,6 +237,180 @@ La prossima connessione le richiederà di nuovo. La sessione aperta non viene mo
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>Lo schermo intero è disponibile dopo la connessione.</value>
   </data>
+  <data name="LauncherAdvanced" xml:space="preserve">
+    <value>Opzioni avanzate</value>
+  </data>
+  <data name="LauncherArguments" xml:space="preserve">
+    <value>Argomenti:</value>
+  </data>
+  <data name="LauncherAskPassword" xml:space="preserve">
+    <value>Chiedere sempre la password</value>
+  </data>
+  <data name="LauncherAudio" xml:space="preserve">
+    <value>Audio:</value>
+  </data>
+  <data name="LauncherAudioLocal" xml:space="preserve">
+    <value>Su questo computer</value>
+  </data>
+  <data name="LauncherAudioOff" xml:space="preserve">
+    <value>Nessun audio</value>
+  </data>
+  <data name="LauncherAudioRemote" xml:space="preserve">
+    <value>Sul computer remoto</value>
+  </data>
+  <data name="LauncherCannotCopy" xml:space="preserve">
+    <value>Impossibile usare gli appunti: {0}</value>
+  </data>
+  <data name="LauncherCannotSave" xml:space="preserve">
+    <value>Impossibile salvare {0}: {1}</value>
+  </data>
+  <data name="LauncherCannotStart" xml:space="preserve">
+    <value>Impossibile avviare UltimateRDP: {0}</value>
+  </data>
+  <data name="LauncherChoiceDefault" xml:space="preserve">
+    <value>Predefinito</value>
+  </data>
+  <data name="LauncherChoiceOff" xml:space="preserve">
+    <value>Disattivato</value>
+  </data>
+  <data name="LauncherChoiceOn" xml:space="preserve">
+    <value>Attivato</value>
+  </data>
+  <data name="LauncherClipboard" xml:space="preserve">
+    <value>Appunti:</value>
+  </data>
+  <data name="LauncherClose" xml:space="preserve">
+    <value>Chiudi</value>
+  </data>
+  <data name="LauncherCommentDesktop" xml:space="preserve">
+    <value>Apre il desktop remoto di {0} con UltimateRDP.</value>
+  </data>
+  <data name="LauncherCommentMadeWith" xml:space="preserve">
+    <value>Scritto da UltimateRDP {0}; UltimateRDP.exe --help elenca le opzioni.</value>
+  </data>
+  <data name="LauncherCommentPassword" xml:space="preserve">
+    <value>Questo file non contiene alcuna password: Windows usa le credenziali salvate per il server o chiede la password.</value>
+  </data>
+  <data name="LauncherCommentRdpFile" xml:space="preserve">
+    <value>La connessione è in {0}, accanto a questo file.</value>
+  </data>
+  <data name="LauncherCommentRemoteApp" xml:space="preserve">
+    <value>Apre {0} da {1} con UltimateRDP.</value>
+  </data>
+  <data name="LauncherCopied" xml:space="preserve">
+    <value>Il testo del file di avvio è negli appunti.</value>
+  </data>
+  <data name="LauncherCopy" xml:space="preserve">
+    <value>Copia</value>
+  </data>
+  <data name="LauncherDisplayName" xml:space="preserve">
+    <value>Nome del programma:</value>
+  </data>
+  <data name="LauncherDomain" xml:space="preserve">
+    <value>Dominio:</value>
+  </data>
+  <data name="LauncherDrives" xml:space="preserve">
+    <value>Unità:</value>
+  </data>
+  <data name="LauncherDrivesAll" xml:space="preserve">
+    <value>Tutte le unità</value>
+  </data>
+  <data name="LauncherDrivesNone" xml:space="preserve">
+    <value>Nessuna</value>
+  </data>
+  <data name="LauncherExe" xml:space="preserve">
+    <value>UltimateRDP.exe:</value>
+  </data>
+  <data name="LauncherExeInvalid" xml:space="preserve">
+    <value>UltimateRDP.exe: il percorso non può essere vuoto, contenere virgolette né finire con \, e ogni % deve aprire e chiudere una variabile come %LOCALAPPDATA%.</value>
+  </data>
+  <data name="LauncherExeNext" xml:space="preserve">
+    <value>Accanto al file di avvio (%~dp0UltimateRDP.exe)</value>
+  </data>
+  <data name="LauncherExeRunning" xml:space="preserve">
+    <value>Questo programma: {0}</value>
+  </data>
+  <data name="LauncherExeTyped" xml:space="preserve">
+    <value>Questo percorso:</value>
+  </data>
+  <data name="LauncherExeTypedHint" xml:space="preserve">
+    <value>Le variabili come %LOCALAPPDATA% o %ProgramFiles% restano come sono scritte e prendono il loro valore sul computer che esegue il file di avvio.</value>
+  </data>
+  <data name="LauncherFieldInvalid" xml:space="preserve">
+    <value>{0}: {1}.</value>
+  </data>
+  <data name="LauncherFieldNeeded" xml:space="preserve">
+    <value>{0}: serve un valore.</value>
+  </data>
+  <data name="LauncherFillFile" xml:space="preserve">
+    <value>Compila da un file .rdp...</value>
+  </data>
+  <data name="LauncherFillSession" xml:space="preserve">
+    <value>Compila dalla sessione attuale</value>
+  </data>
+  <data name="LauncherGateway" xml:space="preserve">
+    <value>Gateway:</value>
+  </data>
+  <data name="LauncherIntro" xml:space="preserve">
+    <value>Un file di avvio è un file .bat che apre una connessione con UltimateRDP: chi lo riceve deve solo farci doppio clic.</value>
+  </data>
+  <data name="LauncherKeysFullScreen" xml:space="preserve">
+    <value>Al computer remoto a schermo intero</value>
+  </data>
+  <data name="LauncherKeysLocal" xml:space="preserve">
+    <value>A questo computer</value>
+  </data>
+  <data name="LauncherKeysRemote" xml:space="preserve">
+    <value>Al computer remoto</value>
+  </data>
+  <data name="LauncherKind" xml:space="preserve">
+    <value>Apre:</value>
+  </data>
+  <data name="LauncherKindDesktop" xml:space="preserve">
+    <value>Il desktop remoto</value>
+  </data>
+  <data name="LauncherKindRemoteApp" xml:space="preserve">
+    <value>Un programma RemoteApp</value>
+  </data>
+  <data name="LauncherMultimon" xml:space="preserve">
+    <value>Tutti i monitor:</value>
+  </data>
+  <data name="LauncherName" xml:space="preserve">
+    <value>Nome:</value>
+  </data>
+  <data name="LauncherNameInvalid" xml:space="preserve">
+    <value>Nome: questo nome non può essere usato per il file .rdp accanto al file di avvio.</value>
+  </data>
+  <data name="LauncherOutput" xml:space="preserve">
+    <value>Scrivi:</value>
+  </data>
+  <data name="LauncherOutputBat" xml:space="preserve">
+    <value>Un file .bat con tutte le opzioni</value>
+  </data>
+  <data name="LauncherOutputBatRdp" xml:space="preserve">
+    <value>Un file .bat e un file .rdp accanto</value>
+  </data>
+  <data name="LauncherPasswordNote" xml:space="preserve">
+    <value>Il file di avvio non contiene alcuna password: Windows usa le credenziali salvate per il server o chiede la password.</value>
+  </data>
+  <data name="LauncherPort" xml:space="preserve">
+    <value>Porta:</value>
+  </data>
+  <data name="LauncherPreview" xml:space="preserve">
+    <value>Anteprima:</value>
+  </data>
+  <data name="LauncherPrinters" xml:space="preserve">
+    <value>Stampanti:</value>
+  </data>
+  <data name="LauncherProgram" xml:space="preserve">
+    <value>Programma:</value>
+  </data>
+  <data name="LauncherProgramHint" xml:space="preserve">
+    <value>||Nome o Nome per un programma pubblicato sul server, o il suo percorso sul server (con \ o :).</value>
+  </data>
+  <data name="LauncherReplaceRdp" xml:space="preserve">
+    <value>{0} esiste già. Sostituirlo?</value>
+  </data>
   <data name="LaunchErrorInvalidValue" xml:space="preserve">
     <value>il valore {1} di {0} non è valido: {2}.</value>
   </data>
@@ -263,6 +437,72 @@ La prossima connessione le richiederà di nuovo. La sessione aperta non viene mo
   </data>
   <data name="LaunchErrorUnknownOption" xml:space="preserve">
     <value>l'opzione {0} non esiste.</value>
+  </data>
+  <data name="LauncherSave" xml:space="preserve">
+    <value>Salva con nome...</value>
+  </data>
+  <data name="LauncherSavedOne" xml:space="preserve">
+    <value>{0} è stato salvato.</value>
+  </data>
+  <data name="LauncherSavedTwo" xml:space="preserve">
+    <value>{0} e {1} sono stati salvati.</value>
+  </data>
+  <data name="LauncherSaveFilter" xml:space="preserve">
+    <value>File di avvio (*.bat)|*.bat</value>
+  </data>
+  <data name="LauncherSaveTitle" xml:space="preserve">
+    <value>Salva il file di avvio</value>
+  </data>
+  <data name="LauncherScale" xml:space="preserve">
+    <value>Scala:</value>
+  </data>
+  <data name="LauncherScaleValue" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
+  <data name="LauncherServer" xml:space="preserve">
+    <value>Server:</value>
+  </data>
+  <data name="LauncherTest" xml:space="preserve">
+    <value>Prova</value>
+  </data>
+  <data name="LauncherTestStarted" xml:space="preserve">
+    <value>UltimateRDP viene avviato con le opzioni del file di avvio.</value>
+  </data>
+  <data name="LauncherTestTip" xml:space="preserve">
+    <value>Apre ora la connessione con questo UltimateRDP e le opzioni del file di avvio.</value>
+  </data>
+  <data name="LauncherTitle" xml:space="preserve">
+    <value>Crea un file di avvio</value>
+  </data>
+  <data name="LauncherTooLong" xml:space="preserve">
+    <value>La riga di comando del file di avvio è più lunga di quanto legge cmd.exe: accorciare gli argomenti.</value>
+  </data>
+  <data name="LauncherUser" xml:space="preserve">
+    <value>Utente:</value>
+  </data>
+  <data name="LauncherWillWriteOne" xml:space="preserve">
+    <value>Un solo file .bat che contiene tutte le opzioni.</value>
+  </data>
+  <data name="LauncherWillWriteTwo" xml:space="preserve">
+    <value>{0} e {1}, nella stessa cartella.</value>
+  </data>
+  <data name="LauncherWindow" xml:space="preserve">
+    <value>Finestra principale:</value>
+  </data>
+  <data name="LauncherWindowAuto" xml:space="preserve">
+    <value>Automatica</value>
+  </data>
+  <data name="LauncherWindowHidden" xml:space="preserve">
+    <value>Sempre nascosta</value>
+  </data>
+  <data name="LauncherWindowShow" xml:space="preserve">
+    <value>Sempre visibile</value>
+  </data>
+  <data name="LauncherWindowsKeys" xml:space="preserve">
+    <value>Tasti Windows:</value>
+  </data>
+  <data name="LauncherWindowTip" xml:space="preserve">
+    <value>Automatica: nascosta per un programma RemoteApp, che si apre da solo, e visibile per un desktop.</value>
   </data>
   <data name="LaunchRuleArguments" xml:space="preserve">
     <value>è atteso un testo di al massimo {0} caratteri, senza caratteri di controllo</value>
@@ -350,6 +590,9 @@ La prossima connessione le richiederà di nuovo. La sessione aperta non viene mo
   </data>
   <data name="MenuConnect" xml:space="preserve">
     <value>&amp;Connetti</value>
+  </data>
+  <data name="MenuCreateLauncher" xml:space="preserve">
+    <value>Crea un file di &amp;avvio (.bat)...</value>
   </data>
   <data name="MenuDisconnect" xml:space="preserve">
     <value>&amp;Disconnetti</value>

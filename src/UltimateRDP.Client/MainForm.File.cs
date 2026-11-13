@@ -17,6 +17,7 @@ internal sealed partial class MainForm
         _fileMenu.OpenClicked += (_, _) => OpenFromDialog();
         _fileMenu.RecentChosen += (_, path) => OpenRecent(path);
         _fileMenu.ClearRecentClicked += (_, _) => _recent.Clear();
+        _fileMenu.CreateLauncherClicked += (_, _) => ShowLauncherGenerator();
         _fileMenu.ReopenClicked += (_, _) => ReopenActive();
         _fileMenu.CloseTabClicked += (_, _) => CloseActiveTab();
         _fileMenu.LogOffClicked += (_, _) => LogOffActiveSession();
@@ -31,6 +32,14 @@ internal sealed partial class MainForm
         _fileMenu.Root.DropDownOpening += (_, _) => OnFileMenuOpening();
         _recent.Changed += (_, _) => _fileMenu.ShowRecent(_recent.Paths);
         _fileMenu.ShowRecent(_recent.Paths);
+    }
+
+    /// <summary>The launcher generator, filled from the active tab when there is one.</summary>
+    private void ShowLauncherGenerator()
+    {
+        var exe = Environment.ProcessPath ?? Application.ExecutablePath;
+        using var form = new Launchers.LauncherForm(exe, ActiveSession?.RdpFile);
+        form.ShowDialog(this);
     }
 
     private void OnFileMenuOpening()

@@ -5,8 +5,8 @@ using UltimateRDP.Client.Resources;
 namespace UltimateRDP.Client;
 
 /// <summary>
-/// The File menu: open a .rdp file, recent connections, tabs, log off, saved credentials
-/// and Quit. Like <see cref="ViewMenu"/>, it only shows the state it is given and raises
+/// The File menu: open a .rdp file, recent connections, the launcher generator, tabs, log
+/// off, saved credentials and Quit. Like <see cref="ViewMenu"/>, it only shows the state it is given and raises
 /// an event per choice; the form decides what a choice does.
 /// </summary>
 /// <remarks>
@@ -18,6 +18,7 @@ internal sealed class FileMenu
     private readonly ToolStripMenuItem _openItem = new() { ShortcutKeyDisplayString = "Ctrl+O" };
     private readonly ToolStripMenuItem _recentItem = new();
     private readonly ToolStripMenuItem _clearRecentItem = new();
+    private readonly ToolStripMenuItem _launcherItem = new();
     private readonly ToolStripMenuItem _reopenItem = new();
     private readonly ToolStripMenuItem _closeTabItem = new() { ShortcutKeyDisplayString = "Ctrl+W" };
     private readonly ToolStripMenuItem _logOffItem = new();
@@ -31,6 +32,7 @@ internal sealed class FileMenu
     {
         _openItem.Click += (_, _) => OpenClicked?.Invoke(this, EventArgs.Empty);
         _clearRecentItem.Click += (_, _) => ClearRecentClicked?.Invoke(this, EventArgs.Empty);
+        _launcherItem.Click += (_, _) => CreateLauncherClicked?.Invoke(this, EventArgs.Empty);
         _reopenItem.Click += (_, _) => ReopenClicked?.Invoke(this, EventArgs.Empty);
         _closeTabItem.Click += (_, _) => CloseTabClicked?.Invoke(this, EventArgs.Empty);
         _logOffItem.Click += (_, _) => LogOffClicked?.Invoke(this, EventArgs.Empty);
@@ -42,6 +44,8 @@ internal sealed class FileMenu
         [
             _openItem,
             _recentItem,
+            new ToolStripSeparator(),
+            _launcherItem,
             new ToolStripSeparator(),
             _reopenItem,
             _closeTabItem,
@@ -62,6 +66,9 @@ internal sealed class FileMenu
     public event EventHandler<string>? RecentChosen;
 
     public event EventHandler? ClearRecentClicked;
+
+    /// <summary>Raised when the user chooses "Create a launcher (.bat)", since 0.10.0.</summary>
+    public event EventHandler? CreateLauncherClicked;
 
     public event EventHandler? ReopenClicked;
 
@@ -85,6 +92,7 @@ internal sealed class FileMenu
         _openItem.Text = Strings.MenuOpenRdp;
         _recentItem.Text = Strings.MenuRecent;
         _clearRecentItem.Text = Strings.MenuClearRecent;
+        _launcherItem.Text = Strings.MenuCreateLauncher;
         _reopenItem.Text = Strings.MenuReopen;
         _closeTabItem.Text = Strings.MenuCloseTab;
         _logOffItem.Text = Strings.MenuLogOff;
