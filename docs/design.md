@@ -1,6 +1,6 @@
 # UltimateRDP design
 
-Date: 2026-11-05, updated on 2026-11-10 for version 0.6.0.
+Date: 2026-11-05, updated on 2026-11-13 for version 0.7.0.
 
 ## Goal
 
@@ -13,7 +13,8 @@ The transfer uses the standard RDP drive redirection; UltimateRDP only adds the
 through the UltimateRDP channel before the drop, which is faster; see
 "Version 0.4" below. Since version 0.6, they travel through a direct TLS
 connection between the client and the agent when the network allows it, with
-the channel as the fallback; see "Version 0.6".
+the channel as the fallback; see "Version 0.6". Since version 0.7, that
+connection is several TCP connections at once; see "Version 0.7".
 
 Scope:
 
@@ -123,7 +124,9 @@ Pure logic shared by the two apps and covered by tests.
   described under "Version 0.5". `DropDecision`: the drop held for the
   answer of the agent, described under "Version 0.4.5" and "Version 0.5".
 * `DirectFrames`, `DirectFrameReader`, `DirectSender`, `DirectReceiver` and
-  `DirectTransferPolicy`: the direct connection, described under "Version 0.6".
+  `DirectTransferPolicy`: the direct connection, described under "Version 0.6",
+  over several connections since "Version 0.7", with `DirectPacer`,
+  `DirectRateMeter` and `IDirectStorage`.
 
 ### Protocol
 
@@ -213,7 +216,8 @@ Field notes:
   when they have no value, and an older peer does not use them.
 * `direct` of `dragAck` is new in 0.6.0, see "Version 0.6". It is not
   written when the agent offers no direct connection, and an older client
-  ignores it and sends the files through the channel.
+  ignores it and sends the files through the channel. Its fields `version`
+  and `connections` are new in 0.7.0, see "Version 0.7".
 
 Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
@@ -539,7 +543,7 @@ the fallback for anything missing.
   File contents go through the channel only for a fast transfer, inside the
   RDP connection like any other channel data, or through the direct TLS
   connection of version 0.6, whose rules are under "Security rules" in
-  "Version 0.6".
+  "Version 0.6", as changed in "Version 0.7".
 * The client never writes credentials. It reads the generic credential
   `TERMSRV/<host>` when one exists; other credential prompts come from the
   Microsoft control.
@@ -588,7 +592,9 @@ the fallback for anything missing.
   token, the order of the frames, the paths, the sizes, the checksums, the
   free space, a truncated stream before and after the first
   acknowledgement, a cancel, a file that changed, and 100 MB through an in
-  memory connection; see "Version 0.6".
+  memory connection; see "Version 0.6". Since 0.7, the same over 1, 4 and 8
+  connections, with the blocks, the tokens of each connection, the cancels
+  and the limit of the rate; see "Version 0.7".
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -2574,3 +2580,348 @@ channel path of 0.5.2 does not change.
 The agent without a client does not change: no listener, no certificate, no
 key and no thread exist while no transfer is offered, and nothing of the
 direct connection runs before the first fast transfer of the session.
+
+## Version 0.7
+
+### What was measured
+
+In this section MB means a million bytes, as in the section of 0.6.
+
+The first production test of the direct connection, on 2026-11-10, made four drops, all through
+the direct connection, with TLS 1.3 on port 3400. The rate was about 135 to 180 MB/s for the
+first seconds, then fell to about 20 MB/s. The agent measured, for the transfers that moved:
+
+| Drop | Received | Time | Average |
+| --- | --- | --- | --- |
+| 1 | 609 MB | 4.5 s | 135 MB/s |
+| 3 | 1906 MB | 30 s | 63 MB/s |
+| 4 | 1246 MB | 33.8 s | 37 MB/s |
+
+On 2026-11-13 a raw TCP probe, without TLS, disk or files, sent random bytes into a sink that
+discards them on the server, over a path with a round trip of 15 ms. One connection showed the
+same curve: 90 MB/s in the first second, then 65, 46, 37, 31, 27, then 20 to 22 MB/s steady.
+Four connections at once carried 270 to 300 MB/s for 4 seconds, the whole upload of 2.3 Gbit/s
+of the client, then decayed to about 90 MB/s, about 22 MB/s per connection. The server has NVMe
+disks, a 25 Gbit/s adapter and plenty of memory, and the client read its files from NVMe. The
+limit is therefore per TCP connection, somewhere on the path, and several connections add up.
+Version 0.7 carries a transfer over several connections.
+
+Two more findings of 2026-11-10:
+
+* In the second drop the agent received 0 bytes in 9.4 s, although TLS and the token were
+  accepted. The sender thread of the client stayed blocked, and only reported "Cannot access a
+  disposed object (SslStream)" 14 s after the user cancelled. The same file of 3.6 GB, an
+  executable, went through at once two drops later. Probably its first open or read blocked
+  on the client, as an antivirus scanning a large executable does. Nothing in the logs of 0.6
+  can prove it; 0.7 logs it.
+* The agent logged each cancel of the user as a warning, "Failed through the direct connection
+  ... Cannot access a disposed object. Object name: 'System.Net.Sockets.Socket'". 0.7 counts a
+  cancel of the client as cancelled, at the info level.
+
+### Protocol version 2
+
+Version 2 replaces version 1 entirely: no code path for version 1 remains on either side.
+
+The offer in the dragAck gains two fields:
+
+```
+{"type":"dragAck","id":"<id>","accepted":true,"transfer":true,"transferId":"<id>","direct":{"port":3400,"token":"<64 hex digits>","certSha256":"<64 hex digits>","host":"<address>","version":2,"connections":8}}
+```
+
+`version` is the version of the protocol, 2. `connections` is the number of connections the agent
+accepts for the transfer at most: the setting `directConnections` of agent.json, 1 to 16, 8 by default.
+A client 0.7.0 uses only an offer of version 2 with 1 to 16 connections
+(`DirectTransferOffer.IsWellFormed`), and the channel otherwise.
+
+The client opens the minimum of: the connections of the offer, its own setting
+`directConnections` of client.json (1 to 16, 8 by default), and one connection per started
+32 MiB of the transfer (`DirectTransferPolicy.ConnectionsFor`). A transfer of 20 MB uses one
+connection, one of 6.3 GB eight.
+
+It opens connection 0 first, exactly as in 0.6: TCP to the host of the .rdp file within 3
+seconds, then to the address hint, then TLS pinned by the SHA-256 of the offer, then the token.
+Once connection 0 got its ready frame and the files are listed, it opens the others in parallel,
+to the address connection 0 reached, within 3 seconds each, and uses those that succeed; a
+connection that fails is logged at the info level and is not an error. A connection that opens
+late starts carrying blocks as soon as it is ready.
+
+### The token of each connection
+
+The first frame of every connection is its token frame: the version byte 2, the index of the
+connection (1 byte), and 32 bytes of proof:
+
+```
+proof = HMAC-SHA256(key = the 32 bytes of the token of the offer, message = ASCII "UltimateRDP direct v2" followed by the index byte)
+```
+
+The token itself never goes on a connection in version 2, and each connection has a proof of its
+own. The agent compares the proof in constant time, before anything that depends on the index,
+and accepts each index once, below the `connections` of its offer. Connection 0 must come
+first: another index before it is refused. A refused token gets no answer: the agent closes
+that socket and goes on listening. The agent clears its copy of the token once every index was
+used or the transfer ended.
+
+The listener keeps listening after connection 0, until the transfer ends or every connection of
+the offer presented its token. It accepts at most N + 4 sockets per offer in total, N being the
+connections of the offer, so that a scanner from an allowed address cannot keep it busy, and
+each socket must finish its TLS handshake and present its token within 5 seconds.
+
+### The frames
+
+The framing of 0.6 does not change: a length of 4 bytes, little endian, that counts the payload,
+one type byte, then the payload. A payload above 1 MiB and 12 bytes, or an unknown type, breaks
+the connection.
+
+| Type | Byte | From | Connection | Payload |
+| --- | --- | --- | --- | --- |
+| token | 1 | client | each, first | version 2 (1 byte), index (1 byte), proof (32 bytes) |
+| ready | 2 | agent | each | none |
+| begin | 3 | client | 0 | files (4 bytes), bytes (8 bytes) |
+| fileHeader | 4 | client | 0 | index (4 bytes), size (8 bytes), last write time in UTC as ticks (8 bytes, 0 when unknown), relative path |
+| data | 5 | client | any | file index (4 bytes), offset (8 bytes), then 1 byte to 1 MiB of the file |
+| fileTrailer | 6 | client | 0 | index (4 bytes), SHA-256 of the file (32 bytes) |
+| cancel | 7 | client | 0 | reason, in English, for the log |
+| ack | 8 | agent | 0 | index of the file being checked (4 bytes), bytes of that file checked (8 bytes), bytes of the transfer received and written (8 bytes) |
+| final | 9 | agent | 0 | as in 0.6 |
+| listEnd | 10 | client | 0 | none |
+| go | 11 | agent | 0 | none |
+| end | 12 | client | each | the number of data frames the client sent on this connection (8 bytes) |
+
+Connection 0 is the control connection and carries data too. On it, in order: token, ready,
+begin, one fileHeader per file, all of them before any data, listEnd. The agent checks the whole
+list as before (`TransferPaths`, a path that comes twice, the free space, a dropped file missing
+from the list, the files adding up to the bytes of begin), creates every file, and answers go.
+Only then the data flows, on every connection: data frames, and on connection 0 the trailers
+between them. Each connection ends with its end frame. The cancel frame may come at any time on
+connection 0. Acknowledgements and the final frame come on connection 0 only; on the other
+connections the agent sends nothing after ready.
+
+Blocks are aligned: the offset is a multiple of 1 MiB and the length is the smaller of 1 MiB and
+the rest of the file. An empty file has no block. The agent keeps the state of each block of
+each file, and a block that comes twice, a misaligned one, one of the wrong length, or one beyond
+its file or beyond the files is a protocol error. A data frame before go, or after the end frame
+of its connection, is a protocol error too.
+
+The end frame has a purpose of its own: once every connection that
+carries blocks sent it, the agent knows that no block is on its way any more, so that a block
+that never came fails the transfer at once as incomplete, rather than after the 60 seconds of
+the socket timeout. Its count must be the number of data frames that arrived on that
+connection, which the agent checks.
+
+### The sender
+
+`DirectSender` in Core. One reader thread reads the files in order, by blocks of 1 MiB, into
+buffers of a pool that leave room for the 17 bytes in front of the data, so that a data frame
+goes out in one write. It computes the SHA-256 of each file in order as it reads it, as in 0.6,
+and puts the blocks in a bounded queue of two blocks per connection. When it has read a file,
+it writes the trailer on connection 0. One writer thread per connection takes the next block
+from the shared queue and writes it to its connection, so that a slow connection does not hold
+the others: it only takes a block when it has written the one before. The writes on connection
+0, from its writer, from the reader for the trailers, and from a cancel, take turns on a lock. A
+thread of its own reads connection 0: go, the acknowledgements and the final frame.
+
+The sockets keep their buffer sizes: SO_SNDBUF and SO_RCVBUF are not set, since setting them
+turns off the autotuning of TCP on Windows. NoDelay is on, and the timeouts of 60 seconds of 0.6
+stay.
+
+### The receiver and the verification
+
+`DirectReceiver` in Core. One thread per connection reads its frames and writes each block at
+its offset (`IDirectStorage`, in the agent `RandomAccess.Write` on a `SafeFileHandle`), so that
+no buffer puts the blocks back in order. The files are created at listEnd, and each one is
+opened at its first block and closed once checked, so that a folder of many small files does not
+hold a handle per file for the whole transfer.
+
+A verifier thread checks the files. Two designs were possible: a verifier that hashes the part
+of each file that is complete from its start by reading it back from the file as the blocks
+arrive, or a hasher that receives the blocks in memory and in order, with a bounded buffer and
+backpressure on the connections. Version 0.7 reads back:
+
+* the verifier takes the files in order, waits until the next block of the current file is
+  written, reads it back with a positional read, and adds it to the SHA-256 of the file. Its
+  memory is one block, whatever the order the blocks come in;
+* nothing holds the connections back: a slow connection makes the verifier wait for its block,
+  while the other connections keep writing; an in order hasher with a bounded buffer would
+  instead stop every connection behind the slow one;
+* it checks what is in the file, not only what came on the wire;
+* the cost is a second read of data just written, which the file cache of the server serves
+  from memory. On this development computer it ran at about 1.5 GB/s with one connection.
+
+Once the whole file is hashed and its trailer came, the verifier compares the two, closes the
+file, sets its last write time, and acknowledges the file. It also sends the acknowledgements
+every 8 MiB of the transfer received and written, as before; they drive the progress window.
+After the last file it sends the final frame. When every connection sent its end frame and a
+block or a trailer is still missing, it fails the transfer as incomplete. The tests check blocks
+that arrive in any order and on any connection, a block that comes twice, misaligned blocks, a
+missing block, a wrong checksum, and many small and empty files.
+
+Once the transfer is over, the files are closed and, unless it succeeded, deleted as soon as no
+thread writes or reads them any more.
+
+A connection lost after go fails the transfer with the text of 0.6, "The direct connection was
+lost. Try again." on the client once an acknowledgement came; every connection closes and
+nothing partial is dropped. Before the first acknowledgement the client falls back to the
+channel, as in 0.6. A connection other than 0 that closes before it carried any block is only
+dropped, with a line at the info level, and the transfer goes on without it.
+
+### The limit of the rate
+
+The setting `directMaxMegabytesPerSecond` of agent.json, 0 by default for no limit, protects
+the server. `DirectPacer` in Core is a token bucket shared by the connections of a transfer:
+after each block, a connection takes its bytes from the bucket and sleeps the time it is told
+before it reads again, at most a second at a time. Bytes taken beyond the bucket are a debt that
+every connection pays, so that all of them together keep the limit; while they sleep, TCP flow
+control slows the client down. The bucket holds a tenth of a second at the limit, and at least
+two blocks. The tests check the burst, the long run rate, the shared debt and the refill on a
+clock of their own.
+
+### Cancellation
+
+On the client a cancel of the user, or the closing of the tab, sends the cancel frame on
+connection 0 when the lock of its writes can be taken within 1 second, waits for the final frame
+in the rest of that second, then closes every socket and the file being read. A writer blocked
+in a socket write, or a reader blocked in a file read, does not hold the cancel: closing the
+socket ends a blocked write at once; a file read that the close cannot end returns later, and
+the reader then sends nothing and logs a line. A timer closes everything 1.5 seconds after the
+cancel if the thread of the transfer is held elsewhere. The client then sends `transferCancel`
+through the channel, as in 0.6.
+
+On the agent, a cancel of the client is counted as Cancelled, at the info level, with the
+bytes and the rate, whether it comes as the cancel frame, as `transferCancel` through the
+channel, or as connections that close right before the `transferCancel`: when the connections
+of a transfer close without a cancel frame, the summary waits up to 2 seconds for a
+`transferCancel` before it decides. A transfer that the agent closes itself, because the drag
+ended, a newer drag replaced it or the agent stops, is logged at the info level as closed by the
+agent. Only the other failures are warnings, and none of them carries the text of an object
+disposed by the cancel.
+
+### Logs
+
+Client, at the info level:
+
+```
+Transfer <id> of drag <id>: started with 1 item(s) through the direct connection, port 3400 of <host>, up to 8 connection(s) (the agent accepts 8, the setting allows 8), certificate pinned to SHA-256 <hex>; the channel takes the files when the connection cannot be used.
+Transfer <id>: connection 0 to <host>:3400 with Tls13 (TLS_AES_256_GCM_SHA384); the agent accepted the token.
+Transfer <id>: the agent checked the list and created the files; the data goes over up to 8 connection(s).
+Transfer <id>: Opening <path> took <n> ms; nothing was sent meanwhile.
+Transfer <id>: The first read of <path> took <n> ms; nothing was sent meanwhile.
+Transfer <id>: Connection 5 is not used: <host>:3400 did not answer within 3 s
+Transfer <id>: direct connection statistics: 8 of 8 planned connection(s), bytes per connection 0: <bytes>, 1: <bytes>, ...; <s> s from the go frame; the reader spent <s> s opening and reading the files and waited <s> s for room in the queue; the writers spent <s> s in socket writes and waited <s> s for blocks, summed over the connections; average <rate> MB/s, first 5 s <rate> MB/s, last 5 s <rate> MB/s.
+Transfer <id>: The reader is still reading <path>; it ends when that call returns, and sends nothing more.
+Transfer <id>: The read of <path> returned <s> s after the connections closed; nothing more is sent.
+```
+
+and at the debug level one line per second:
+
+```
+Transfer <id>: <rate> MB/s in the last second through the direct connection, <bytes> bytes written, <bytes> acknowledged.
+```
+
+Agent, at the info level:
+
+```
+Transfer <id> of drag <id>: direct connection offered on port 3400, protocol version 2, up to 8 connection(s), address hint <address>.
+Transfer <id>: connection 0 from <address>:<port> accepted with Tls13 (TLS_AES_256_GCM_SHA384); receiving the list of the files.
+Transfer <id>: connection 3 from <address>:<port> accepted with Tls13 (TLS_AES_256_GCM_SHA384).
+Transfer <id> of drag <id>: Cancelled through the direct connection from <address>:<port> on port 3400, Tls13 (TLS_AES_256_GCM_SHA384), 0 of 1 file(s), 20971520 of 2000000000 bytes in 3.0 s, 6.9 MB/s, 2 acknowledgement(s). Cancelled by the client through the channel, The user cancelled the transfer.; the files that came are deleted.
+Transfer <id>: direct connection statistics: 8 connection(s), bytes per connection 0: 250609664, 1: 254120960, ...; socket reads 3.69 s, file writes 15.56 s, hashing 3.82 s, summed over the threads; average 520.3 MB/s, first 5 s 520.3 MB/s, last 5 s 520.3 MB/s.
+```
+
+with "waits for the rate limit" in the statistics when `directMaxMegabytesPerSecond` is set, a
+line for a connection other than 0 that closed before it carried any block, and at the debug
+level one line per second with the rate of that second. A token of another version, or a wrong
+token, is a warning that names the reason.
+
+How to read the statistics. The times of several threads are added up, so a time may exceed the
+length of the transfer; compare it with the seconds times the connections.
+
+* The reader of the client close to the whole time, and writers that wait long for blocks: the
+  files limit the transfer on the client, its disk or an antivirus. The lines about a slow open
+  or first read say which file.
+* Writers of the client in socket writes for most of the time, times the connections, and a
+  reader that waits for room in the queue: the network limits the transfer. A first 5 s much
+  faster than the last 5 s is the per connection limit measured above.
+* Socket reads of the agent close to the whole time, times the connections: the agent waits for
+  the network, which confirms the line of the client.
+* File writes or hashing of the agent close to the whole time: the disk or the processor of the
+  server limits the transfer.
+
+The progress window and the status bar keep the preparing stage of 0.6, "Preparing..." with
+"Direct connection", until the first acknowledgement, so that a file that takes long to open no
+longer looks like a transfer at 0 B/s.
+
+### Versions and compatibility
+
+| Client | Agent | Path of the files |
+| --- | --- | --- |
+| 0.7.0 | 0.7.0 | direct, up to 16 connections |
+| 0.7.0 | 0.6.0 | channel: the offer has no `version`, the client ignores it |
+| 0.6.0 | 0.7.0 | channel: the client ignores the new fields, connects and sends a token of version 1; the agent closes without an answer, the client sees a refusal before any data and falls back at once; the listener closes at `transferBegin` |
+| 0.6.0 | 0.6.0 | direct, one connection, as in 0.6 |
+| 0.5.2 or older | any | channel |
+| any | 0.5.2 or older | channel |
+
+The rest of the matrix of 0.6, the setting `never` on either side, a Gateway, closed ports, no
+free port, does not change.
+
+### Settings
+
+| Where | Setting | Values | When absent | Meaning |
+| --- | --- | --- | --- | --- |
+| agent.json | `directConnections` | 1 to 16 | 8 | The `connections` of the offer. |
+| agent.json | `directMaxMegabytesPerSecond` | 0 to 100000 | 0 | The limit of the rate of a transfer, all its connections together, in MB/s; 0 for none. |
+| client.json | `directConnections` | 1 to 16 | 8 | How many connections the client opens at most. |
+
+They are only editable in the files, and read at the start of the application. A value out of
+range gives the default and a warning in the log. No new text is shown to the user.
+
+### Security rules, as changed
+
+The rules of 0.6 hold, with these changes: an offer accepts up to `connections` connections
+instead of one, each with a proof of the token for its index instead of the token, each index
+once, connection 0 first, at most N + 4 sockets per offer, each of them within 5 seconds. The
+listener still exists only while a transfer is offered or runs, and the agent without a client
+does not change: no listener, no certificate and no thread while no transfer is offered.
+
+### Measured
+
+In the tests, `DirectTransferTests` runs whole transfers between a `DirectSender` and a
+`DirectReceiver` through in memory connections with a bounded buffer per direction, over 1, 4
+and 8 connections, and frames written by hand where the rules of the receiver are tested: blocks
+in any order, a block twice, misaligned blocks, a missing block, an end frame with a wrong
+count, a wrong checksum, a cancel at the first acknowledgement, before the list, while the
+reader is blocked in a file read and while a writer is blocked in a socket write, a cancel
+through the channel, connections closed before it, a close by the agent, one connection broken
+in the middle, an extra connection that cannot be opened or that closes before any block, a
+token of version 1, a wrong token, an index beyond the offer, a replayed index, an index before
+connection 0, 400 small and empty files over four connections, and the limit of the rate. 200 MB
+go through 8 connections in about 0.2 s on this development computer. `DirectPacingTests` checks
+the token bucket and the rates of the summary on a clock of its own.
+
+Over loopback on this development computer, a throwaway program ran the real `DirectListener`
+and `DirectCertificate` of the agent, by reflection, with a staging folder on disk, and the
+client side of `DirectUpload` with the real `DirectSender`, TLS 1.3 on every connection:
+
+| Transfer | Time from the first connection to the final frame | Rate |
+| --- | --- | --- |
+| 2 GB over 1 connection | 6.3 to 6.5 s | 307 to 318 MB/s |
+| 2 GB over 8 connections | 3.8 to 4.0 s | 504 to 528 MB/s |
+
+On loopback, client and agent share the processor with the TLS of every connection; with eight
+connections the verifier of the agent was busy for about the whole transfer, so that it is the
+limit there, above the rates expected on the network. With the agent paced at 5 MB/s so that
+every writer was blocked in a socket write, a cancel returned in 1.0 s when the `transferCancel`
+of the channel came 1.5 s later, and in 0.1 to 0.6 s when it came right after the cancel, as the
+client sends it; the agent logged both as cancelled at the info level. A cancel while the first
+read of a file was held returned at once, and the read that returned 2 seconds later left its
+line. The same program saw a token of version 1 refused without an answer, a wrong pin refused
+by the client, the seventh socket refused for an offer of two connections, six silent sockets
+dropped after 5 seconds, and the key gone from the user key store after the agent deleted it.
+
+On the production path, with the 20 to 22 MB/s per connection measured after the first seconds,
+eight connections are expected to carry about 170 MB/s once the first seconds are over, against
+about 20 MB/s with one; the statistics lines of both logs will tell.
+
+### Versions
+
+Both sides ship together as 0.7.0. The channel path of 0.5.2 does not change.
