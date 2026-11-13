@@ -27,6 +27,15 @@ public static class SessionEnd
     public static bool IsNormal(int reason, uint extended) =>
         reason is LocalNotError or RemoteByUser or ByServer && extended is 0 or 1 or 2 or 11 or 12;
 
+    /// <summary>exDiscReasonReplaced: another connection with the same account took the session.</summary>
+    public const uint Replaced = 5;
+
+    /// <summary>
+    /// True when another connection with the same account took the session (reason 3, extended
+    /// reason 5), since 0.10.0: the client shows its own text for it.
+    /// </summary>
+    public static bool IsTakenOver(int reason, uint extended) => reason == ByServer && extended == Replaced;
+
     /// <summary>The extended reason in words, for the log.</summary>
     public static string DescribeExtended(uint extended) => extended switch
     {
