@@ -238,7 +238,7 @@ internal sealed class DirectListener
     }
 
     /// <summary>Binds a listener to all addresses, IPv6 and IPv4 when the system has IPv6. Null when the port is taken.</summary>
-    private static TcpListener? Bind(int port, int backlog)
+    internal static TcpListener? Bind(int port, int backlog)
     {
         foreach (var address in new[] { IPAddress.IPv6Any, IPAddress.Any })
         {
@@ -273,7 +273,7 @@ internal sealed class DirectListener
     }
 
     /// <summary>The first IPv4 address of an interface that is up and has an IPv4 gateway, or null.</summary>
-    private static string? PrimaryIPv4()
+    internal static string? PrimaryIPv4()
     {
         try
         {

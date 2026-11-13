@@ -39,6 +39,12 @@ internal static class Program
         // handler of the UI thread. The drag threads install their own.
         Application.ThreadException += (_, e) => logger.Error("Unexpected error on the UI thread; the agent goes on.", e.Exception);
 
+        // The Send To shortcut gives every selected file as an argument.
+        if (args.Length > 0 && args[0].Trim().Equals("--send", StringComparison.OrdinalIgnoreCase))
+        {
+            return Send.SendCommand.Run(logger, args[1..]);
+        }
+
         if (args.Length > 1)
         {
             CommandLineOutput.Error(Strings.TooManyArguments + "\n\n" + Usage());
@@ -86,6 +92,7 @@ internal static class Program
             ("--uninstall", Strings.UsageUninstall),
             ("--install-all-users", Strings.UsageInstallAllUsers),
             ("--status", Strings.UsageStatus),
+            (Strings.UsageSendName, Strings.UsageSend),
             ("--help", Strings.UsageHelp),
         ];
 

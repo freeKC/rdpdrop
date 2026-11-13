@@ -315,6 +315,24 @@ internal sealed class NativeDropCoordinator : IDisposable
         }
     }
 
+    /// <summary>True while a direct listener of a drop is active: a send to the client must wait.</summary>
+    public bool UsesDirect
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _direct is { IsActive: true };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Since 0.9.0: true while the session sends files to the client through the direct
+    /// connection; a drop then goes through the channel, as with another direct transfer.
+    /// </summary>
+    public Func<bool>? OtherDirectActive { get; set; }
+
     public void Dispose() => Stop(StopWait);
 
     /// <summary>
@@ -770,6 +788,12 @@ internal sealed class NativeDropCoordinator : IDisposable
                 _logger.Info($"Drag {drag.Id}: transfer {running.TransferId} still uses the direct connection, so this one goes through the channel.");
                 return;
             }
+        }
+
+        if (OtherDirectActive?.Invoke() == true)
+        {
+            _logger.Info($"Drag {drag.Id}: a send to the client uses the direct connection, so this transfer goes through the channel.");
+            return;
         }
 
         var direct = DirectListener.TryStart(_logger, _settings.DirectPortRange, _settings.DirectConnections, _settings.DirectMaxMegabytesPerSecond, drag.Id, transferId, items, _staging, _language);

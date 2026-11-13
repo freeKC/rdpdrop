@@ -52,6 +52,9 @@ internal static class AgentInfo
     /// <summary>%LOCALAPPDATA%\UltimateRDP\staging, local copies offered to drags in the session.</summary>
     public static string StagingDirectory { get; } = Path.Combine(DataDirectory, "staging");
 
+    /// <summary>The claims of the agents of the user on the Send To shortcut, one file per session, since 0.9.0.</summary>
+    public static string SendToClaimsDirectory { get; } = Path.Combine(DataDirectory, "sendto-claims");
+
     /// <summary>%LOCALAPPDATA%\UltimateRDP\logs</summary>
     public static string LogDirectory { get; } = Path.Combine(DataDirectory, "logs");
 

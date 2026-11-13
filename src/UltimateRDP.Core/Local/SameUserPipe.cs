@@ -36,7 +36,7 @@ public sealed class SameUserPipe : IDisposable
     /// <summary>Longest request or answer, in bytes.</summary>
     public const int MaxMessageBytes = 4 * 1024 * 1024;
 
-    /// <summary>Time a client of the server has to send its request and read the answer.</summary>
+    /// <summary>Time a client of the server has to send its request, and the default time a client waits for the answer.</summary>
     public static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(10);
 
     private readonly NamedPipeServerStream _server;
@@ -99,9 +99,10 @@ public sealed class SameUserPipe : IDisposable
     /// its answer. Throws a <see cref="TimeoutException"/> when no server answers within
     /// <paramref name="timeout"/>, and an <see cref="IOException"/> or an
     /// <see cref="UnauthorizedAccessException"/> when the server is not of this user and
-    /// session, or the exchange fails.
+    /// session, or the exchange fails or takes more than <paramref name="exchangeTimeout"/>,
+    /// <see cref="ExchangeTimeout"/> by default.
     /// </summary>
-    public static byte[] Call(string purpose, byte[] request, TimeSpan timeout)
+    public static byte[] Call(string purpose, byte[] request, TimeSpan timeout, TimeSpan? exchangeTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.Length > MaxMessageBytes)
@@ -116,7 +117,7 @@ public sealed class SameUserPipe : IDisposable
             throw new IOException("The server of the pipe does not run in this session.");
         }
 
-        using var deadline = new CancellationTokenSource(ExchangeTimeout);
+        using var deadline = new CancellationTokenSource(exchangeTimeout ?? ExchangeTimeout);
         using var registration = deadline.Token.Register(client.Dispose);
         Write(client, request);
         return Read(client) ?? throw new IOException("The server closed the pipe without an answer.");
@@ -264,8 +265,9 @@ public sealed class SameUserPipe : IDisposable
             return;
         }
 
-        using var deadline = new CancellationTokenSource(ExchangeTimeout);
-        using var registration = deadline.Token.Register(() =>
+        byte[]? request;
+        using (var deadline = new CancellationTokenSource(ExchangeTimeout))
+        using (deadline.Token.Register(() =>
         {
             try
             {
@@ -275,8 +277,13 @@ public sealed class SameUserPipe : IDisposable
             {
                 // Closed already.
             }
-        });
-        var request = Read(_server);
+        }))
+        {
+            // Only the request has a deadline here: the handler may take its time, and the
+            // client bounds its own wait for the answer.
+            request = Read(_server);
+        }
+
         if (request is null)
         {
             return;

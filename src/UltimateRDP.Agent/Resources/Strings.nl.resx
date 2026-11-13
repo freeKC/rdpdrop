@@ -204,6 +204,51 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   <data name="RunElevated" xml:space="preserve">
     <value>Voer deze opdracht opnieuw uit vanaf een opdrachtprompt met verhoogde bevoegdheden (Als administrator uitvoeren).</value>
   </data>
+  <data name="SendBadName" xml:space="preserve">
+    <value>{0} kan niet worden verstuurd: het heeft geen naam die een bestand kan hebben.</value>
+  </data>
+  <data name="SendBusy" xml:space="preserve">
+    <value>Er loopt een overdracht. Probeer het opnieuw wanneer die klaar is.</value>
+  </data>
+  <data name="SendCannotList" xml:space="preserve">
+    <value>{0} kan niet worden gelezen. {1}</value>
+  </data>
+  <data name="SendChannelFailed" xml:space="preserve">
+    <value>De bestanden kunnen niet worden verstuurd: het bericht aan de client kon niet via de Extern bureaublad-verbinding worden verstuurd.</value>
+  </data>
+  <data name="SendClientRefused" xml:space="preserve">
+    <value>De UltimateRDP-client heeft de bestanden niet aangenomen: {0}</value>
+  </data>
+  <data name="SendDialogTitle" xml:space="preserve">
+    <value>Bestanden naar mijn pc sturen</value>
+  </data>
+  <data name="SendMissing" xml:space="preserve">
+    <value>{0} bestaat niet of kan niet worden gelezen.</value>
+  </data>
+  <data name="SendNoAgent" xml:space="preserve">
+    <value>De bestanden kunnen niet worden verstuurd: de UltimateRDP-agent draait niet in deze sessie, of er is geen UltimateRDP-client verbonden die bestanden ontvangt.</value>
+  </data>
+  <data name="SendNoAnswer" xml:space="preserve">
+    <value>De UltimateRDP-client heeft niet geantwoord. De bestanden zijn niet verstuurd.</value>
+  </data>
+  <data name="SendNoClient" xml:space="preserve">
+    <value>Er is geen UltimateRDP-client met deze sessie verbonden die bestanden ontvangt.</value>
+  </data>
+  <data name="SendNoPort" xml:space="preserve">
+    <value>De bestanden kunnen niet worden verstuurd: de directe verbinding kan niet worden aangeboden, omdat geen poort van het bereik vrij is op de server of het certificaat niet kan worden gemaakt. Het logboek van de agent noemt de oorzaak.</value>
+  </data>
+  <data name="SendNothing" xml:space="preserve">
+    <value>Kies ten minste één bestand of map om te versturen.</value>
+  </data>
+  <data name="SendOff" xml:space="preserve">
+    <value>Het versturen van bestanden naar de clientcomputer is uitgeschakeld in de instellingen van de agent (sendToClient).</value>
+  </data>
+  <data name="SendSameName" xml:space="preserve">
+    <value>Twee items heten {0}. Verstuur ze een voor een.</value>
+  </data>
+  <data name="SendShortcutDescription" xml:space="preserve">
+    <value>Stuurt de bestanden naar de computer van de UltimateRDP-client die met deze sessie verbonden is.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>De bestanden konden voor het slepen niet naar de sessie worden gekopieerd. {0}</value>
   </data>
@@ -354,6 +399,9 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Logboekmap openen</value>
   </data>
+  <data name="TraySendFiles" xml:space="preserve">
+    <value>Bestanden naar mijn pc sturen...</value>
+  </data>
   <data name="TrayStageFiles" xml:space="preserve">
     <value>Bestanden vóór het neerzetten in de sessie klaarzetten</value>
   </data>
@@ -395,6 +443,12 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>De agent in het systeemvak uitvoeren.</value>
+  </data>
+  <data name="UsageSend" xml:space="preserve">
+    <value>Bestanden en mappen naar de computer van de UltimateRDP-client van deze sessie sturen.</value>
+  </data>
+  <data name="UsageSendName" xml:space="preserve">
+    <value>--send &lt;bestanden&gt;</value>
   </data>
   <data name="UsageStatus" xml:space="preserve">
     <value>De versie, de opstartvermeldingen en de status van de agent in deze sessie tonen.</value>

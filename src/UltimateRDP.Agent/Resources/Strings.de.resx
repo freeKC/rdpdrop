@@ -204,6 +204,51 @@ Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lese
   <data name="RunElevated" xml:space="preserve">
     <value>Führen Sie diesen Befehl erneut in einer Eingabeaufforderung mit erhöhten Rechten aus (Als Administrator ausführen).</value>
   </data>
+  <data name="SendBadName" xml:space="preserve">
+    <value>{0} kann nicht gesendet werden: Es hat keinen Namen, den eine Datei haben kann.</value>
+  </data>
+  <data name="SendBusy" xml:space="preserve">
+    <value>Eine Übertragung läuft. Versuchen Sie es erneut, wenn sie beendet ist.</value>
+  </data>
+  <data name="SendCannotList" xml:space="preserve">
+    <value>{0} kann nicht gelesen werden. {1}</value>
+  </data>
+  <data name="SendChannelFailed" xml:space="preserve">
+    <value>Die Dateien können nicht gesendet werden: Die Nachricht an den Client konnte nicht über die Remotedesktopverbindung gesendet werden.</value>
+  </data>
+  <data name="SendClientRefused" xml:space="preserve">
+    <value>Der UltimateRDP-Client hat die Dateien nicht angenommen: {0}</value>
+  </data>
+  <data name="SendDialogTitle" xml:space="preserve">
+    <value>Dateien an meinen PC senden</value>
+  </data>
+  <data name="SendMissing" xml:space="preserve">
+    <value>{0} existiert nicht oder kann nicht gelesen werden.</value>
+  </data>
+  <data name="SendNoAgent" xml:space="preserve">
+    <value>Die Dateien können nicht gesendet werden: Der UltimateRDP-Agent läuft nicht in dieser Sitzung, oder kein UltimateRDP-Client, der Dateien empfängt, ist mit ihr verbunden.</value>
+  </data>
+  <data name="SendNoAnswer" xml:space="preserve">
+    <value>Der UltimateRDP-Client hat nicht geantwortet. Die Dateien wurden nicht gesendet.</value>
+  </data>
+  <data name="SendNoClient" xml:space="preserve">
+    <value>Kein UltimateRDP-Client, der Dateien empfängt, ist mit dieser Sitzung verbunden.</value>
+  </data>
+  <data name="SendNoPort" xml:space="preserve">
+    <value>Die Dateien können nicht gesendet werden: Die direkte Verbindung kann nicht angeboten werden, weil kein Port ihres Bereichs auf dem Server frei ist oder ihr Zertifikat nicht erstellt werden kann. Das Protokoll des Agents nennt den Grund.</value>
+  </data>
+  <data name="SendNothing" xml:space="preserve">
+    <value>Wählen Sie mindestens eine Datei oder einen Ordner zum Senden aus.</value>
+  </data>
+  <data name="SendOff" xml:space="preserve">
+    <value>Das Senden von Dateien an den Client-Computer ist in den Einstellungen des Agents ausgeschaltet (sendToClient).</value>
+  </data>
+  <data name="SendSameName" xml:space="preserve">
+    <value>Zwei Elemente heißen {0}. Senden Sie sie nacheinander.</value>
+  </data>
+  <data name="SendShortcutDescription" xml:space="preserve">
+    <value>Sendet die Dateien an den Computer des UltimateRDP-Clients, der mit dieser Sitzung verbunden ist.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>Die Dateien konnten vor dem Ziehvorgang nicht in die Sitzung kopiert werden. {0}</value>
   </data>
@@ -354,6 +399,9 @@ Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lese
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Protokollordner öffnen</value>
   </data>
+  <data name="TraySendFiles" xml:space="preserve">
+    <value>Dateien an meinen PC senden...</value>
+  </data>
   <data name="TrayStageFiles" xml:space="preserve">
     <value>Dateien vor dem Ablegen in die Sitzung kopieren</value>
   </data>
@@ -395,6 +443,12 @@ Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lese
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Den Agent im Infobereich ausführen.</value>
+  </data>
+  <data name="UsageSend" xml:space="preserve">
+    <value>Dateien und Ordner an den Computer des UltimateRDP-Clients dieser Sitzung senden.</value>
+  </data>
+  <data name="UsageSendName" xml:space="preserve">
+    <value>--send &lt;Dateien&gt;</value>
   </data>
   <data name="UsageStatus" xml:space="preserve">
     <value>Version, Starteinträge und den Agent dieser Sitzung anzeigen.</value>

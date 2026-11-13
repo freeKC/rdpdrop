@@ -235,6 +235,56 @@ Keep the executable in a folder that every user can read, such as Program Files.
   <data name="RunElevated" xml:space="preserve">
     <value>Run this command again from an elevated prompt (Run as administrator).</value>
   </data>
+  <data name="SendBadName" xml:space="preserve">
+    <value>{0} cannot be sent: it has no name that a file can have.</value>
+    <comment>{0} is a path.</comment>
+  </data>
+  <data name="SendBusy" xml:space="preserve">
+    <value>A transfer is in progress. Try again once it is done.</value>
+  </data>
+  <data name="SendCannotList" xml:space="preserve">
+    <value>Cannot read {0}. {1}</value>
+    <comment>{0} is a path, {1} the reason given by Windows.</comment>
+  </data>
+  <data name="SendChannelFailed" xml:space="preserve">
+    <value>The files cannot be sent: the message to the client could not be sent through the Remote Desktop connection.</value>
+  </data>
+  <data name="SendClientRefused" xml:space="preserve">
+    <value>The UltimateRDP client did not take the files: {0}</value>
+    <comment>{0} is the reason the client gave, in the language of the client.</comment>
+  </data>
+  <data name="SendDialogTitle" xml:space="preserve">
+    <value>Send files to my PC</value>
+  </data>
+  <data name="SendMissing" xml:space="preserve">
+    <value>{0} does not exist or cannot be read.</value>
+    <comment>{0} is a path.</comment>
+  </data>
+  <data name="SendNoAgent" xml:space="preserve">
+    <value>The files cannot be sent: the UltimateRDP agent does not run in this session, or no UltimateRDP client that receives files is connected to it.</value>
+  </data>
+  <data name="SendNoAnswer" xml:space="preserve">
+    <value>The UltimateRDP client did not answer. The files were not sent.</value>
+  </data>
+  <data name="SendNoClient" xml:space="preserve">
+    <value>No UltimateRDP client that receives files is connected to this session.</value>
+  </data>
+  <data name="SendNoPort" xml:space="preserve">
+    <value>The files cannot be sent: the direct connection cannot be offered, because no port of its range is free on the server or its certificate cannot be created. The agent log says which.</value>
+  </data>
+  <data name="SendNothing" xml:space="preserve">
+    <value>Choose at least one file or folder to send.</value>
+  </data>
+  <data name="SendOff" xml:space="preserve">
+    <value>Sending files to the client computer is turned off in the settings of the agent (sendToClient).</value>
+  </data>
+  <data name="SendSameName" xml:space="preserve">
+    <value>Two items are named {0}. Send them one at a time.</value>
+    <comment>{0} is a file or folder name.</comment>
+  </data>
+  <data name="SendShortcutDescription" xml:space="preserve">
+    <value>Sends the files to the computer of the UltimateRDP client connected to this session.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>The files could not be copied into the session before the drag. {0}</value>
     <comment>{0} is an error text from Windows.</comment>
@@ -412,6 +462,10 @@ Keep the executable in a folder that every user can read, such as Program Files.
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Open log folder</value>
   </data>
+  <data name="TraySendFiles" xml:space="preserve">
+    <value>Send files to my PC...</value>
+    <comment>Tray menu entry: opens a file dialog, then sends the chosen files to the computer of the UltimateRDP client.</comment>
+  </data>
   <data name="TrayStageFiles" xml:space="preserve">
     <value>Stage files in the session before the drop</value>
   </data>
@@ -459,6 +513,13 @@ Keep the executable in a folder that every user can read, such as Program Files.
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Run the agent in the tray.</value>
+  </data>
+  <data name="UsageSend" xml:space="preserve">
+    <value>Send files and folders to the computer of the UltimateRDP client of this session.</value>
+  </data>
+  <data name="UsageSendName" xml:space="preserve">
+    <value>--send &lt;files&gt;</value>
+    <comment>The option name stays as it is; only the placeholder in angle brackets is translated.</comment>
   </data>
   <data name="UsageStatus" xml:space="preserve">
     <value>Show the version, the start entries and whether the agent runs in this session.</value>

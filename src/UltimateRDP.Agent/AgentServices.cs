@@ -2,6 +2,7 @@ using UltimateRDP.Agent.Channel;
 using UltimateRDP.Agent.Drops;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Agent.Send;
 using UltimateRDP.Agent.Sessions;
 using UltimateRDP.Agent.Settings;
 using UltimateRDP.Core.Protocol;
@@ -34,12 +35,17 @@ internal sealed class AgentServices
         var probe = new DriveRedirectionProbe(logger);
         var language = new ClientLanguage();
         _native = new NativeDropCoordinator(logger, send, settings, probe, _staging, language, meter, remoteApp);
+        Send = new SendCoordinator(logger, settings, send, () => _native.UsesDirect);
+        _native.OtherDirectActive = () => Send.IsBusy;
         var logoff = new SessionLogoff(logger, send, language);
-        _handler = new AgentProtocolHandler(logger, send, probe, _native, logoff, language, clientModel, remoteApp);
+        _handler = new AgentProtocolHandler(logger, send, probe, _native, logoff, language, clientModel, remoteApp, Send);
     }
 
-    /// <summary>True while a drag runs in the session or a transfer is offered or runs.</summary>
-    public bool IsBusy => _native.IsBusy;
+    /// <summary>The files sent from the session to the client, since 0.9.0.</summary>
+    public SendCoordinator Send { get; }
+
+    /// <summary>True while a drag runs in the session, a transfer is offered or runs, or files are sent to the client.</summary>
+    public bool IsBusy => _native.IsBusy || Send.IsBusy;
 
     /// <summary>Handles one line from the client. Runs on the channel thread.</summary>
     public void Handle(string line) => _handler.Handle(line);
@@ -50,6 +56,7 @@ internal sealed class AgentServices
     /// </summary>
     public void Stop(TimeSpan wait)
     {
+        Send.Stop();
         _native.Stop(wait);
         _staging.Dispose();
         Direct.DirectCertificate.Delete(_logger);

@@ -32,8 +32,9 @@ internal sealed class AgentSettings
     private volatile MapClientDrivesMode _mapClientDrives;
     private readonly JsonObject _user;
 
-    private AgentSettings(string path, FileLogger logger, JsonObject user, IReadOnlyList<string> machineKeys, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead, DirectTransferMode directTransfer, (int First, int Last) directPortRange, int directConnections, int directMaxMegabytesPerSecond, MapClientDrivesMode mapClientDrives)
+    private AgentSettings(string path, FileLogger logger, JsonObject user, IReadOnlyList<string> machineKeys, LogLevel logLevel, bool stageFiles, TrayIconMode trayIcon, FastTransferMode fastTransfer, long fastTransferMinBytes, ChannelReadMode channelRead, DirectTransferMode directTransfer, (int First, int Last) directPortRange, int directConnections, int directMaxMegabytesPerSecond, MapClientDrivesMode mapClientDrives, bool sendToClient)
     {
+        SendToClient = sendToClient;
         _path = path;
         _logger = logger;
         _user = user;
@@ -100,6 +101,14 @@ internal sealed class AgentSettings
     /// </summary>
     public MapClientDrivesMode MapClientDrives => _mapClientDrives;
 
+    /// <summary>
+    /// <c>sendToClient</c>, since 0.9.0: whether the files of the session may be sent to the
+    /// computer of a client that receives them, with the Send To shortcut, the tray menu and
+    /// --send. True for <c>auto</c>, the default; false for <c>never</c>. Only editable in the
+    /// file; read at startup.
+    /// </summary>
+    public bool SendToClient { get; }
+
     /// <summary>The keys that come from the machine file, because the file of the user does not set them.</summary>
     public IReadOnlyList<string> MachineKeys { get; }
 
@@ -152,6 +161,7 @@ internal sealed class AgentSettings
         (int First, int Last) directPortRange = (DirectTransferPolicy.DefaultFirstPort, DirectTransferPolicy.DefaultLastPort);
         var directConnections = DirectTransferPolicy.DefaultConnections;
         var directMaxMegabytesPerSecond = 0;
+        var sendToClient = true;
         try
         {
             {
@@ -209,6 +219,12 @@ internal sealed class AgentSettings
                         logger.Warn($"The mapClientDrives setting \"{data.MapClientDrives}\" is unknown; using \"never\". Use \"never\" or \"auto\".");
                     }
 
+                    sendToClient = Core.Agent.SendToClient.ParseAutoNever(data.SendToClient, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The sendToClient setting \"{data.SendToClient}\" is unknown; using \"auto\". Use \"auto\" or \"never\".");
+                    }
+
                     if (data.FastTransferMinBytes is { } minBytes)
                     {
                         if (minBytes >= 0)
@@ -228,7 +244,7 @@ internal sealed class AgentSettings
             logger.Warn($"Could not read the settings of {path}{(machine is null ? string.Empty : " and " + (machinePath ?? AgentInfo.MachineSettingsPath))}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, user ?? new JsonObject(new JsonNodeOptions { PropertyNameCaseInsensitive = true }), machineKeys, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange, directConnections, directMaxMegabytesPerSecond, mapClientDrives);
+        return new AgentSettings(path, logger, user ?? new JsonObject(new JsonNodeOptions { PropertyNameCaseInsensitive = true }), machineKeys, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange, directConnections, directMaxMegabytesPerSecond, mapClientDrives, sendToClient);
     }
 
     /// <summary>
@@ -336,7 +352,7 @@ internal sealed class AgentSettings
 
     /// <summary>Readable summary for the log.</summary>
     public override string ToString() =>
-        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)} with up to {DirectConnections} connection(s){(DirectMaxMegabytesPerSecond > 0 ? $" and at most {DirectMaxMegabytesPerSecond} MB/s" : string.Empty)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}, client drives on letters {ClientDriveLetters.ToSetting(MapClientDrives)}{(MachineKeys.Count == 0 ? string.Empty : ", from the machine settings: " + string.Join(", ", MachineKeys))}";
+        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)} with up to {DirectConnections} connection(s){(DirectMaxMegabytesPerSecond > 0 ? $" and at most {DirectMaxMegabytesPerSecond} MB/s" : string.Empty)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}, client drives on letters {ClientDriveLetters.ToSetting(MapClientDrives)}, send to the client {Core.Agent.SendToClient.ToSetting(SendToClient)}{(MachineKeys.Count == 0 ? string.Empty : ", from the machine settings: " + string.Join(", ", MachineKeys))}";
 
     /// <summary>
     /// Writes <paramref name="key"/> into the file of the user, which keeps its other keys as
@@ -419,5 +435,8 @@ internal sealed class AgentSettings
 
         /// <summary>"never" or "auto". Never when absent. Read as text, like <see cref="TrayIcon"/>.</summary>
         public string? MapClientDrives { get; set; }
+
+        /// <summary>"auto" or "never". Auto when absent. Read as text, like <see cref="TrayIcon"/>.</summary>
+        public string? SendToClient { get; set; }
     }
 }

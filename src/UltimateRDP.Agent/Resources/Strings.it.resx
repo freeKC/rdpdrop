@@ -204,6 +204,51 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   <data name="RunElevated" xml:space="preserve">
     <value>Esegui di nuovo questo comando da un prompt con privilegi elevati (Esegui come amministratore).</value>
   </data>
+  <data name="SendBadName" xml:space="preserve">
+    <value>{0} non può essere inviato: non ha un nome che un file possa avere.</value>
+  </data>
+  <data name="SendBusy" xml:space="preserve">
+    <value>È in corso un trasferimento. Riprovare al termine.</value>
+  </data>
+  <data name="SendCannotList" xml:space="preserve">
+    <value>Impossibile leggere {0}. {1}</value>
+  </data>
+  <data name="SendChannelFailed" xml:space="preserve">
+    <value>Impossibile inviare i file: il messaggio al client non è stato inviato attraverso la connessione Desktop remoto.</value>
+  </data>
+  <data name="SendClientRefused" xml:space="preserve">
+    <value>Il client UltimateRDP non ha accettato i file: {0}</value>
+  </data>
+  <data name="SendDialogTitle" xml:space="preserve">
+    <value>Invia file al mio PC</value>
+  </data>
+  <data name="SendMissing" xml:space="preserve">
+    <value>{0} non esiste o non può essere letto.</value>
+  </data>
+  <data name="SendNoAgent" xml:space="preserve">
+    <value>Impossibile inviare i file: l'agente UltimateRDP non è in esecuzione in questa sessione, oppure nessun client UltimateRDP che riceve file è collegato.</value>
+  </data>
+  <data name="SendNoAnswer" xml:space="preserve">
+    <value>Il client UltimateRDP non ha risposto. I file non sono stati inviati.</value>
+  </data>
+  <data name="SendNoClient" xml:space="preserve">
+    <value>Nessun client UltimateRDP che riceve file è collegato a questa sessione.</value>
+  </data>
+  <data name="SendNoPort" xml:space="preserve">
+    <value>Impossibile inviare i file: la connessione diretta non può essere offerta perché nessuna porta del suo intervallo è libera sul server o il suo certificato non può essere creato. Il log dell'agente indica la causa.</value>
+  </data>
+  <data name="SendNothing" xml:space="preserve">
+    <value>Scegliere almeno un file o una cartella da inviare.</value>
+  </data>
+  <data name="SendOff" xml:space="preserve">
+    <value>L'invio di file al computer client è disattivato nelle impostazioni dell'agente (sendToClient).</value>
+  </data>
+  <data name="SendSameName" xml:space="preserve">
+    <value>Due elementi si chiamano {0}. Inviarli uno alla volta.</value>
+  </data>
+  <data name="SendShortcutDescription" xml:space="preserve">
+    <value>Invia i file al computer del client UltimateRDP collegato a questa sessione.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>Impossibile copiare i file nella sessione prima del trascinamento. {0}</value>
   </data>
@@ -354,6 +399,9 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Apri la cartella dei log</value>
   </data>
+  <data name="TraySendFiles" xml:space="preserve">
+    <value>Invia file al mio PC...</value>
+  </data>
   <data name="TrayStageFiles" xml:space="preserve">
     <value>Copia i file nella sessione prima del rilascio</value>
   </data>
@@ -395,6 +443,12 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Esegui l'agente nell'area di notifica.</value>
+  </data>
+  <data name="UsageSend" xml:space="preserve">
+    <value>Inviare file e cartelle al computer del client UltimateRDP di questa sessione.</value>
+  </data>
+  <data name="UsageSendName" xml:space="preserve">
+    <value>--send &lt;file&gt;</value>
   </data>
   <data name="UsageStatus" xml:space="preserve">
     <value>Mostra la versione, le voci di avvio e se l'agente è in esecuzione in questa sessione.</value>

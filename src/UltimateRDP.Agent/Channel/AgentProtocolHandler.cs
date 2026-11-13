@@ -1,6 +1,7 @@
 using UltimateRDP.Agent.Drops;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Agent.Send;
 using UltimateRDP.Agent.Resources;
 using UltimateRDP.Agent.Sessions;
 using System.Text;
@@ -30,6 +31,7 @@ internal sealed class AgentProtocolHandler
     private readonly ClientLanguage _language;
     private readonly Func<ChannelByteModel> _clientModel;
     private readonly RemoteAppSession _remoteApp;
+    private readonly SendCoordinator? _sendToClient;
 
     public AgentProtocolHandler(
         FileLogger logger,
@@ -39,9 +41,11 @@ internal sealed class AgentProtocolHandler
         SessionLogoff logoff,
         ClientLanguage language,
         Func<ChannelByteModel> clientModel,
-        RemoteAppSession? remoteApp = null)
+        RemoteAppSession? remoteApp = null,
+        SendCoordinator? sendToClient = null)
     {
         _remoteApp = remoteApp ?? new RemoteAppSession();
+        _sendToClient = sendToClient;
         _logger = logger;
         _send = send;
         _probe = probe;
@@ -145,6 +149,14 @@ internal sealed class AgentProtocolHandler
                 _native.OnTransferMessage(cancel, cancel.TransferId);
                 break;
 
+            case SendAckMessage ack when _sendToClient is not null:
+                _sendToClient.OnSendAck(ack);
+                break;
+
+            case SendCancelMessage sendCancel when _sendToClient is not null:
+                _sendToClient.OnSendCancel(sendCancel);
+                break;
+
             case null:
                 _logger.Warn($"Protocol error: the \"{envelope.Type ?? "(none)"}\" message is unknown or malformed. Ignored.");
                 break;
@@ -165,7 +177,8 @@ internal sealed class AgentProtocolHandler
         var session = clientRemoteApp || _remoteApp.Detected
             ? $"; RemoteApp: the client says {clientRemoteApp}, the session shows {_remoteApp.Detected}, so each drag is replayed at the drop with a small proxy window"
             : string.Empty;
-        _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}, language {hello.ClientLanguage ?? "(not said)"} (texts in {language}); drive redirection available: {available}; data of the client in the {model} model{session}.");
+        _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}, language {hello.ClientLanguage ?? "(not said)"} (texts in {language}); drive redirection available: {available}; data of the client in the {model} model{session}; receives files of the session: {hello.AcceptsFiles == true}.");
+        _sendToClient?.OnHello(hello.AcceptsFiles == true);
         _send(HelloMessage.FromAgent(AgentInfo.Version, available, model, reliableTransfer: true));
     }
 

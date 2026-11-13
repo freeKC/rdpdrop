@@ -204,6 +204,51 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   <data name="RunElevated" xml:space="preserve">
     <value>Exécutez de nouveau cette commande depuis une invite de commandes élevée (Exécuter en tant qu'administrateur).</value>
   </data>
+  <data name="SendBadName" xml:space="preserve">
+    <value>{0} ne peut pas être envoyé : il n'a pas de nom qu'un fichier puisse porter.</value>
+  </data>
+  <data name="SendBusy" xml:space="preserve">
+    <value>Un transfert est en cours. Réessayez quand il sera terminé.</value>
+  </data>
+  <data name="SendCannotList" xml:space="preserve">
+    <value>Impossible de lire {0}. {1}</value>
+  </data>
+  <data name="SendChannelFailed" xml:space="preserve">
+    <value>Les fichiers ne peuvent pas être envoyés : le message au client n'a pas pu passer par la connexion Bureau à distance.</value>
+  </data>
+  <data name="SendClientRefused" xml:space="preserve">
+    <value>Le client UltimateRDP n'a pas pris les fichiers : {0}</value>
+  </data>
+  <data name="SendDialogTitle" xml:space="preserve">
+    <value>Envoyer des fichiers vers mon PC</value>
+  </data>
+  <data name="SendMissing" xml:space="preserve">
+    <value>{0} n'existe pas ou ne peut pas être lu.</value>
+  </data>
+  <data name="SendNoAgent" xml:space="preserve">
+    <value>Les fichiers ne peuvent pas être envoyés : l'agent UltimateRDP ne tourne pas dans cette session, ou aucun client UltimateRDP qui reçoit des fichiers n'y est connecté.</value>
+  </data>
+  <data name="SendNoAnswer" xml:space="preserve">
+    <value>Le client UltimateRDP n'a pas répondu. Les fichiers n'ont pas été envoyés.</value>
+  </data>
+  <data name="SendNoClient" xml:space="preserve">
+    <value>Aucun client UltimateRDP qui reçoit des fichiers n'est connecté à cette session.</value>
+  </data>
+  <data name="SendNoPort" xml:space="preserve">
+    <value>Les fichiers ne peuvent pas être envoyés : la connexion directe ne peut pas être proposée, car aucun port de sa plage n'est libre sur le serveur ou son certificat ne peut pas être créé. Le journal de l'agent précise la cause.</value>
+  </data>
+  <data name="SendNothing" xml:space="preserve">
+    <value>Choisissez au moins un fichier ou un dossier à envoyer.</value>
+  </data>
+  <data name="SendOff" xml:space="preserve">
+    <value>L'envoi de fichiers vers l'ordinateur du client est désactivé dans les paramètres de l'agent (sendToClient).</value>
+  </data>
+  <data name="SendSameName" xml:space="preserve">
+    <value>Deux éléments s'appellent {0}. Envoyez-les l'un après l'autre.</value>
+  </data>
+  <data name="SendShortcutDescription" xml:space="preserve">
+    <value>Envoie les fichiers vers l'ordinateur du client UltimateRDP connecté à cette session.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>Les fichiers n'ont pas pu être copiés dans la session avant le glisser. {0}</value>
   </data>
@@ -354,6 +399,9 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Ouvrir le dossier des journaux</value>
   </data>
+  <data name="TraySendFiles" xml:space="preserve">
+    <value>Envoyer des fichiers vers mon PC...</value>
+  </data>
   <data name="TrayStageFiles" xml:space="preserve">
     <value>Copier les fichiers dans la session avant le dépôt</value>
   </data>
@@ -395,6 +443,12 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Lancer l'agent dans la zone de notification.</value>
+  </data>
+  <data name="UsageSend" xml:space="preserve">
+    <value>Envoyer des fichiers et des dossiers vers l'ordinateur du client UltimateRDP de cette session.</value>
+  </data>
+  <data name="UsageSendName" xml:space="preserve">
+    <value>--send &lt;fichiers&gt;</value>
   </data>
   <data name="UsageStatus" xml:space="preserve">
     <value>Afficher la version, les entrées de démarrage et si l'agent fonctionne dans cette session.</value>

@@ -204,6 +204,51 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   <data name="RunElevated" xml:space="preserve">
     <value>Vuelva a ejecutar este comando desde un símbolo del sistema con privilegios elevados (Ejecutar como administrador).</value>
   </data>
+  <data name="SendBadName" xml:space="preserve">
+    <value>{0} no se puede enviar: no tiene un nombre que pueda tener un archivo.</value>
+  </data>
+  <data name="SendBusy" xml:space="preserve">
+    <value>Hay una transferencia en curso. Vuelva a intentarlo cuando termine.</value>
+  </data>
+  <data name="SendCannotList" xml:space="preserve">
+    <value>No se puede leer {0}. {1}</value>
+  </data>
+  <data name="SendChannelFailed" xml:space="preserve">
+    <value>No se pueden enviar los archivos: el mensaje al cliente no se pudo enviar por la conexión a Escritorio remoto.</value>
+  </data>
+  <data name="SendClientRefused" xml:space="preserve">
+    <value>El cliente UltimateRDP no aceptó los archivos: {0}</value>
+  </data>
+  <data name="SendDialogTitle" xml:space="preserve">
+    <value>Enviar archivos a mi PC</value>
+  </data>
+  <data name="SendMissing" xml:space="preserve">
+    <value>{0} no existe o no se puede leer.</value>
+  </data>
+  <data name="SendNoAgent" xml:space="preserve">
+    <value>No se pueden enviar los archivos: el agente de UltimateRDP no se ejecuta en esta sesión, o ningún cliente UltimateRDP que reciba archivos está conectado a ella.</value>
+  </data>
+  <data name="SendNoAnswer" xml:space="preserve">
+    <value>El cliente UltimateRDP no respondió. Los archivos no se enviaron.</value>
+  </data>
+  <data name="SendNoClient" xml:space="preserve">
+    <value>Ningún cliente UltimateRDP que reciba archivos está conectado a esta sesión.</value>
+  </data>
+  <data name="SendNoPort" xml:space="preserve">
+    <value>No se pueden enviar los archivos: no se puede ofrecer la conexión directa porque ningún puerto de su rango está libre en el servidor o no se puede crear su certificado. El registro del agente indica la causa.</value>
+  </data>
+  <data name="SendNothing" xml:space="preserve">
+    <value>Elija al menos un archivo o una carpeta para enviar.</value>
+  </data>
+  <data name="SendOff" xml:space="preserve">
+    <value>El envío de archivos al equipo cliente está desactivado en la configuración del agente (sendToClient).</value>
+  </data>
+  <data name="SendSameName" xml:space="preserve">
+    <value>Dos elementos se llaman {0}. Envíelos de uno en uno.</value>
+  </data>
+  <data name="SendShortcutDescription" xml:space="preserve">
+    <value>Envía los archivos al equipo del cliente UltimateRDP conectado a esta sesión.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>No se pudieron copiar los archivos en la sesión antes del arrastre. {0}</value>
   </data>
@@ -354,6 +399,9 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   <data name="TrayOpenLogFolder" xml:space="preserve">
     <value>Abrir la carpeta de registros</value>
   </data>
+  <data name="TraySendFiles" xml:space="preserve">
+    <value>Enviar archivos a mi PC...</value>
+  </data>
   <data name="TrayStageFiles" xml:space="preserve">
     <value>Copiar los archivos en la sesión antes de colocarlos</value>
   </data>
@@ -395,6 +443,12 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   </data>
   <data name="UsageRun" xml:space="preserve">
     <value>Ejecuta el agente en el área de notificación.</value>
+  </data>
+  <data name="UsageSend" xml:space="preserve">
+    <value>Enviar archivos y carpetas al equipo del cliente UltimateRDP de esta sesión.</value>
+  </data>
+  <data name="UsageSendName" xml:space="preserve">
+    <value>--send &lt;archivos&gt;</value>
   </data>
   <data name="UsageStatus" xml:space="preserve">
     <value>Muestra la versión, las entradas de inicio y si el agente se ejecuta en esta sesión.</value>

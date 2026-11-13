@@ -28,16 +28,19 @@ internal sealed class AgentTrayIcon : IDisposable
     private readonly ToolStripMenuItem _mapDrivesItem;
     private readonly (ToolStripMenuItem Item, MapClientDrivesMode Mode)[] _mapDrivesModes;
     private readonly Action<MapClientDrivesMode> _mapDrivesChanged;
+    private readonly ToolStripMenuItem _sendItem;
 
     /// <param name="logger">The log.</param>
     /// <param name="settings">The settings changed from the menu.</param>
     /// <param name="exit">Runs when the user chooses Exit.</param>
     /// <param name="mapDrivesChanged">Runs when the user changes "Client drives on drive letters".</param>
-    public AgentTrayIcon(FileLogger logger, AgentSettings settings, Action exit, Action<MapClientDrivesMode> mapDrivesChanged)
+    /// <param name="sendFiles">Runs when the user chooses "Send files to my PC...".</param>
+    public AgentTrayIcon(FileLogger logger, AgentSettings settings, Action exit, Action<MapClientDrivesMode> mapDrivesChanged, Action sendFiles)
     {
         _logger = logger;
         _settings = settings;
         _mapDrivesChanged = mapDrivesChanged;
+        _sendItem = new ToolStripMenuItem(Strings.TraySendFiles, null, (_, _) => sendFiles()) { Enabled = false };
 
         _stageItem = new ToolStripMenuItem(Strings.TrayStageFiles, null, (_, _) => ToggleStageFiles());
         _fastTransferModes =
@@ -80,6 +83,8 @@ internal sealed class AgentTrayIcon : IDisposable
         _menu = new ContextMenuStrip();
         _menu.Items.AddRange(
         [
+            _sendItem,
+            new ToolStripSeparator(),
             _stageItem,
             _fastTransferItem,
             _directTransferItem,
@@ -108,6 +113,9 @@ internal sealed class AgentTrayIcon : IDisposable
         get => _notifyIcon.Visible;
         set => _notifyIcon.Visible = value;
     }
+
+    /// <summary>Enables "Send files to my PC..." while a client that receives files is connected.</summary>
+    public void SetCanSend(bool canSend) => _sendItem.Enabled = canSend;
 
     public void Dispose()
     {

@@ -3,9 +3,12 @@ using UltimateRDP.Agent.Drives;
 using UltimateRDP.Agent.Drops;
 using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Agent.Resources;
+using UltimateRDP.Agent.Send;
 using UltimateRDP.Agent.Sessions;
 using UltimateRDP.Agent.Settings;
 using UltimateRDP.Core.Agent;
+using UltimateRDP.Core.Local;
 
 namespace UltimateRDP.Agent.Tray;
 
@@ -38,6 +41,9 @@ internal sealed class TrayContext : ApplicationContext
     private bool _servicesStopped;
     private AgentTrayIcon? _tray;
     private ClientDriveMapper? _drives;
+    private readonly SendToShortcut _sendTo;
+    private SameUserPipe? _sendPipe;
+    private bool _canSend;
     private bool _clientConnected;
     private bool _exiting;
 
@@ -61,6 +67,8 @@ internal sealed class TrayContext : ApplicationContext
         _window.Disconnected = _watcher.OnDisconnected;
 
         StagingFolder.DeleteOldFoldersInBackground(logger, AgentInfo.StagingDirectory);
+        _sendTo = new SendToShortcut(logger, AgentInfo.SendToClaimsDirectory);
+        _sendTo.RemoveLeftovers();
         if (ClientDriveMapper.HasLeftovers(AgentInfo.MappedDrivesPath))
         {
             Drives().RemoveLeftovers();
@@ -144,7 +152,13 @@ internal sealed class TrayContext : ApplicationContext
                 return;
             }
 
-            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop), () => _loop.Model, _remoteApp);
+            if (_services is null)
+            {
+                _services = new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop), () => _loop.Model, _remoteApp);
+                _services.Send.ClientAcceptsChanged += canSend => _window.Post(() => OnCanSendChanged(canSend));
+            }
+
+            services = _services;
         }
 
         services.Handle(line);
@@ -166,12 +180,97 @@ internal sealed class TrayContext : ApplicationContext
     {
         _clientConnected = present;
         UpdateTray();
+        if (!present)
+        {
+            Services()?.Send.OnClientGone();
+        }
 
         // Created only when the setting asks for it, or once it exists.
         if (_drives is not null || _settings.MapClientDrives == MapClientDrivesMode.Auto)
         {
             Drives().OnClientPresence(present);
         }
+    }
+
+    private AgentServices? Services()
+    {
+        lock (_servicesGate)
+        {
+            return _servicesStopped ? null : _services;
+        }
+    }
+
+    /// <summary>
+    /// A client that receives files came or went: the Send To shortcut, the pipe of
+    /// <c>--send</c> and the tray menu entry exist only meanwhile. UI thread.
+    /// </summary>
+    private void OnCanSendChanged(bool canSend)
+    {
+        if (_exiting || canSend == _canSend)
+        {
+            return;
+        }
+
+        _canSend = canSend;
+        if (canSend)
+        {
+            _sendTo.Claim();
+            _sendPipe ??= SameUserPipe.TryStart(SendCommand.PipePurpose, OnSendRequest, line => _logger.Warn(line));
+            _logger.Info(_sendPipe is null
+                ? "Send to the client: the pipe of --send could not be created; the Send To shortcut will say that the agent cannot be reached."
+                : $"Send to the client: --send reaches this agent through the pipe {_sendPipe.Name}.");
+        }
+        else
+        {
+            StopSending("the client left or no longer receives files");
+        }
+
+        _tray?.SetCanSend(canSend);
+    }
+
+    private void StopSending(string reason)
+    {
+        _sendTo.Release(reason);
+        _sendPipe?.Dispose();
+        _sendPipe = null;
+    }
+
+    /// <summary>A request of --send, on a thread of the pool.</summary>
+    private byte[] OnSendRequest(byte[] bytes)
+    {
+        if (LocalMessages.DecodeSend(bytes) is not { } request)
+        {
+            _logger.Warn($"Send to the client: a request of {bytes.Length} bytes on the pipe is not one; refused.");
+            return LocalMessages.Encode(new LocalAnswer(false, Strings.SendNothing));
+        }
+
+        var answer = Services()?.Send.Request(request.Paths, "the Send To shortcut or --send") ?? new LocalAnswer(false, Strings.SendNoClient);
+        return LocalMessages.Encode(answer);
+    }
+
+    /// <summary>"Send files to my PC...": the chosen files go to the client; a refusal is shown. UI thread.</summary>
+    private void SendFromDialog()
+    {
+        string[] paths;
+        using (var dialog = new OpenFileDialog { Multiselect = true, Title = Strings.SendDialogTitle, CheckFileExists = true })
+        {
+            if (dialog.ShowDialog() != DialogResult.OK)
+            {
+                return;
+            }
+
+            paths = dialog.FileNames;
+        }
+
+        // Listing a folder and waiting for the answer of the client must not hold the UI thread.
+        Task.Run(() =>
+        {
+            var answer = Services()?.Send.Request(paths, "the tray menu") ?? new LocalAnswer(false, Strings.SendNoClient);
+            if (!answer.Ok)
+            {
+                _window.Post(() => MessageBox.Show(answer.Message ?? Strings.SendNoClient, AgentInfo.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Warning));
+            }
+        });
     }
 
     /// <summary>The mapper of the client drives, created at its first use. UI thread.</summary>
@@ -206,7 +305,8 @@ internal sealed class TrayContext : ApplicationContext
         {
             if (_tray is null)
             {
-                _tray = new AgentTrayIcon(_logger, _settings, () => Exit("the Exit menu"), OnMapClientDrivesChanged);
+                _tray = new AgentTrayIcon(_logger, _settings, () => Exit("the Exit menu"), OnMapClientDrivesChanged, SendFromDialog);
+                _tray.SetCanSend(_canSend);
                 WakeMessageLoop();
             }
 
@@ -246,6 +346,8 @@ internal sealed class TrayContext : ApplicationContext
             _servicesStopped = true;
             services = _services;
         }
+
+        StopSending("the agent stops");
 
         services?.Stop(wait);
         _drives?.Stop(wait);
