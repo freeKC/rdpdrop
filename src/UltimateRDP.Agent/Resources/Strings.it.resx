@@ -249,6 +249,9 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   <data name="SendShortcutDescription" xml:space="preserve">
     <value>Invia i file al computer del client UltimateRDP collegato a questa sessione.</value>
   </data>
+  <data name="SendTooMany" xml:space="preserve">
+    <value>Si possono inviare al massimo {0:N0} elementi alla volta. Inviare invece una cartella che li contenga.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>Impossibile copiare i file nella sessione prima del trascinamento. {0}</value>
   </data>

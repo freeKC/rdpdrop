@@ -249,6 +249,9 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   <data name="SendShortcutDescription" xml:space="preserve">
     <value>Envía los archivos al equipo del cliente UltimateRDP conectado a esta sesión.</value>
   </data>
+  <data name="SendTooMany" xml:space="preserve">
+    <value>Se pueden enviar como máximo {0:N0} elementos a la vez. Envíe en su lugar una carpeta que los contenga.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>No se pudieron copiar los archivos en la sesión antes del arrastre. {0}</value>
   </data>

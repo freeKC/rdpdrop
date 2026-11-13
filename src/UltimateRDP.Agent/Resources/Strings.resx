@@ -285,6 +285,10 @@ Keep the executable in a folder that every user can read, such as Program Files.
   <data name="SendShortcutDescription" xml:space="preserve">
     <value>Sends the files to the computer of the UltimateRDP client connected to this session.</value>
   </data>
+  <data name="SendTooMany" xml:space="preserve">
+    <value>At most {0:N0} items can be sent at once. Send a folder that holds them instead.</value>
+    <comment>{0} is a number of items.</comment>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>The files could not be copied into the session before the drag. {0}</value>
     <comment>{0} is an error text from Windows.</comment>

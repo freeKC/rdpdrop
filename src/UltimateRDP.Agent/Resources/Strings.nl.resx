@@ -249,6 +249,9 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   <data name="SendShortcutDescription" xml:space="preserve">
     <value>Stuurt de bestanden naar de computer van de UltimateRDP-client die met deze sessie verbonden is.</value>
   </data>
+  <data name="SendTooMany" xml:space="preserve">
+    <value>Er kunnen hoogstens {0:N0} items tegelijk worden verstuurd. Verstuur in plaats daarvan een map die ze bevat.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>De bestanden konden voor het slepen niet naar de sessie worden gekopieerd. {0}</value>
   </data>

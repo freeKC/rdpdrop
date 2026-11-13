@@ -134,6 +134,11 @@ internal sealed class SendCoordinator
             return Refuse(LocalText.Of(nameof(Strings.SendNothing)), "no path");
         }
 
+        if (paths.Count > SendOfferMessage.MaxItems)
+        {
+            return Refuse(LocalText.Of(nameof(Strings.SendTooMany), SendOfferMessage.MaxItems), "too many items");
+        }
+
         var plan = LocalMessages.PlanSend(paths, Kind, out var problem, out var problemPath);
         if (plan is not { } planned)
         {

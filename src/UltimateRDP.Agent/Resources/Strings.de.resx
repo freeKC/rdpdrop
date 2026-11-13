@@ -249,6 +249,9 @@ Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lese
   <data name="SendShortcutDescription" xml:space="preserve">
     <value>Sendet die Dateien an den Computer des UltimateRDP-Clients, der mit dieser Sitzung verbunden ist.</value>
   </data>
+  <data name="SendTooMany" xml:space="preserve">
+    <value>Es können höchstens {0:N0} Elemente auf einmal gesendet werden. Senden Sie stattdessen einen Ordner, der sie enthält.</value>
+  </data>
   <data name="StagingFailed" xml:space="preserve">
     <value>Die Dateien konnten vor dem Ziehvorgang nicht in die Sitzung kopiert werden. {0}</value>
   </data>
