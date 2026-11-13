@@ -41,6 +41,12 @@ internal sealed class SessionNotificationWindow : NativeWindow, IDisposable
         }
     }
 
+    /// <summary>Runs on the UI thread at each WM_TIMER of the window, with the id of the timer.</summary>
+    public Action<nuint>? TimerElapsed { get; set; }
+
+    /// <summary>Runs on the UI thread when the session is disconnected, after the channel loop heard of it.</summary>
+    public Action? Disconnected { get; set; }
+
     /// <summary>
     /// Runs <paramref name="action"/> on the UI thread, later. Callable from any thread.
     /// Returns false when the window is gone.
@@ -95,6 +101,10 @@ internal sealed class SessionNotificationWindow : NativeWindow, IDisposable
             case WmRunPosted:
                 RunPosted();
                 return;
+
+            case User32.WmTimer:
+                TimerElapsed?.Invoke((nuint)m.WParam);
+                return;
         }
 
         base.WndProc(ref m);
@@ -145,6 +155,7 @@ internal sealed class SessionNotificationWindow : NativeWindow, IDisposable
             case User32.WtsConsoleDisconnect:
                 _logger.Info("The session was disconnected.");
                 _loop.OnSessionDisconnected("the session was disconnected");
+                Disconnected?.Invoke();
                 break;
         }
     }

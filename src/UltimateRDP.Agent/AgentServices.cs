@@ -2,6 +2,7 @@ using UltimateRDP.Agent.Channel;
 using UltimateRDP.Agent.Drops;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Agent.Sessions;
 using UltimateRDP.Agent.Settings;
 using UltimateRDP.Core.Protocol;
 using Message = UltimateRDP.Core.Protocol.Message;
@@ -25,16 +26,20 @@ internal sealed class AgentServices
     /// <param name="send">Sends a message to the client.</param>
     /// <param name="meter">Measures the channel during each transfer.</param>
     /// <param name="clientModel">The byte model detected on the data of the client, for the hello of the agent.</param>
-    public AgentServices(FileLogger logger, AgentSettings settings, Func<Message, bool> send, ChannelMeter meter, Func<ChannelByteModel> clientModel)
+    /// <param name="remoteApp">Whether the session runs a RemoteApp program, which changes how a drag is replayed.</param>
+    public AgentServices(FileLogger logger, AgentSettings settings, Func<Message, bool> send, ChannelMeter meter, Func<ChannelByteModel> clientModel, RemoteAppSession remoteApp)
     {
         _logger = logger;
         _staging = new StagingFolder(logger, AgentInfo.StagingDirectory);
         var probe = new DriveRedirectionProbe(logger);
         var language = new ClientLanguage();
-        _native = new NativeDropCoordinator(logger, send, settings, probe, _staging, language, meter);
+        _native = new NativeDropCoordinator(logger, send, settings, probe, _staging, language, meter, remoteApp);
         var logoff = new SessionLogoff(logger, send, language);
-        _handler = new AgentProtocolHandler(logger, send, probe, _native, logoff, language, clientModel);
+        _handler = new AgentProtocolHandler(logger, send, probe, _native, logoff, language, clientModel, remoteApp);
     }
+
+    /// <summary>True while a drag runs in the session or a transfer is offered or runs.</summary>
+    public bool IsBusy => _native.IsBusy;
 
     /// <summary>Handles one line from the client. Runs on the channel thread.</summary>
     public void Handle(string line) => _handler.Handle(line);

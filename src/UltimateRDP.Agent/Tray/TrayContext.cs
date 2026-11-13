@@ -2,6 +2,7 @@ using UltimateRDP.Agent.Channel;
 using UltimateRDP.Agent.Drops;
 using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Agent.Sessions;
 using UltimateRDP.Agent.Settings;
 using UltimateRDP.Core.Agent;
 
@@ -29,6 +30,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly AgentSettings _settings;
     private readonly ChannelLoop _loop;
     private readonly SessionNotificationWindow _window;
+    private readonly RemoteAppSession _remoteApp = new();
+    private readonly RemoteAppWatcher _watcher;
     private readonly Lock _servicesGate = new();
     private AgentServices? _services;
     private bool _servicesStopped;
@@ -44,8 +47,19 @@ internal sealed class TrayContext : ApplicationContext
         _window = new SessionNotificationWindow(_loop, logger, OnSessionEnding);
         _loop.ClientPresenceChanged += present => _window.Post(() => OnClientPresence(present));
         _loop.ExitRequested += () => _window.Post(() => Exit("a request from --uninstall"));
+        _remoteApp.Changed += () => _window.Post(UpdateTray);
+        _watcher = new RemoteAppWatcher(logger, _remoteApp, IsBusy, reason => Exit(reason));
+        _window.TimerElapsed = id =>
+        {
+            if (id == RemoteAppWatcher.TimerId)
+            {
+                _watcher.OnTimer();
+            }
+        };
+        _window.Disconnected = _watcher.OnDisconnected;
 
         StagingFolder.DeleteOldFoldersInBackground(logger, AgentInfo.StagingDirectory);
+        _watcher.Start(_window.Handle);
         UpdateTray();
         _loop.Start(Handle);
     }
@@ -123,10 +137,22 @@ internal sealed class TrayContext : ApplicationContext
                 return;
             }
 
-            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop), () => _loop.Model);
+            services = _services ??= new AgentServices(_logger, _settings, _loop.TrySend, new ChannelMeter(_loop), () => _loop.Model, _remoteApp);
         }
 
         services.Handle(line);
+    }
+
+    /// <summary>True while a drag or a transfer runs. Called on the UI thread.</summary>
+    private bool IsBusy()
+    {
+        AgentServices? services;
+        lock (_servicesGate)
+        {
+            services = _services;
+        }
+
+        return services?.IsBusy == true;
     }
 
     private void OnClientPresence(bool present)
@@ -142,7 +168,7 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
 
-        if (TrayIconModes.IsVisible(_settings.TrayIcon, _clientConnected))
+        if (TrayIconModes.IsVisible(_settings.TrayIcon, _clientConnected, _remoteApp.ReplayAtDrop))
         {
             if (_tray is null)
             {
@@ -199,6 +225,7 @@ internal sealed class TrayContext : ApplicationContext
         }
 
         _exiting = true;
+        _watcher.Stop();
         _logger.Info($"Exiting after {reason}.");
         if (_tray is not null)
         {

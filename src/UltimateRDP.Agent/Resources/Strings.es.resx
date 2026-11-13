@@ -234,11 +234,41 @@ Guarde el ejecutable en una carpeta que todos los usuarios puedan leer, como Pro
   <data name="StatusRunning" xml:space="preserve">
     <value>Agente en ejecución en esta sesión ({0}): sí</value>
   </data>
+  <data name="StatusSessionCannotList" xml:space="preserve">
+    <value>Tipo de sesión: desconocido, no se pueden enumerar los procesos de la sesión (error {0})</value>
+  </data>
+  <data name="StatusSessionDesktop" xml:space="preserve">
+    <value>Tipo de sesión: escritorio (Explorer se está ejecutando)</value>
+  </data>
+  <data name="StatusSessionRemoteApp" xml:space="preserve">
+    <value>Tipo de sesión: RemoteApp (se ejecuta el shell de RemoteApp, no Explorer)</value>
+  </data>
+  <data name="StatusSessionUnknown" xml:space="preserve">
+    <value>Tipo de sesión: desconocido (no se ejecuta ni Explorer ni el shell de RemoteApp)</value>
+  </data>
   <data name="StatusSettings" xml:space="preserve">
     <value>Configuración: {0}</value>
   </data>
   <data name="StatusSettingsAbsent" xml:space="preserve">
     <value>Configuración: {0} (no existe, se usan los valores predeterminados)</value>
+  </data>
+  <data name="StatusSysProcsAbsent" xml:space="preserve">
+    <value>Valor de SysProcs {0}: no existe</value>
+  </data>
+  <data name="StatusSysProcsPresent" xml:space="preserve">
+    <value>Valor de SysProcs {0}: existe ({1})</value>
+  </data>
+  <data name="StatusSysProcsUnreadable" xml:space="preserve">
+    <value>Valor de SysProcs {0}: no se puede leer ({1})</value>
+  </data>
+  <data name="StatusTaskAbsent" xml:space="preserve">
+    <value>Tarea programada {0}: no existe</value>
+  </data>
+  <data name="StatusTaskPresent" xml:space="preserve">
+    <value>Tarea programada {0}: existe</value>
+  </data>
+  <data name="StatusTaskUnreadable" xml:space="preserve">
+    <value>Tarea programada {0}: no se puede leer ({1})</value>
   </data>
   <data name="StatusTrayIcon" xml:space="preserve">
     <value>Icono del área de notificación: {0}</value>

@@ -4,6 +4,7 @@ using UltimateRDP.Agent.Direct;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
+using UltimateRDP.Agent.Sessions;
 using UltimateRDP.Agent.Settings;
 using UltimateRDP.Core.Agent;
 using UltimateRDP.Core.Protocol;
@@ -57,6 +58,7 @@ internal sealed class NativeDropCoordinator : IDisposable
     private readonly StagingFolder _staging;
     private readonly ClientLanguage _language;
     private readonly ChannelMeter? _meter;
+    private readonly RemoteAppSession _remoteApp;
     private readonly Lock _gate = new();
     private readonly Queue<string> _endedOrder = new();
     private readonly Dictionary<string, LocalText> _ended = [];
@@ -66,9 +68,10 @@ internal sealed class NativeDropCoordinator : IDisposable
     /// <summary>The last direct listener of the agent: at most one is active at a time in the session.</summary>
     private DirectListener? _direct;
 
-    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging, ClientLanguage language, ChannelMeter? meter = null)
+    public NativeDropCoordinator(FileLogger logger, Func<Message, bool> send, AgentSettings settings, DriveRedirectionProbe probe, StagingFolder staging, ClientLanguage language, ChannelMeter? meter = null, RemoteAppSession? remoteApp = null)
     {
         _meter = meter;
+        _remoteApp = remoteApp ?? new RemoteAppSession();
         _logger = logger;
         _send = send;
         _settings = settings;
@@ -297,6 +300,21 @@ internal sealed class NativeDropCoordinator : IDisposable
         }
     }
 
+    /// <summary>
+    /// True while a drag is in progress, from its dragEnter to its result, a transfer included,
+    /// or while a direct connection is active. A RemoteApp session is not left meanwhile.
+    /// </summary>
+    public bool IsBusy
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _current is not null || _direct is { IsActive: true };
+            }
+        }
+    }
+
     public void Dispose() => Stop(StopWait);
 
     /// <summary>
@@ -410,7 +428,7 @@ internal sealed class NativeDropCoordinator : IDisposable
                 return;
             }
 
-            var session = new DragSession(_logger, drag.Id, paths, drag.Enter.X, drag.Enter.Y);
+            var session = new DragSession(_logger, drag.Id, paths, drag.Enter.X, drag.Enter.Y, _remoteApp.ReplayAtDrop);
             session.Started += (_, started, reason) => OnStarted(drag, started, reason);
             session.Completed += (_, completion) => OnCompleted(drag, completion);
             // Messages that arrived during the preparation are replayed on the session; the
@@ -974,7 +992,7 @@ internal sealed class NativeDropCoordinator : IDisposable
                 return;
             }
 
-            var session = new DragSession(_logger, drag.Id, stagedPaths, drop.X, drop.Y);
+            var session = new DragSession(_logger, drag.Id, stagedPaths, drop.X, drop.Y, _remoteApp.ReplayAtDrop);
             session.Completed += (_, completion) => OnCopiesDropped(drag, folderId, completion);
             session.Drop(drop.X, drop.Y);
             lock (drag.Gate)

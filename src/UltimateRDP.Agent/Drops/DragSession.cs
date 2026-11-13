@@ -2,6 +2,8 @@ using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
+using UltimateRDP.Core.Agent;
+using UltimateRDP.Core.Display;
 using UltimateRDP.Core.Protocol;
 
 namespace UltimateRDP.Agent.Drops;
@@ -34,7 +36,9 @@ internal sealed record DragCompletion(
 /// DoDragDrop. Moves from the client move the cursor, so OLE sends DragOver to the window
 /// under it; the drop moves to the final point and releases the button; a cancel releases
 /// it and posts Escape to the proxy window. Simulated input only happens between the
-/// start and the end of the session, and only with the left button.
+/// start and the end of the session, and only with the left button. In a RemoteApp session
+/// the proxy is a small square under the press point (<see cref="ProxyBounds"/>), since the
+/// server shows every visible window of the session on the client.
 /// </summary>
 internal sealed class DragSession
 {
@@ -53,6 +57,7 @@ internal sealed class DragSession
     private readonly DropSource _source = new();
     private readonly ManualResetEventSlim _finished = new(false);
     private readonly Lock _gate = new();
+    private readonly bool _remoteApp;
 
     private Thread? _thread;
     private ProxyWindow? _proxy;
@@ -75,9 +80,10 @@ internal sealed class DragSession
     private int _moves;
     private TargetWindowInfo? _target;
 
-    public DragSession(FileLogger logger, string id, IReadOnlyList<string> paths, int x, int y)
+    public DragSession(FileLogger logger, string id, IReadOnlyList<string> paths, int x, int y, bool remoteApp = false)
     {
         _logger = logger;
+        _remoteApp = remoteApp;
         Id = id;
         _paths = paths;
         _startPoint = InputInjector.ToScreen(x, y);
@@ -187,6 +193,14 @@ internal sealed class DragSession
 
     private void Touch() => Interlocked.Exchange(ref _lastMessageTicks, Environment.TickCount64);
 
+    /// <summary>The virtual screen, or in a RemoteApp session a small square under the press point.</summary>
+    private Rectangle ProxyArea()
+    {
+        var screen = SystemInformation.VirtualScreen;
+        var area = ProxyBounds.For(_remoteApp, _startPoint.X, _startPoint.Y, new ScreenRect(screen.X, screen.Y, screen.Width, screen.Height));
+        return new Rectangle(area.X, area.Y, area.Width, area.Height);
+    }
+
     private void Run()
     {
         // Application.ThreadException is kept per thread. Without a handler here, an error
@@ -198,7 +212,7 @@ internal sealed class DragSession
             // DoDragDrop needs OleInitialize; an STA apartment alone is not enough.
             Application.OleRequired();
             using var proxy = new ProxyWindow();
-            proxy.CoverVirtualScreen();
+            proxy.Place(ProxyArea());
             proxy.MouseDown += OnProxyMouseDown;
             proxy.QueryContinueDrag += (_, e) => OnQueryContinueDrag(e);
             proxy.GiveFeedback += (_, e) =>
@@ -266,8 +280,11 @@ internal sealed class DragSession
             return;
         }
 
-        var bounds = SystemInformation.VirtualScreen;
-        _logger.Info($"Drag {Id}: proxy window over the virtual screen {bounds.X},{bounds.Y} {bounds.Width}x{bounds.Height}; press point ({_startPoint.X}, {_startPoint.Y}).");
+        var bounds = _proxy!.Bounds;
+        var screen = SystemInformation.VirtualScreen;
+        _logger.Info(_remoteApp
+            ? $"Drag {Id}: RemoteApp session, proxy window of {bounds.Width}x{bounds.Height} at {bounds.X},{bounds.Y} in the virtual screen {screen.X},{screen.Y} {screen.Width}x{screen.Height}; press point ({_startPoint.X}, {_startPoint.Y})."
+            : $"Drag {Id}: proxy window over the virtual screen {bounds.X},{bounds.Y} {bounds.Width}x{bounds.Height}; press point ({_startPoint.X}, {_startPoint.Y}).");
         _proxy!.Show();
         _proxy.Update();
         SetPhase(Phase.Arming);
@@ -319,7 +336,7 @@ internal sealed class DragSession
 
             _pressed = true;
             SetPhase(Phase.Pressed);
-            _logger.Info($"Drag {Id}: button pressed on the proxy window.");
+            _logger.Info($"Drag {Id}: WindowFromPoint gave the proxy window after {inPhase} ms; button pressed on it.");
             return;
         }
 
@@ -473,7 +490,7 @@ internal sealed class DragSession
         if (action == DragAction.Drop && _target is null)
         {
             _target = WindowProbe.Describe(InputInjector.CursorOr(_finalPoint));
-            _logger.Info($"Drag {Id}: dropping on {_target?.ClassName ?? "no window"} \"{_target?.Title}\" ({_target?.ProcessName}).");
+            _logger.Info($"Drag {Id}: dropping on {_target?.ClassName ?? "no window"} \"{_target?.Title}\" ({_target?.ProcessName}){(_target?.Rect is { } rect ? ", window at " + rect : string.Empty)}.");
         }
 
         e.Action = action;

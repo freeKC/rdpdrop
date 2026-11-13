@@ -234,11 +234,41 @@ Bewaar het uitvoerbare bestand in een map die elke gebruiker kan lezen, zoals Pr
   <data name="StatusRunning" xml:space="preserve">
     <value>Agent actief in deze sessie ({0}): ja</value>
   </data>
+  <data name="StatusSessionCannotList" xml:space="preserve">
+    <value>Sessietype: onbekend, de processen van de sessie kunnen niet worden opgesomd (fout {0})</value>
+  </data>
+  <data name="StatusSessionDesktop" xml:space="preserve">
+    <value>Sessietype: bureaublad (Explorer wordt uitgevoerd)</value>
+  </data>
+  <data name="StatusSessionRemoteApp" xml:space="preserve">
+    <value>Sessietype: RemoteApp (de RemoteApp-shell wordt uitgevoerd, Explorer niet)</value>
+  </data>
+  <data name="StatusSessionUnknown" xml:space="preserve">
+    <value>Sessietype: onbekend (Explorer noch de RemoteApp-shell wordt uitgevoerd)</value>
+  </data>
   <data name="StatusSettings" xml:space="preserve">
     <value>Instellingen: {0}</value>
   </data>
   <data name="StatusSettingsAbsent" xml:space="preserve">
     <value>Instellingen: {0} (ontbreekt, standaardwaarden in gebruik)</value>
+  </data>
+  <data name="StatusSysProcsAbsent" xml:space="preserve">
+    <value>SysProcs-waarde {0}: afwezig</value>
+  </data>
+  <data name="StatusSysProcsPresent" xml:space="preserve">
+    <value>SysProcs-waarde {0}: aanwezig ({1})</value>
+  </data>
+  <data name="StatusSysProcsUnreadable" xml:space="preserve">
+    <value>SysProcs-waarde {0}: kan niet worden gelezen ({1})</value>
+  </data>
+  <data name="StatusTaskAbsent" xml:space="preserve">
+    <value>Geplande taak {0}: afwezig</value>
+  </data>
+  <data name="StatusTaskPresent" xml:space="preserve">
+    <value>Geplande taak {0}: aanwezig</value>
+  </data>
+  <data name="StatusTaskUnreadable" xml:space="preserve">
+    <value>Geplande taak {0}: kan niet worden gelezen ({1})</value>
   </data>
   <data name="StatusTrayIcon" xml:space="preserve">
     <value>Pictogram in het systeemvak: {0}</value>

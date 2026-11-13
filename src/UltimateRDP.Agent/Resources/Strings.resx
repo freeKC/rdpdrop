@@ -271,11 +271,51 @@ Keep the executable in a folder that every user can read, such as Program Files.
     <value>Agent running in this session ({0}): yes</value>
     <comment>{0} is the session number.</comment>
   </data>
+  <data name="StatusSessionCannotList" xml:space="preserve">
+    <value>Session type: not known, the processes of the session cannot be listed (error {0})</value>
+    <comment>{0} is a Windows error number.</comment>
+  </data>
+  <data name="StatusSessionDesktop" xml:space="preserve">
+    <value>Session type: desktop (Explorer runs)</value>
+    <comment>Explorer stays as it is.</comment>
+  </data>
+  <data name="StatusSessionRemoteApp" xml:space="preserve">
+    <value>Session type: RemoteApp (the RemoteApp shell runs, Explorer does not)</value>
+    <comment>RemoteApp and Explorer stay as they are.</comment>
+  </data>
+  <data name="StatusSessionUnknown" xml:space="preserve">
+    <value>Session type: not known (neither Explorer nor the RemoteApp shell runs)</value>
+    <comment>RemoteApp and Explorer stay as they are.</comment>
+  </data>
   <data name="StatusSettings" xml:space="preserve">
     <value>Settings: {0}</value>
   </data>
   <data name="StatusSettingsAbsent" xml:space="preserve">
     <value>Settings: {0} (absent, defaults in use)</value>
+  </data>
+  <data name="StatusSysProcsAbsent" xml:space="preserve">
+    <value>SysProcs value {0}: absent</value>
+    <comment>{0} is the registry value, not translated.</comment>
+  </data>
+  <data name="StatusSysProcsPresent" xml:space="preserve">
+    <value>SysProcs value {0}: present ({1})</value>
+    <comment>{0} is the registry value, {1} its type and data, not translated.</comment>
+  </data>
+  <data name="StatusSysProcsUnreadable" xml:space="preserve">
+    <value>SysProcs value {0}: cannot be read ({1})</value>
+    <comment>{0} is the registry value, {1} an error text from Windows.</comment>
+  </data>
+  <data name="StatusTaskAbsent" xml:space="preserve">
+    <value>Scheduled task {0}: absent</value>
+    <comment>{0} is the path of the scheduled task, not translated.</comment>
+  </data>
+  <data name="StatusTaskPresent" xml:space="preserve">
+    <value>Scheduled task {0}: present</value>
+    <comment>{0} is the path of the scheduled task, not translated.</comment>
+  </data>
+  <data name="StatusTaskUnreadable" xml:space="preserve">
+    <value>Scheduled task {0}: cannot be read ({1})</value>
+    <comment>{0} is the path of the scheduled task, {1} an error text from Windows.</comment>
   </data>
   <data name="StatusTrayIcon" xml:space="preserve">
     <value>Tray icon: {0}</value>

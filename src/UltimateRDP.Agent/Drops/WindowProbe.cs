@@ -41,11 +41,15 @@ internal static class WindowProbe
 
         var rootClass = User32.GetClassName(root);
         var hitClass = User32.GetClassName(hit);
+
+        // In a RemoteApp session the client compares this rectangle with its copy of the window.
+        var rect = User32.GetWindowRect(root, out var bounds) ? new WindowRect(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom) : null;
         return new TargetWindowInfo(
             rootClass,
             title.Length == 0 ? null : title,
             hit == root || hitClass == rootClass ? null : hitClass,
-            ProcessName(root));
+            ProcessName(root),
+            rect);
     }
 
     private static string? ProcessName(IntPtr window)

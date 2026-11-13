@@ -234,11 +234,41 @@ Bewahren Sie die ausführbare Datei in einem Ordner auf, den jeder Benutzer lese
   <data name="StatusRunning" xml:space="preserve">
     <value>Agent läuft in dieser Sitzung ({0}): ja</value>
   </data>
+  <data name="StatusSessionCannotList" xml:space="preserve">
+    <value>Sitzungstyp: unbekannt, die Prozesse der Sitzung können nicht aufgelistet werden (Fehler {0})</value>
+  </data>
+  <data name="StatusSessionDesktop" xml:space="preserve">
+    <value>Sitzungstyp: Desktop (Explorer läuft)</value>
+  </data>
+  <data name="StatusSessionRemoteApp" xml:space="preserve">
+    <value>Sitzungstyp: RemoteApp (die RemoteApp-Shell läuft, Explorer nicht)</value>
+  </data>
+  <data name="StatusSessionUnknown" xml:space="preserve">
+    <value>Sitzungstyp: unbekannt (weder Explorer noch die RemoteApp-Shell läuft)</value>
+  </data>
   <data name="StatusSettings" xml:space="preserve">
     <value>Einstellungen: {0}</value>
   </data>
   <data name="StatusSettingsAbsent" xml:space="preserve">
     <value>Einstellungen: {0} (nicht vorhanden, Standardwerte aktiv)</value>
+  </data>
+  <data name="StatusSysProcsAbsent" xml:space="preserve">
+    <value>SysProcs-Wert {0}: nicht vorhanden</value>
+  </data>
+  <data name="StatusSysProcsPresent" xml:space="preserve">
+    <value>SysProcs-Wert {0}: vorhanden ({1})</value>
+  </data>
+  <data name="StatusSysProcsUnreadable" xml:space="preserve">
+    <value>SysProcs-Wert {0}: kann nicht gelesen werden ({1})</value>
+  </data>
+  <data name="StatusTaskAbsent" xml:space="preserve">
+    <value>Geplante Aufgabe {0}: nicht vorhanden</value>
+  </data>
+  <data name="StatusTaskPresent" xml:space="preserve">
+    <value>Geplante Aufgabe {0}: vorhanden</value>
+  </data>
+  <data name="StatusTaskUnreadable" xml:space="preserve">
+    <value>Geplante Aufgabe {0}: kann nicht gelesen werden ({1})</value>
   </data>
   <data name="StatusTrayIcon" xml:space="preserve">
     <value>Symbol im Infobereich: {0}</value>

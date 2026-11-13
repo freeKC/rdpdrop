@@ -234,11 +234,41 @@ Tieni l'eseguibile in una cartella leggibile da tutti gli utenti, come Program F
   <data name="StatusRunning" xml:space="preserve">
     <value>Agente in esecuzione in questa sessione ({0}): sì</value>
   </data>
+  <data name="StatusSessionCannotList" xml:space="preserve">
+    <value>Tipo di sessione: sconosciuto, impossibile elencare i processi della sessione (errore {0})</value>
+  </data>
+  <data name="StatusSessionDesktop" xml:space="preserve">
+    <value>Tipo di sessione: desktop (Explorer è in esecuzione)</value>
+  </data>
+  <data name="StatusSessionRemoteApp" xml:space="preserve">
+    <value>Tipo di sessione: RemoteApp (è in esecuzione la shell RemoteApp, non Explorer)</value>
+  </data>
+  <data name="StatusSessionUnknown" xml:space="preserve">
+    <value>Tipo di sessione: sconosciuto (non è in esecuzione né Explorer né la shell RemoteApp)</value>
+  </data>
   <data name="StatusSettings" xml:space="preserve">
     <value>Impostazioni: {0}</value>
   </data>
   <data name="StatusSettingsAbsent" xml:space="preserve">
     <value>Impostazioni: {0} (assente, valori predefiniti in uso)</value>
+  </data>
+  <data name="StatusSysProcsAbsent" xml:space="preserve">
+    <value>Valore SysProcs {0}: assente</value>
+  </data>
+  <data name="StatusSysProcsPresent" xml:space="preserve">
+    <value>Valore SysProcs {0}: presente ({1})</value>
+  </data>
+  <data name="StatusSysProcsUnreadable" xml:space="preserve">
+    <value>Valore SysProcs {0}: non leggibile ({1})</value>
+  </data>
+  <data name="StatusTaskAbsent" xml:space="preserve">
+    <value>Attività pianificata {0}: assente</value>
+  </data>
+  <data name="StatusTaskPresent" xml:space="preserve">
+    <value>Attività pianificata {0}: presente</value>
+  </data>
+  <data name="StatusTaskUnreadable" xml:space="preserve">
+    <value>Attività pianificata {0}: non leggibile ({1})</value>
   </data>
   <data name="StatusTrayIcon" xml:space="preserve">
     <value>Icona nell'area di notifica: {0}</value>

@@ -5,7 +5,7 @@ namespace UltimateRDP.Agent.Drops;
 /// <summary>
 /// Invisible window that receives the simulated button press, so that the drag starts
 /// from a window of the drag thread and OLE gets the mouse capture. It covers the whole
-/// virtual screen, stays on top, never takes the focus and has no taskbar button. Its
+/// virtual screen, or a small square in a RemoteApp session, stays on top, never takes the focus and has no taskbar button. Its
 /// opacity is 1 out of 255: invisible to the eye, but still hit by the mouse, which
 /// passes through a layered window at opacity 0.
 /// </summary>
@@ -35,8 +35,11 @@ internal sealed class ProxyWindow : Form
         }
     }
 
-    /// <summary>Covers the virtual screen, in physical pixels since the agent is per monitor DPI aware.</summary>
-    public void CoverVirtualScreen() => Bounds = SystemInformation.VirtualScreen;
+    /// <summary>
+    /// Puts the window on <paramref name="area"/>, in physical pixels since the agent is per
+    /// monitor DPI aware: the virtual screen, or a small square in a RemoteApp session.
+    /// </summary>
+    public void Place(Rectangle area) => Bounds = area;
 
     protected override void OnHandleCreated(EventArgs e)
     {
@@ -54,8 +57,8 @@ internal sealed class ProxyWindow : Form
                 return;
 
             case User32.WmDpiChanged:
-                // The window spans every monitor; resizing it to one monitor would let the
-                // press miss it.
+                // The window keeps the place it was given; resizing it for one monitor would
+                // let the press miss it.
                 m.Result = IntPtr.Zero;
                 return;
 

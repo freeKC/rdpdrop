@@ -5,6 +5,7 @@ using UltimateRDP.Agent.Interop;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
+using UltimateRDP.Agent.Sessions;
 using UltimateRDP.Agent.Settings;
 using UltimateRDP.Agent.Setup;
 using UltimateRDP.Agent.Tray;
@@ -253,11 +254,58 @@ internal static class Program
             LocalText.Of(nameof(Strings.StatusTrayIcon), TrayIconModes.ToSetting(trayIcon)),
             LocalText.Of(nameof(Strings.StatusLogs), AgentInfo.LogDirectory),
             LocalText.Of(IsRunningInThisSession() ? nameof(Strings.StatusRunning) : nameof(Strings.StatusNotRunning), session),
+            SessionTypeLine(),
+            SysProcsLine(),
+            TaskLine(),
         ];
 
         CommandLineOutput.Info(AgentInfo.ProductName + "\n" + string.Join("\n", lines.Select(line => line.ForUser())));
         return 0;
     }
+
+    /// <summary>Whether this session is a RemoteApp session, from the processes it runs.</summary>
+    private static LocalText SessionTypeLine()
+    {
+        if (!Kernel32.ProcessIdToSessionId((uint)Environment.ProcessId, out var sessionId))
+        {
+            return LocalText.Of(nameof(Strings.StatusSessionCannotList), System.Runtime.InteropServices.Marshal.GetLastPInvokeError());
+        }
+
+        var names = WtsApi.SessionProcessNames(sessionId, out var error);
+        if (names is null)
+        {
+            return LocalText.Of(nameof(Strings.StatusSessionCannotList), error);
+        }
+
+        return RemoteAppSessionRule.Classify(names) switch
+        {
+            SessionShell.RemoteApp => LocalText.Of(nameof(Strings.StatusSessionRemoteApp)),
+            SessionShell.Desktop => LocalText.Of(nameof(Strings.StatusSessionDesktop)),
+            _ => LocalText.Of(nameof(Strings.StatusSessionUnknown)),
+        };
+    }
+
+    /// <summary>Whether the SysProcs value that lets a RemoteApp session end without the agent exists. Read only.</summary>
+    private static LocalText SysProcsLine()
+    {
+        var value = SysProcs.AgentValue(out var error);
+        if (error is not null)
+        {
+            return LocalText.Of(nameof(Strings.StatusSysProcsUnreadable), SysProcs.AgentValuePath, error);
+        }
+
+        return value is null
+            ? LocalText.Of(nameof(Strings.StatusSysProcsAbsent), SysProcs.AgentValuePath)
+            : LocalText.Of(nameof(Strings.StatusSysProcsPresent), SysProcs.AgentValuePath, value);
+    }
+
+    /// <summary>Whether the scheduled task that starts the agent in RemoteApp sessions exists. Read only.</summary>
+    private static LocalText TaskLine() => ScheduledTaskProbe.Exists(ScheduledTaskProbe.AgentTaskPath, out var error) switch
+    {
+        true => LocalText.Of(nameof(Strings.StatusTaskPresent), ScheduledTaskProbe.AgentTaskPath),
+        false => LocalText.Of(nameof(Strings.StatusTaskAbsent), ScheduledTaskProbe.AgentTaskPath),
+        null => LocalText.Of(nameof(Strings.StatusTaskUnreadable), ScheduledTaskProbe.AgentTaskPath, error ?? string.Empty),
+    };
 
     /// <summary>True when the single instance mutex of this session exists.</summary>
     private static bool IsRunningInThisSession()

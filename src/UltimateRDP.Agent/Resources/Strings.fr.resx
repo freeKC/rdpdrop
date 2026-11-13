@@ -234,11 +234,41 @@ Gardez l'exécutable dans un dossier que tous les utilisateurs peuvent lire, com
   <data name="StatusRunning" xml:space="preserve">
     <value>Agent en cours d'exécution dans cette session ({0}) : oui</value>
   </data>
+  <data name="StatusSessionCannotList" xml:space="preserve">
+    <value>Type de session : inconnu, les processus de la session ne peuvent pas être listés (erreur {0})</value>
+  </data>
+  <data name="StatusSessionDesktop" xml:space="preserve">
+    <value>Type de session : bureau (Explorer est lancé)</value>
+  </data>
+  <data name="StatusSessionRemoteApp" xml:space="preserve">
+    <value>Type de session : RemoteApp (le shell RemoteApp est lancé, Explorer ne l'est pas)</value>
+  </data>
+  <data name="StatusSessionUnknown" xml:space="preserve">
+    <value>Type de session : inconnu (ni Explorer ni le shell RemoteApp ne sont lancés)</value>
+  </data>
   <data name="StatusSettings" xml:space="preserve">
     <value>Paramètres : {0}</value>
   </data>
   <data name="StatusSettingsAbsent" xml:space="preserve">
     <value>Paramètres : {0} (absent, valeurs par défaut utilisées)</value>
+  </data>
+  <data name="StatusSysProcsAbsent" xml:space="preserve">
+    <value>Valeur SysProcs {0} : absente</value>
+  </data>
+  <data name="StatusSysProcsPresent" xml:space="preserve">
+    <value>Valeur SysProcs {0} : présente ({1})</value>
+  </data>
+  <data name="StatusSysProcsUnreadable" xml:space="preserve">
+    <value>Valeur SysProcs {0} : illisible ({1})</value>
+  </data>
+  <data name="StatusTaskAbsent" xml:space="preserve">
+    <value>Tâche planifiée {0} : absente</value>
+  </data>
+  <data name="StatusTaskPresent" xml:space="preserve">
+    <value>Tâche planifiée {0} : présente</value>
+  </data>
+  <data name="StatusTaskUnreadable" xml:space="preserve">
+    <value>Tâche planifiée {0} : illisible ({1})</value>
   </data>
   <data name="StatusTrayIcon" xml:space="preserve">
     <value>Icône dans la zone de notification : {0}</value>

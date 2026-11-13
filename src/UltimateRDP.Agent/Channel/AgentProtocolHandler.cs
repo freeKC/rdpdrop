@@ -2,6 +2,7 @@ using UltimateRDP.Agent.Drops;
 using UltimateRDP.Agent.Localization;
 using UltimateRDP.Agent.Logging;
 using UltimateRDP.Agent.Resources;
+using UltimateRDP.Agent.Sessions;
 using System.Text;
 using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.Transfer;
@@ -28,6 +29,7 @@ internal sealed class AgentProtocolHandler
     private readonly SessionLogoff _logoff;
     private readonly ClientLanguage _language;
     private readonly Func<ChannelByteModel> _clientModel;
+    private readonly RemoteAppSession _remoteApp;
 
     public AgentProtocolHandler(
         FileLogger logger,
@@ -36,8 +38,10 @@ internal sealed class AgentProtocolHandler
         NativeDropCoordinator native,
         SessionLogoff logoff,
         ClientLanguage language,
-        Func<ChannelByteModel> clientModel)
+        Func<ChannelByteModel> clientModel,
+        RemoteAppSession? remoteApp = null)
     {
+        _remoteApp = remoteApp ?? new RemoteAppSession();
         _logger = logger;
         _send = send;
         _probe = probe;
@@ -156,7 +160,12 @@ internal sealed class AgentProtocolHandler
         var language = _language.Set(hello.ClientLanguage);
         var available = _probe.IsAvailable();
         var model = _clientModel();
-        _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}, language {hello.ClientLanguage ?? "(not said)"} (texts in {language}); drive redirection available: {available}; data of the client in the {model} model.");
+        var clientRemoteApp = hello.RemoteApp == true;
+        _remoteApp.SetClientSays(clientRemoteApp);
+        var session = clientRemoteApp || _remoteApp.Detected
+            ? $"; RemoteApp: the client says {clientRemoteApp}, the session shows {_remoteApp.Detected}, so each drag is replayed at the drop with a small proxy window"
+            : string.Empty;
+        _logger.Info($"Hello from client {hello.ClientVersion ?? "(unknown version)"}, language {hello.ClientLanguage ?? "(not said)"} (texts in {language}); drive redirection available: {available}; data of the client in the {model} model{session}.");
         _send(HelloMessage.FromAgent(AgentInfo.Version, available, model, reliableTransfer: true));
     }
 

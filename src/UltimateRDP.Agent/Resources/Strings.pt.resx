@@ -234,11 +234,41 @@ Mantenha o executável em uma pasta que todos os usuários possam ler, como Prog
   <data name="StatusRunning" xml:space="preserve">
     <value>Agente em execução nesta sessão ({0}): sim</value>
   </data>
+  <data name="StatusSessionCannotList" xml:space="preserve">
+    <value>Tipo de sessão: desconhecido, não é possível listar os processos da sessão (erro {0})</value>
+  </data>
+  <data name="StatusSessionDesktop" xml:space="preserve">
+    <value>Tipo de sessão: área de trabalho (o Explorer está em execução)</value>
+  </data>
+  <data name="StatusSessionRemoteApp" xml:space="preserve">
+    <value>Tipo de sessão: RemoteApp (o shell do RemoteApp está em execução, o Explorer não)</value>
+  </data>
+  <data name="StatusSessionUnknown" xml:space="preserve">
+    <value>Tipo de sessão: desconhecido (nem o Explorer nem o shell do RemoteApp estão em execução)</value>
+  </data>
   <data name="StatusSettings" xml:space="preserve">
     <value>Configurações: {0}</value>
   </data>
   <data name="StatusSettingsAbsent" xml:space="preserve">
     <value>Configurações: {0} (ausente, valores padrão em uso)</value>
+  </data>
+  <data name="StatusSysProcsAbsent" xml:space="preserve">
+    <value>Valor do SysProcs {0}: ausente</value>
+  </data>
+  <data name="StatusSysProcsPresent" xml:space="preserve">
+    <value>Valor do SysProcs {0}: presente ({1})</value>
+  </data>
+  <data name="StatusSysProcsUnreadable" xml:space="preserve">
+    <value>Valor do SysProcs {0}: não pode ser lido ({1})</value>
+  </data>
+  <data name="StatusTaskAbsent" xml:space="preserve">
+    <value>Tarefa agendada {0}: ausente</value>
+  </data>
+  <data name="StatusTaskPresent" xml:space="preserve">
+    <value>Tarefa agendada {0}: presente</value>
+  </data>
+  <data name="StatusTaskUnreadable" xml:space="preserve">
+    <value>Tarefa agendada {0}: não pode ser lida ({1})</value>
   </data>
   <data name="StatusTrayIcon" xml:space="preserve">
     <value>Ícone na área de notificação: {0}</value>
