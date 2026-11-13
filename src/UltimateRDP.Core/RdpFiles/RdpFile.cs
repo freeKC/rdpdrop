@@ -116,6 +116,33 @@ public sealed class RdpFile
     public int? DesktopScaleFactor => GetInt(RdpKeys.DesktopScaleFactor) is int factor and >= 100 and <= 500 ? factor : null;
 
     /// <summary>
+    /// <c>remoteapplicationmode</c>: the connection opens a published program in windows of
+    /// its own (RemoteApp) instead of a desktop. False when absent.
+    /// </summary>
+    public bool RemoteApplicationMode => GetBool(RdpKeys.RemoteApplicationMode, false);
+
+    /// <summary>
+    /// <c>remoteapplicationprogram</c>: the alias of a published program, such as
+    /// <c>||MyApp</c>, or the path of a program on the server. Null when absent or blank.
+    /// </summary>
+    public string? RemoteApplicationProgram => NonBlank(RdpKeys.RemoteApplicationProgram);
+
+    /// <summary><c>remoteapplicationname</c>: the name of the program shown to the user. Null when absent or blank.</summary>
+    public string? RemoteApplicationName => NonBlank(RdpKeys.RemoteApplicationName);
+
+    /// <summary><c>remoteapplicationcmdline</c>: the arguments of the program. Null when absent or blank.</summary>
+    public string? RemoteApplicationCmdLine => NonBlank(RdpKeys.RemoteApplicationCmdLine);
+
+    /// <summary><c>remoteapplicationexpandcmdline</c>: the server expands the variables of the arguments. False when absent.</summary>
+    public bool RemoteApplicationExpandCmdLine => GetBool(RdpKeys.RemoteApplicationExpandCmdLine, false);
+
+    /// <summary><c>remoteapplicationexpandworkingdir</c>: the server expands the variables of the working folder. False when absent.</summary>
+    public bool RemoteApplicationExpandWorkingDir => GetBool(RdpKeys.RemoteApplicationExpandWorkingDir, false);
+
+    /// <summary><c>remoteapplicationfile</c>: a file on the server that the program opens. Null when absent or blank.</summary>
+    public string? RemoteApplicationFile => NonBlank(RdpKeys.RemoteApplicationFile);
+
+    /// <summary>
     /// Reads and parses a file. UTF-16 (with a byte order mark, as written by mstsc) and
     /// UTF-8 (with or without a byte order mark) are supported.
     /// </summary>
@@ -203,6 +230,8 @@ public sealed class RdpFile
             return null;
         }
     }
+
+    private string? NonBlank(string key) => GetString(key)?.Trim() is { Length: > 0 } value ? value : null;
 
     private static RdpFileEntry? TryParseLine(string rawLine)
     {

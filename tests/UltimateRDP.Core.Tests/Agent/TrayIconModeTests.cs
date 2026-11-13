@@ -59,4 +59,15 @@ public class TrayIconModeTests
     {
         Assert.Equal(expected, TrayIconModes.IsVisible(mode, clientConnected));
     }
+
+    [Theory]
+    [InlineData(TrayIconMode.Auto, false, false)]
+    [InlineData(TrayIconMode.Auto, true, false)]
+    [InlineData(TrayIconMode.Always, false, true)]
+    [InlineData(TrayIconMode.Always, true, true)]
+    [InlineData(TrayIconMode.Never, true, false)]
+    public void Auto_never_shows_the_icon_in_a_remoteapp_session(TrayIconMode mode, bool clientConnected, bool expected)
+    {
+        Assert.Equal(expected, TrayIconModes.IsVisible(mode, clientConnected, remoteAppSession: true));
+    }
 }

@@ -55,12 +55,15 @@ public static class TrayIconModes
 
     /// <summary>
     /// True when the icon must be visible, given whether an UltimateRDP client is
-    /// connected to the session through the channel.
+    /// connected to the session through the channel, and whether the session is a
+    /// RemoteApp session. In a RemoteApp session, <see cref="TrayIconMode.Auto"/> never
+    /// shows the icon: the server would show it on the client next to the program, and an
+    /// icon may count as a reason to keep the session open.
     /// </summary>
-    public static bool IsVisible(TrayIconMode mode, bool clientConnected) => mode switch
+    public static bool IsVisible(TrayIconMode mode, bool clientConnected, bool remoteAppSession = false) => mode switch
     {
         TrayIconMode.Always => true,
         TrayIconMode.Never => false,
-        _ => clientConnected,
+        _ => clientConnected && !remoteAppSession,
     };
 }

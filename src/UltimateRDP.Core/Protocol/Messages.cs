@@ -129,6 +129,11 @@ public static class MessageTypes
 /// <see cref="TransferResendMessage"/>. Only then does the client number its lines: an agent
 /// 0.5.0 would not read a <c>u15</c> chunk line that carries a <c>seq</c>.
 /// </param>
+/// <param name="RemoteApp">
+/// In the hello of the client, since 0.8.0: true when the connection runs a program in
+/// RemoteApp mode. The agent then replays each drag at the drop, with a small proxy window.
+/// Not written when the session is a desktop; an older agent ignores it.
+/// </param>
 public sealed record HelloMessage(
     int Version,
     string? ClientVersion = null,
@@ -136,13 +141,15 @@ public sealed record HelloMessage(
     bool? DriveRedirectionAvailable = null,
     string? ClientLanguage = null,
     string? ClientToAgentModel = null,
-    bool? ReliableTransfer = null) : Message(MessageTypes.Hello)
+    bool? ReliableTransfer = null,
+    bool? RemoteApp = null) : Message(MessageTypes.Hello)
 {
     /// <summary>
-    /// Builds the hello sent by the client.
+    /// Builds the hello sent by the client. <paramref name="remoteApp"/> says that the
+    /// connection runs a RemoteApp program.
     /// </summary>
-    public static HelloMessage FromClient(string clientVersion, string? clientLanguage = null) =>
-        new(ProtocolConstants.ProtocolVersion, ClientVersion: clientVersion, ClientLanguage: clientLanguage);
+    public static HelloMessage FromClient(string clientVersion, string? clientLanguage = null, bool remoteApp = false) =>
+        new(ProtocolConstants.ProtocolVersion, ClientVersion: clientVersion, ClientLanguage: clientLanguage, RemoteApp: remoteApp ? true : null);
 
     /// <summary>
     /// Builds the hello sent by the agent, with the byte model it detected on the data of
@@ -405,7 +412,23 @@ public sealed record DropResultMessage(
 /// <param name="Title">Title of the top level window, or of its owner.</param>
 /// <param name="ChildClassName">Class of the window right under the point, when it differs.</param>
 /// <param name="ProcessName">Name of the process that owns the window, when it could be read.</param>
-public sealed record TargetWindowInfo(string? ClassName, string? Title, string? ChildClassName = null, string? ProcessName = null);
+/// <param name="Rect">
+/// Since 0.8.0: the rectangle of the top level window on the screen of the session, when it
+/// could be read. In a RemoteApp session the client compares it with its own copy of the
+/// window, which shows whether the coordinates of the drop were right. Not written when null.
+/// </param>
+public sealed record TargetWindowInfo(string? ClassName, string? Title, string? ChildClassName = null, string? ProcessName = null, WindowRect? Rect = null);
+
+/// <summary>A rectangle of the screen of the session, with its right and bottom edges excluded, as Windows gives it.</summary>
+/// <param name="Left">Left edge.</param>
+/// <param name="Top">Top edge.</param>
+/// <param name="Right">Right edge.</param>
+/// <param name="Bottom">Bottom edge.</param>
+public sealed record WindowRect(int Left, int Top, int Right, int Bottom)
+{
+    /// <inheritdoc />
+    public override string ToString() => FormattableString.Invariant($"({Left}, {Top}) to ({Right}, {Bottom})");
+}
 
 /// <summary>
 /// What a drop did inside the session. Written as <c>"copy"</c>, <c>"link"</c> or

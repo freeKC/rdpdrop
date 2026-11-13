@@ -241,4 +241,24 @@ public class DropDecisionTests
 
         Assert.False(decision.ProvisionalAnswer);
     }
+
+    [Fact]
+    public void A_remoteapp_drop_waits_longer()
+    {
+        var decision = new DropDecision(DragId, 1000, wait: DropDecision.RemoteAppWait);
+
+        Assert.Equal(DropDecision.RemoteAppWait, decision.Wait);
+        Assert.Equal(5000, decision.RemainingMilliseconds(1000));
+        Assert.False(decision.Expire(1000 + 1500));
+        Assert.True(decision.Expire(1000 + 5000));
+        Assert.Equal(DropDecisionState.TimedOut, decision.State);
+        Assert.Contains("within 5000 ms", decision.Describe(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Without_a_wait_the_drop_waits_the_usual_time()
+    {
+        Assert.Equal(DropDecision.MaxWait, new DropDecision(DragId, 0).Wait);
+        Assert.Equal(DropDecision.MaxWait, new DropDecision(DragId, 0, wait: TimeSpan.Zero).Wait);
+    }
 }

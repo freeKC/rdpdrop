@@ -48,16 +48,29 @@ public sealed class DropDecision
     /// <summary>Longest time a drop is held for the dragAck of its drag.</summary>
     public static readonly TimeSpan MaxWait = TimeSpan.FromMilliseconds(1500);
 
+    /// <summary>
+    /// Longest time a drop is held in a RemoteApp session, since 0.8.0. There the client sends
+    /// the dragEnter only at the drop, so the agent checks the items while the drop waits:
+    /// the wait covers the check of the redirected drives, at most 3 seconds, and the start of
+    /// the drag.
+    /// </summary>
+    public static readonly TimeSpan RemoteAppWait = TimeSpan.FromSeconds(5);
+
     /// <param name="dragId">The drag whose drop is held.</param>
     /// <param name="heldMilliseconds">When the local drop happened.</param>
     /// <param name="provisionalAnswer">True when a provisional dragAck arrived before the drop.</param>
-    public DropDecision(string dragId, long heldMilliseconds, bool provisionalAnswer = false)
+    /// <param name="wait">The longest wait, <see cref="MaxWait"/> when null.</param>
+    public DropDecision(string dragId, long heldMilliseconds, bool provisionalAnswer = false, TimeSpan? wait = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(dragId);
         DragId = dragId;
         HeldAt = heldMilliseconds;
         ProvisionalAnswer = provisionalAnswer;
+        Wait = wait is { } value && value > TimeSpan.Zero ? value : MaxWait;
     }
+
+    /// <summary>The longest wait of this drop: <see cref="MaxWait"/>, or the wait given.</summary>
+    public TimeSpan Wait { get; }
 
     /// <summary>
     /// True when a local drop must be held: no dragAck of its drag arrived yet
@@ -110,7 +123,7 @@ public sealed class DropDecision
 
     /// <summary>Time left before the wait ends at <paramref name="nowMilliseconds"/>; zero once it is over.</summary>
     public long RemainingMilliseconds(long nowMilliseconds) =>
-        Math.Max(0, HeldAt + (long)MaxWait.TotalMilliseconds - nowMilliseconds);
+        Math.Max(0, HeldAt + (long)Wait.TotalMilliseconds - nowMilliseconds);
 
     /// <summary>
     /// The dragAck <paramref name="ack"/> arrived at <paramref name="nowMilliseconds"/>.
@@ -186,8 +199,8 @@ public sealed class DropDecision
         DropDecisionState.Transfer => $"the agent offered transfer {TransferId}, so the drop goes out deferred and the files follow through the channel",
         DropDecisionState.Plain => "the agent accepted the drag without a transfer, so the drop goes out and the files are read through drive redirection",
         DropDecisionState.Refused => "the agent refused the drag, so the drop is not sent",
-        DropDecisionState.TimedOut when ProvisionalAnswer => $"only a provisional dragAck within {(long)MaxWait.TotalMilliseconds} ms, so the drop goes out without a transfer and the files are read through drive redirection",
-        DropDecisionState.TimedOut => $"no dragAck within {(long)MaxWait.TotalMilliseconds} ms, so the drop goes out without a transfer and the files are read through drive redirection",
+        DropDecisionState.TimedOut when ProvisionalAnswer => $"only a provisional dragAck within {(long)Wait.TotalMilliseconds} ms, so the drop goes out without a transfer and the files are read through drive redirection",
+        DropDecisionState.TimedOut => $"no dragAck within {(long)Wait.TotalMilliseconds} ms, so the drop goes out without a transfer and the files are read through drive redirection",
         DropDecisionState.Abandoned => "the drop was given up before the agent answered",
         _ => "the answer of the agent is still awaited",
     };

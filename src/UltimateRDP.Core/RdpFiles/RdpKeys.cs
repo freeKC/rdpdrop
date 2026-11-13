@@ -76,4 +76,25 @@ public static class RdpKeys
 
     /// <summary><c>desktopscalefactor</c></summary>
     public const string DesktopScaleFactor = "desktopscalefactor";
+
+    /// <summary><c>remoteapplicationmode</c></summary>
+    public const string RemoteApplicationMode = "remoteapplicationmode";
+
+    /// <summary><c>remoteapplicationprogram</c></summary>
+    public const string RemoteApplicationProgram = "remoteapplicationprogram";
+
+    /// <summary><c>remoteapplicationname</c></summary>
+    public const string RemoteApplicationName = "remoteapplicationname";
+
+    /// <summary><c>remoteapplicationcmdline</c></summary>
+    public const string RemoteApplicationCmdLine = "remoteapplicationcmdline";
+
+    /// <summary><c>remoteapplicationexpandcmdline</c></summary>
+    public const string RemoteApplicationExpandCmdLine = "remoteapplicationexpandcmdline";
+
+    /// <summary><c>remoteapplicationexpandworkingdir</c></summary>
+    public const string RemoteApplicationExpandWorkingDir = "remoteapplicationexpandworkingdir";
+
+    /// <summary><c>remoteapplicationfile</c></summary>
+    public const string RemoteApplicationFile = "remoteapplicationfile";
 }
