@@ -4063,3 +4063,49 @@ ends as usual: the server disconnects 19 s after the last window, the agent exit
 session is gone 8 s later. The log said "A policy may block the channel" as a warning; it now says
 once, as information, that the client of the session is probably not UltimateRDP
 (`ChannelRetryPolicy.IsNotOffered`).
+
+### Images of the README
+
+The images of the README are drawn by the application, never captured from a screen, and hold
+sample data only: server.example.com, the user "user" in the language of the image, the program
+Notepad, sample files and sizes. Two development switches, not in the help:
+
+- `UltimateRDP.exe --render-readme <folder> [en fr de es it nl pt]` (`Previews.ReadmeImages`): the
+  loader of a RemoteApp start and of a desktop, light and dark (the paint code of the loader); the
+  launcher generator, short and advanced; the progress window of a large drop through the direct
+  connection, in progress and done, and the window of files received from the session, in
+  progress and done with Open folder (the real `DropProgressForm`, driven through its stages with
+  a `TransferProgress` fed with sample times); the main window with the File menu open over a
+  neutral area that says it is a sample, and the main window with the panel of a RemoteApp tab
+  (`MainForm.DrawSample`); the menu of the notification icon of the client (`ClientTray.Fill`).
+  With several languages the images go into a subfolder per language.
+- `UltimateRDP.Agent.exe --render-tray-menu <folder> [languages]` (`Tray.TrayMenuImage`): the menu
+  of the notification icon of the agent, with "Send files to my PC..." enabled, as in a session
+  connected with UltimateRDP. The icon is never made visible.
+
+`Previews.HiddenRender` holds the drawing: every handle created, parents first, in windows that are
+never shown, then `DrawToBitmap` of each control. What a hidden window does not print is drawn over
+it: the text of a drop-down list, the value of a progress bar, the tabs of a tab control. Menus are
+laid out at their own size and printed without opening. A plain title bar and border stand for the
+frame that Windows draws. Windows draws the boxes of check boxes and radio buttons at the DPI of
+the window, so the switches run in a process that Windows starts without DPI awareness
+(`__COMPAT_LAYER=DpiUnaware`), at 96 DPI.
+
+Not drawn: the About dialogs, which are task dialogs of Windows that print nothing while hidden,
+and the Send To menu of Explorer, which belongs to Explorer; the README describes both in text.
+
+The English images are in `docs/images/`, the six other languages in `docs/images/<code>/`, 98
+images and about 1 MB in all, each under 150 KB.
+
+### The README in seven languages
+
+README.md is the reference. It starts with the facts of the parallel transfer, then a table of
+contents, and documents every option of the command line, every setting of client.json and
+agent.json, the machine settings, the launchers, RemoteApp from a launcher, one connection per
+server and account, the loader, the sending of files to the computer of the client, the password
+options, `--trusted`, the scheduled task for all users, the firewall rules (a new client address
+goes into the rule of the direct connection as into the rule of RDP), and troubleshooting.
+README.fr.md, README.de.md, README.es.md, README.it.md, README.nl.md and README.pt.md are complete
+translations, with the texts of the interface as the .resx files of each language give them, the
+images of that language, and a language bar at the top of all seven. Their tables of contents are
+generated from their headings, with the anchors that GitHub gives them.
