@@ -4,7 +4,10 @@ namespace UltimateRDP.Client;
 
 internal static class AppInfo
 {
-    public const string Name = "UltimateRDP";
+    public const string Name = Core.Brand.Product;
+
+    /// <summary>The brand, "UltimateRDP by Aprogsys", where the name stands alone as a brand; see <see cref="Core.Brand"/>.</summary>
+    public const string Brand = Core.Brand.Text;
 
     public const string ProjectUrl = "https://github.com/freeKC/ultimaterdp";
 

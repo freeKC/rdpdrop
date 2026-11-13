@@ -271,6 +271,7 @@ internal sealed class LauncherPanel : UserControl
         var server = draft.Server.Trim();
         var lines = new List<string>
         {
+            $"{AppInfo.Brand} {AppInfo.Version}",
             draft.RemoteApp
                 ? LocalText.Of(nameof(Strings.LauncherCommentRemoteApp), draft.DefaultName, server).ToString()
                 : LocalText.Of(nameof(Strings.LauncherCommentDesktop), server).ToString(),
@@ -281,7 +282,7 @@ internal sealed class LauncherPanel : UserControl
             lines.Add(LocalText.Of(nameof(Strings.LauncherCommentRdpFile), draft.RdpFileName).ToString());
         }
 
-        lines.Add(LocalText.Of(nameof(Strings.LauncherCommentMadeWith), AppInfo.Version).ToString());
+        lines.Add(Strings.LauncherCommentHelp);
         return lines;
     }
 

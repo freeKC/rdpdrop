@@ -291,8 +291,8 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
   <data name="LauncherCommentDesktop" xml:space="preserve">
     <value>Abre el escritorio remoto de {0} con UltimateRDP.</value>
   </data>
-  <data name="LauncherCommentMadeWith" xml:space="preserve">
-    <value>Escrito por UltimateRDP {0}; UltimateRDP.exe --help muestra las opciones.</value>
+  <data name="LauncherCommentHelp" xml:space="preserve">
+    <value>UltimateRDP.exe --help muestra las opciones.</value>
   </data>
   <data name="LauncherCommentPassword" xml:space="preserve">
     <value>Este archivo no contiene ninguna contraseña: Windows usa la credencial guardada para el servidor o pide la contraseña.</value>

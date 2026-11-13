@@ -35,7 +35,7 @@ internal sealed class ClientTray : IDisposable
         _icon = new NotifyIcon
         {
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application,
-            Text = AppInfo.Name,
+            Text = AppInfo.Brand,
             ContextMenuStrip = _menu,
             Visible = true,
         };
@@ -48,8 +48,8 @@ internal sealed class ClientTray : IDisposable
     {
         var sessions = _sessions();
         var text = sessions.Count == 0
-            ? AppInfo.Name
-            : AppInfo.Name + ": " + string.Join(", ", sessions.Select(session => session.Program));
+            ? AppInfo.Brand
+            : AppInfo.Brand + ": " + string.Join(", ", sessions.Select(session => session.Program));
         _icon.Text = text.Length <= 127 ? text : string.Concat(text.AsSpan(0, 124), "...");
     }
 

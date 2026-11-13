@@ -137,7 +137,7 @@ internal static class LauncherPreview
                 canvasGraphics.FillRectangle(bar, border, border, content.Width, title - border);
             }
 
-            TextRenderer.DrawText(canvasGraphics, Resources.Strings.LauncherTitle, font, new Rectangle(border + (int)(12 * scale), border, content.Width, title - border), Color.Black, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+            TextRenderer.DrawText(canvasGraphics, LauncherForm.TitleText, font, new Rectangle(border + (int)(12 * scale), border, content.Width, title - border), Color.Black, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
             canvasGraphics.DrawImage(content, border, title);
             return canvas;
         }

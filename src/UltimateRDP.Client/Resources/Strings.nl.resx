@@ -291,8 +291,8 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   <data name="LauncherCommentDesktop" xml:space="preserve">
     <value>Opent het externe bureaublad van {0} met UltimateRDP.</value>
   </data>
-  <data name="LauncherCommentMadeWith" xml:space="preserve">
-    <value>Geschreven door UltimateRDP {0}; UltimateRDP.exe --help toont de opties.</value>
+  <data name="LauncherCommentHelp" xml:space="preserve">
+    <value>UltimateRDP.exe --help toont de opties.</value>
   </data>
   <data name="LauncherCommentPassword" xml:space="preserve">
     <value>Dit bestand bevat geen wachtwoord: Windows gebruikt de opgeslagen referentie voor de server of vraagt om het wachtwoord.</value>

@@ -124,11 +124,16 @@ internal static class LoaderPainter
         var textWidth = size.Width - textLeft - (int)(Padding * s);
         if (visual.Title is null)
         {
-            Text(graphics, AppInfo.Name, fonts.Title, new Rectangle(textLeft, (int)(Padding * s), textWidth, (int)(IconSize * s) - (int)(4 * s)), theme.Text);
+            // The brand alone: the name of the product large, " by Aprogsys" after it, light.
+            var titleBounds = new Rectangle(textLeft, (int)(Padding * s), textWidth, (int)(IconSize * s) - (int)(4 * s));
+            Text(graphics, AppInfo.Name, fonts.Title, titleBounds, theme.Text);
+            var nameWidth = (int)Math.Ceiling(MeasureWidth(AppInfo.Name, fonts.Title));
+            Text(graphics, Core.Brand.Suffix.TrimStart(), fonts.Brand, new Rectangle(textLeft + nameWidth, titleBounds.Y + (int)(3 * s), Math.Max(0, textWidth - nameWidth), titleBounds.Height), theme.Secondary);
         }
         else
         {
-            Text(graphics, AppInfo.Name, fonts.Brand, new Rectangle(textLeft, (int)((Padding - 4) * s), textWidth, (int)(16 * s)), theme.Secondary);
+            // The brand line is short and never cut; only the name of what opens, below, is.
+            Text(graphics, AppInfo.Brand, fonts.Brand, new Rectangle(textLeft, (int)((Padding - 4) * s), textWidth, (int)(16 * s)), theme.Secondary);
             Text(graphics, visual.Title, fonts.Title, new Rectangle(textLeft, (int)((Padding + 10) * s), textWidth, (int)(24 * s)), theme.Text);
         }
 

@@ -65,6 +65,12 @@ internal static class LoaderPreview
         remoteApp.On(LoaderEvent.LoggedOn);
         yield return ("remoteapp", remoteApp, false);
 
+        // The longest names: the brand line stays whole, the name of what opens ends with an ellipsis.
+        var longNames = new LoaderProgress(0);
+        longNames.FileRead("serveur-de-production-principal-du-siege.example.com", "Gestion commerciale et comptabilité générale intégrée");
+        longNames.On(LoaderEvent.Connecting);
+        yield return ("remoteapp-long", longNames, false);
+
         var desktop = new LoaderProgress(0);
         desktop.FileRead("server.example.com", null);
         desktop.On(LoaderEvent.Connecting);

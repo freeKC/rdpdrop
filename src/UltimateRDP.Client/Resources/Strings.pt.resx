@@ -291,8 +291,8 @@ A próxima conexão vai solicitá-las novamente. A sessão aberta não é afetad
   <data name="LauncherCommentDesktop" xml:space="preserve">
     <value>Abre a área de trabalho remota de {0} com o UltimateRDP.</value>
   </data>
-  <data name="LauncherCommentMadeWith" xml:space="preserve">
-    <value>Escrito pelo UltimateRDP {0}; UltimateRDP.exe --help mostra as opções.</value>
+  <data name="LauncherCommentHelp" xml:space="preserve">
+    <value>UltimateRDP.exe --help mostra as opções.</value>
   </data>
   <data name="LauncherCommentPassword" xml:space="preserve">
     <value>Este arquivo não contém nenhuma senha: o Windows usa a credencial salva para o servidor ou pede a senha.</value>

@@ -102,7 +102,7 @@ internal sealed class AgentTrayIcon : IDisposable
         _notifyIcon = new NotifyIcon
         {
             Icon = _iconFactory.Icon,
-            Text = AgentInfo.ProductName,
+            Text = Core.Brand.Text,
             ContextMenuStrip = _menu,
         };
     }
@@ -198,7 +198,7 @@ internal sealed class AgentTrayIcon : IDisposable
         var page = new TaskDialogPage
         {
             Caption = LocalText.Of(nameof(Strings.AboutCaption), AgentInfo.ProductName).ForUser(),
-            Heading = $"{AgentInfo.ProductName} {AgentInfo.Version}",
+            Heading = $"{Core.Brand.Text} {AgentInfo.Version}",
             Text = LocalText.Of(nameof(Strings.AboutText), Link(AgentInfo.ProjectUrl)).ForUser(),
             Footnote = new TaskDialogFootnote(
                 $"{LocalText.Of(nameof(Strings.AboutPublisher), AgentInfo.Publisher).ForUser()}\n{Link(AgentInfo.PublisherUrl)}"),

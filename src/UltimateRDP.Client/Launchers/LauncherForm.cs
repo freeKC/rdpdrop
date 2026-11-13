@@ -32,7 +32,7 @@ internal sealed class LauncherForm : Form
     {
         _runningExe = runningExe;
         _sessionFile = sessionFile;
-        Text = Strings.LauncherTitle;
+        Text = TitleText;
         AutoScaleMode = AutoScaleMode.None;
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -44,6 +44,9 @@ internal sealed class LauncherForm : Form
         _panelDpi = DeviceDpi;
         _panel = CreatePanel(_panelDpi / 96f, sessionFile is null ? new LauncherDraft() : LauncherDraft.FromRdpFile(sessionFile, new LauncherDraft()), advanced: false);
     }
+
+    /// <summary>The title of the dialog, with the brand.</summary>
+    public static string TitleText => $"{Strings.LauncherTitle} ({AppInfo.Brand})";
 
     /// <summary>The fonts and the panel at <paramref name="scale"/>, for the dialog and the previews.</summary>
     public static LauncherPanel NewPanel(float scale, string runningExe, bool canFillFromSession, out Font font, out Font monoFont)

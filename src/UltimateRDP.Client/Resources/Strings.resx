@@ -320,8 +320,8 @@ The next connection asks for them again. The open session is not affected.</valu
   <data name="LauncherCommentDesktop" xml:space="preserve">
     <value>Opens the remote desktop of {0} with UltimateRDP.</value>
   </data>
-  <data name="LauncherCommentMadeWith" xml:space="preserve">
-    <value>Written by UltimateRDP {0}; UltimateRDP.exe --help lists the options.</value>
+  <data name="LauncherCommentHelp" xml:space="preserve">
+    <value>UltimateRDP.exe --help lists the options.</value>
   </data>
   <data name="LauncherCommentPassword" xml:space="preserve">
     <value>This file holds no password: Windows uses the credential saved for the server, or asks for the password.</value>

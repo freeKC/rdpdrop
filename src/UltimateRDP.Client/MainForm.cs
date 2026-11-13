@@ -566,7 +566,7 @@ internal sealed partial class MainForm : Form
         var page = new TaskDialogPage
         {
             Caption = LocalText.Of(nameof(Strings.AboutTitle), AppInfo.Name).ToString(),
-            Text = LocalText.Of(nameof(Strings.AboutText), AppInfo.Name, AppInfo.Version, Link(AppInfo.ProjectUrl)).ToString(),
+            Text = LocalText.Of(nameof(Strings.AboutText), AppInfo.Brand, AppInfo.Version, Link(AppInfo.ProjectUrl)).ToString(),
             Footnote = new TaskDialogFootnote($"{publisher}\n{Link(AppInfo.PublisherUrl)}"),
             Icon = TaskDialogIcon.Information,
             EnableLinks = true,

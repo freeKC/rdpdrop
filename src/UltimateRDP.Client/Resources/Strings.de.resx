@@ -291,8 +291,8 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
   <data name="LauncherCommentDesktop" xml:space="preserve">
     <value>Öffnet den Remotedesktop von {0} mit UltimateRDP.</value>
   </data>
-  <data name="LauncherCommentMadeWith" xml:space="preserve">
-    <value>Geschrieben von UltimateRDP {0}; UltimateRDP.exe --help zeigt die Optionen.</value>
+  <data name="LauncherCommentHelp" xml:space="preserve">
+    <value>UltimateRDP.exe --help zeigt die Optionen.</value>
   </data>
   <data name="LauncherCommentPassword" xml:space="preserve">
     <value>Diese Datei enthält kein Kennwort: Windows verwendet die für den Server gespeicherten Anmeldeinformationen oder fragt nach dem Kennwort.</value>

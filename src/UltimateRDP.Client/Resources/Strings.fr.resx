@@ -291,8 +291,8 @@ La prochaine connexion les demandera de nouveau. La session ouverte n'est pas to
   <data name="LauncherCommentDesktop" xml:space="preserve">
     <value>Ouvre le bureau à distance de {0} avec UltimateRDP.</value>
   </data>
-  <data name="LauncherCommentMadeWith" xml:space="preserve">
-    <value>Écrit par UltimateRDP {0} ; UltimateRDP.exe --help donne la liste des options.</value>
+  <data name="LauncherCommentHelp" xml:space="preserve">
+    <value>UltimateRDP.exe --help donne la liste des options.</value>
   </data>
   <data name="LauncherCommentPassword" xml:space="preserve">
     <value>Ce fichier ne contient aucun mot de passe : Windows utilise l'identifiant enregistré pour le serveur, ou demande le mot de passe.</value>
