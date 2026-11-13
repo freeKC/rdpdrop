@@ -1,6 +1,6 @@
 # UltimateRDP design
 
-Date: 2026-11-05, updated on 2026-11-13 for version 0.7.1.
+Date: 2026-11-05, updated on 2026-11-13 for version 0.8.0.
 
 ## Goal
 
@@ -15,7 +15,9 @@ through the UltimateRDP channel before the drop, which is faster; see
 connection between the client and the agent when the network allows it, with
 the channel as the fallback; see "Version 0.6". Since version 0.7, that
 connection is several TCP connections at once; see "Version 0.7", and
-"Version 0.7.1" for its release after a cancel.
+"Version 0.7.1" for its release after a cancel. Since version 0.8, the
+client also opens RemoteApp programs and takes drops on their windows; see
+"Version 0.8".
 
 Scope:
 
@@ -26,12 +28,12 @@ Scope:
 * Server: Windows Server (2016 or later) or Windows 10/11 acting as a Remote
   Desktop host. A small agent runs in the user session.
 * Full desktop sessions, in a window or in full screen on one monitor or on
-  all monitors.
+  all monitors, and since 0.8 RemoteApp programs.
 * Works through a Remote Desktop Gateway, because it only relies on a static
   virtual channel and on drive redirection, both of which the gateway forwards.
 
-Out of scope: drag from the session to the local desktop, RemoteApp,
-connections without drive redirection.
+Out of scope: drag from the session to the local desktop, connections without
+drive redirection.
 
 ## Why not something simpler
 
@@ -128,6 +130,8 @@ Pure logic shared by the two apps and covered by tests.
   `DirectTransferPolicy`: the direct connection, described under "Version 0.6",
   over several connections since "Version 0.7", with `DirectPacer`,
   `DirectRateMeter` and `IDirectStorage`.
+* `RemoteAppLaunch`, `ScreenMapping`, `ProxyBounds`, `RemoteAppSessionRule` and
+  `RemoteAppExitWatch`: RemoteApp, described under "Version 0.8".
 
 ### Protocol
 
@@ -138,8 +142,8 @@ value are not written.
 
 Client to agent:
 
-* `hello` : `{ "type": "hello", "version": 1, "clientVersion": "0.3.0",
-  "clientLanguage": "fr" }`
+* `hello` : `{ "type": "hello", "version": 1, "clientVersion": "0.8.0",
+  "clientLanguage": "fr", "remoteApp": true }`
 * `dragEnter` : `{ "type": "dragEnter", "id": "<guid>", "x": 412, "y": 300,
   "items": [ { "clientPath": "C:\\Users\\me\\a.txt", "isDirectory": false,
   "size": 52428800 } ], "keyState": 0 }`
@@ -164,7 +168,8 @@ Agent to client:
 * `dropResult` : `{ "type": "dropResult", "id": "<guid>",
   "status": "ok" | "error" | "cancelled", "effect": "copy" | "link" | "none",
   "message": "human readable text", "targetWindow": { "className": "CabinetWClass",
-  "title": "Documents", "childClassName": "DirectUIHWND", "processName": "explorer" } }`
+  "title": "Documents", "childClassName": "DirectUIHWND", "processName": "explorer",
+  "rect": { "left": 0, "top": 0, "right": 1200, "bottom": 800 } } }`
 * `logoffResult` : `{ "type": "logoffResult", "id": "<guid>", "accepted": true,
   "message": "human readable text" }`
 * `fileAck` and `transferResult`: the fast transfer, described under
@@ -219,6 +224,9 @@ Field notes:
   written when the agent offers no direct connection, and an older client
   ignores it and sends the files through the channel. Its fields `version`
   and `connections` are new in 0.7.0, see "Version 0.7".
+* `remoteApp` of the hello of the client, and `rect` of `targetWindow`, are new in 0.8.0,
+  see "Version 0.8". They are not written when they have no value, and an older peer
+  ignores them.
 
 Version handling: both sides send `version: 1` in their hello. The agent
 answers a message that carries a higher version with an error `dropResult`
@@ -401,7 +409,9 @@ Behaviour:
    * `--status`: print the version, the path of the executable, the `Run`
      values under `HKCU` and `HKLM`, the settings file, the `trayIcon` mode,
      the log folder and whether an agent runs in this session (its mutex
-     exists). Changes nothing.
+     exists); since 0.8, whether the session is a RemoteApp session, and
+     whether the `SysProcs` value of the agent and the scheduled task
+     `\UltimateRDP\Agent` exist. Changes nothing.
    * `--help`: list the options.
    * no argument: run.
 
@@ -596,6 +606,13 @@ the fallback for anything missing.
   memory connection; see "Version 0.6". Since 0.7, the same over 1, 4 and 8
   connections, with the blocks, the tokens of each connection, the cancels
   and the limit of the rate; see "Version 0.7".
+* RemoteApp, since 0.8: the keys of the .rdp file (alias, path, file alone, mode absent or
+  zero, missing program, arguments, both encodings), the coordinates (negative origins,
+  corners, the comparison of the monitor layouts), the square of the proxy at the four
+  corners and with a negative origin, the shell of a session, the applications left with and
+  without `SysProcs` names in any case, the two checks, a drag in progress, a disconnection,
+  the log lines on change only, the tray icon, the longer wait of the held drop, and the new
+  fields of the messages.
 * Client and agent are exercised by hand against a real session; the status
   bar and the agent log give enough detail to diagnose a failed drop.
 * CI runs the tests on `windows-latest` for every push and pull request.
@@ -3022,3 +3039,198 @@ says when the notice is shown.
 
 Both sides ship as 0.7.1; the protocol does not change, so either side works with the other at
 0.7.0. The fix of the release is on the agent, the notice on the client.
+
+## Version 0.8
+
+Decided on 2026-11-13. A survey of the production server showed 31 RemoteApp sessions out of
+35, none of them with the agent: a RemoteApp session does not process the `Run` entry. Version
+0.8 opens RemoteApp programs in the client, takes drops on their windows, and makes the agent
+safe to start in RemoteApp sessions. Nothing of this was tested against a real server at the
+time of the release; the list at the end of this section says what the first test must show.
+
+### What the client does
+
+A .rdp file with `remoteapplicationmode:i:1` opens a RemoteApp tab. `RemoteAppLaunch` in Core
+reads `remoteapplicationprogram` (an alias of a published program such as `||MyApp`, or a
+path), `remoteapplicationname`, `remoteapplicationcmdline`, `remoteapplicationexpandcmdline`,
+`remoteapplicationexpandworkingdir` and `remoteapplicationfile`; a file that asks for RemoteApp
+without a program or a file is refused when it is opened. `alternate shell` is not read: the
+server ignores it in RemoteApp mode.
+
+* Before `Connect`, the client sets `RemoteProgram.RemoteProgramMode` and
+  `RemoteProgram2.RemoteApplicationProgram`, `RemoteApplicationName` and
+  `RemoteApplicationArgs`, turns on `UseMultimon`, turns off smart sizing, and asks for a
+  desktop of the size of the local virtual screen.
+* When neither `OnRemoteProgramResult` nor `OnRemoteWindowDisplayed` came 10 seconds after
+  `OnLoginComplete`, it calls `ServerStartProgram` once, with the program, the file and the
+  arguments of the .rdp file. A result other than `remoteAppResultOk` is shown in the status
+  bar; `remoteAppResultNotInWhitelist` says that the program is not published.
+* The control shows nothing in RemoteApp mode. It stays docked in the tab, alive, under a
+  status panel (`RemoteAppPanel`): the name of the program, where its windows are, the state
+  of the connection and of the agent, and the last drop result.
+* The display mode, the scale factor, full screen and "Use all monitors" are disabled for the
+  tab; `DisplayController` sends nothing to a RemoteApp session after a resize.
+* The tab closes when a session that was logged on disconnects. A connection that never
+  logged on keeps its tab with the reason, so that the user can read it and connect again.
+* Closing the tab, or quitting, while windows of the program exist asks first, with a text
+  that says the program keeps running on the server and comes back at the next connection.
+* The client hello carries `remoteApp: true`.
+
+### The windows of the program
+
+Every window of the program on the server is a top level window of the client process,
+created by the control. `RailDropTargets` finds them with three sources together:
+`OnRemoteWindowDisplayed`, which gives the handle and says which tab the window belongs to; a
+WinEvent hook on `EVENT_OBJECT_CREATE` to `EVENT_OBJECT_SHOW`, limited to the process id of the
+client and out of context, so that no code goes into another process; and a scan of the top
+level windows of the process every 2 seconds while a RemoteApp session is connected. The
+windows of Windows Forms, dialogs, tooltips and input method windows of the process are left
+out. One object serves every tab, since all the windows live in one process: a window belongs
+to the tab whose event named it, to the tab of its owner window, or to the only RemoteApp tab
+connected; with several tabs and none of these, a drop on it is refused and logged.
+
+Each window gets a drop target of its own (`RailWindowDropTarget`), registered on the UI
+thread after the existing one, if any, was revoked, as for the child windows of the control.
+The log has one line per window: handle, class, owner thread compared with the UI thread,
+styles, rectangle, owner window, tab, whether a drop target was there, and the result of
+`RevokeDragDrop` and `RegisterDragDrop`. A failed registration is a warning, once per window,
+that says whether the window belongs to another thread than the UI thread.
+
+In RemoteApp mode `RdpControl` only takes drags that come from these windows: a drop on the
+client window itself, or on the status panel, is refused.
+
+### The replay at the drop
+
+The server sends the client every visible top level window of the session, whatever process
+shows it. The proxy window of a live drag covers the whole virtual screen: in a RemoteApp
+session it would appear on the client as a window over every monitor, the local drag would
+lose its target, and the user would see a dark flash over the whole screen. So in RemoteApp
+mode:
+
+* Nothing goes to the agent while the drag moves. The local answer is copy when the agent is
+  ready and the paths are on local drives.
+* At the local drop the client sends `dragEnter` at the drop point, and holds the drop with
+  the mechanism of version 0.4.5 (`DropDecision`), with a wait of 5 seconds
+  (`DropDecision.RemoteAppWait`) instead of 1.5, since the agent now checks the items through
+  drive redirection while the drop waits. The `drop` follows the `dragAck`, deferred when a
+  transfer is offered, exactly as for a quick drop on a desktop.
+* The local drop call stays open, with the messages of the UI thread running, until the drop
+  went out and its result came, a transfer started, the drag was refused, or 6 seconds
+  passed. The held drop of 0.4.5 returns at once; the RemoteApp drop keeps the call open on
+  top of it. While the call is open, the drag source holds the mouse, so the windows of the
+  program should not send the moves of the local mouse to the server during the replay. The
+  log says how far the mouse moved meanwhile.
+* The agent replays the drag with a proxy window of 32 by 32 physical pixels centered on the
+  point and kept inside the virtual screen (`ProxyBounds` in Core). The guard of 0.2 stays:
+  the press is only injected once `WindowFromPoint` returns the proxy.
+* The fast transfer and the direct connection do not change. The copies are dropped at the
+  kept point with the same small proxy.
+
+The target shows no drop feedback while the user moves: the drag only starts in the session
+at the drop. This is accepted for 0.8.
+
+### Coordinates
+
+The server places the windows of the program where they are on the client, on a remote
+desktop that copies the layout of the local monitors. A point of the local screen is therefore
+the same point on the server. The protocol counts points from the top left corner of the
+session desktop, so the client sends the screen point minus the origin of the local virtual
+screen (`ScreenMapping.ToSessionPoint`), and the agent adds the origin of its own virtual
+screen back, as in a desktop session.
+
+The client logs the box of the remote monitors (`GetRemoteMonitorsBoundingBox`), their number
+and `RemoteMonitorLayoutMatchesLocal` at the logon and at the first window, against the local
+virtual screen, with the verdict of `ScreenMapping.Compare`; a layout that differs is a
+warning. Drops are not refused when the layout differs: what the control gives there is still
+to be measured, and a wrong refusal would block every drop. Each `dropResult` now carries the
+rectangle of the target window on the server (`targetWindow.rect`), which the client compares
+with the window under the drop point on its side.
+
+### The agent in a RemoteApp session
+
+The agent lists the processes of its session once at start, with `WTSEnumerateProcessesEx`
+for its own session. Explorer makes a desktop session, and nothing more happens: no timer, no
+other line above the debug level. `rdpinit` or `rdpshell` without Explorer make a RemoteApp
+session, and the agent logs `RemoteApp session detected` and the names of `SysProcs`, once.
+When neither runs yet, as for a task started at logon before the shell, it looks again every
+15 seconds, for at most 5 minutes, then treats the session as a desktop.
+
+In a RemoteApp session, the rules are `RemoteAppSessionRule` and `RemoteAppExitWatch` in Core:
+
+* Every 15 seconds, with a timer of the hidden session window, so no thread is added, the
+  agent lists the processes of its session again. A process counts as an application unless
+  it is one of the processes every RemoteApp session runs (rdpinit, rdpshell, winlogon, csrss,
+  dwm, fontdrvhost, sihost, svchost, taskhostw, ctfmon, rdpclip, TabTip, TabTip32,
+  DefenderSessionHelper, LogonUI, RuntimeBroker, SearchApp, ShellExperienceHost, conhost), the
+  agent itself, or a name of the `SysProcs` key, compared without folder, extension or case.
+* No application for two checks in a row, and no drag or transfer in progress: the agent logs
+  `RemoteApp session: no application is left; the agent exits so that the session can end`
+  and exits with code 0. The first check comes 15 seconds after the detection, so the agent
+  leaves 30 seconds at the earliest after the program closed, after the 20 seconds a
+  RemoteApp session waits after its last window.
+* When the session is disconnected and no application is left, the agent exits at once.
+* The processes that cannot be listed twice in a row, or a timer that cannot be started, also
+  make the agent exit: an agent that cannot see the session must not keep it open. An exit
+  for no reason only costs the UltimateRDP user the agent until the next logon; staying for
+  no reason can keep the session of a user of the Microsoft client open.
+* Each change of the verdict or of the applications gives one log line, never one line per
+  check.
+* With `trayIcon` at `auto`, the icon never appears in a RemoteApp session, whether the agent
+  detected it or the client said so: the server would show it next to the program, and an
+  icon may count as a reason to keep the session open.
+
+The agent replays a drag at the drop with the small proxy as soon as it detected a RemoteApp
+session or the client said so in its hello.
+
+`--status` also prints, read only, whether the session is a RemoteApp session, whether the
+value `UltimateRDP.Agent.exe` exists under the `SysProcs` key, and whether the scheduled task
+`\UltimateRDP\Agent` exists, through the Task Scheduler API. The agent has no option to create
+the task or write `SysProcs`; the README gives the administrator the commands, their removal,
+their order, and a test on one account first.
+
+### Logs
+
+Client, at the info level: the settings applied (`remoteProgramMode=True`,
+`remoteApplicationProgram=...`), each event of the control with its values
+(`OnRemoteProgramResult`, `OnRemoteProgramDisplayed`, `OnRemoteWindowDisplayed` with the
+handle, its context and both members of its union), the call of `ServerStartProgram`, the
+`RemoteApp monitors` line, one `RemoteApp window` line per window, and for each drop the screen
+point, the point sent, the local window under it, the time the drop call stayed open with the
+move of the mouse, and the comparison with the rectangle given by the agent.
+
+Agent, at the info level: `RemoteApp session detected`, the names of `SysProcs`, the hello of
+the client with what the client says and what the session shows, the size and place of the
+proxy, `WindowFromPoint gave the proxy window after N ms`, the target with its rectangle, and
+each change of the exit rule.
+
+### Known and to be measured
+
+Documented: the members and events of the control used here, the order (`RemoteProgramMode`
+before `Connect`, `ServerStartProgram` once connected), that a RemoteApp session ignores
+`Run`, `RunOnce` and the Startup folder, that it ends without visible windows after 20
+seconds, and that `SysProcs` lets Windows ignore a process.
+
+To be measured in the first real test, each with the log line that answers it:
+
+1. Whether the control starts the program from the RemoteProgram2 values alone, or the
+   fallback calls `ServerStartProgram`: client `Event OnRemoteProgramResult`, or `calling
+   ServerStartProgram`.
+2. The class and owner thread of the windows, and whether `RegisterDragDrop` works on them:
+   client `RemoteApp window 0x...`, with `register=0x00000000`, or the warning.
+3. Whether the server shows the small proxy on the client, and how: watch the drop, and the
+   client lines `RemoteApp window ... from WinEvent show` that appear during a drop.
+4. Whether the coordinates are right, on one monitor and with a monitor left of the primary
+   one: client `RemoteApp monitors` and `the target is at ... here: the same rectangle`.
+5. Whether keeping the drop call open keeps the moves of the mouse away from the replay:
+   client `the local drop call stayed open ... the mouse moved by`, and agent
+   `WindowFromPoint gave the proxy window`.
+6. The real list of processes of a RemoteApp session, and whether the session ends after the
+   program closed with the agent and the `SysProcs` value: agent `RemoteApp session
+   detected`, `RemoteApp session: applications running`, `the agent exits so that the session
+   can end`, and the session events of the server.
+7. Whether `SysProcs` applies to new sessions without a restart of the Remote Desktop
+   Services. The agent of 0.8 leaves by itself, which hides the effect of the value; the
+   README keeps the value as a second safety, and this point stays open.
+8. That the channel and drive redirection work in RemoteApp mode as on a desktop: agent
+   `Hello from client ... RemoteApp: the client says True` and `drive redirection available:
+   True`.

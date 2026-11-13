@@ -26,7 +26,7 @@ UltimateRDP works through a Remote Desktop Gateway. The direct connection for la
 UltimateRDP has a deliberately narrow scope:
 
 - One direction only, from the local computer to the session. For the other direction, keep using copy and paste.
-- Full desktop sessions only. RemoteApp is not supported.
+- Full desktop sessions, and from version 0.8.0 RemoteApp programs: see "RemoteApp programs".
 - The session always starts in a window, even if the .rdp file asks for full screen. You can switch to full screen afterwards. In full screen, you can only drop from a monitor that the session does not cover.
 
 ## Install
@@ -47,10 +47,12 @@ Each zip holds a single `.exe` file.
 
 To install it for your own account only, run the same command with `--install` from a normal prompt. This also starts the agent at once.
 
+RemoteApp sessions do not use the `Run` entry. To have the agent there too, see "RemoteApp programs" below.
+
 Other options:
 
 - `--uninstall` stops the agent from starting with your session and stops the running copy. Run it from an elevated prompt to remove the all users entry as well.
-- `--status` prints the version, the `Run` entries under `HKEY_CURRENT_USER` and `HKEY_LOCAL_MACHINE`, the settings file and whether the agent runs in your session. It changes nothing.
+- `--status` prints the version, the `Run` entries under `HKEY_CURRENT_USER` and `HKEY_LOCAL_MACHINE`, the settings file and whether the agent runs in your session. It also says whether the session is a RemoteApp session, and whether the `SysProcs` value and the scheduled task of "RemoteApp programs" exist. It changes nothing.
 - `--help` lists the options.
 
 To update on a server, stop every copy of the agent from an elevated prompt with `taskkill /im UltimateRDP.Agent.exe /f`, replace the executable, then let the users sign in again. To update your own copy, exit it from its tray menu or with `--uninstall`, replace the executable, then install it again. The client and the agent must have the same version.
@@ -59,7 +61,7 @@ To update on a server, stop every copy of the agent from an elevated prompt with
 
 On a server, most users may connect with the Microsoft client (mstsc), which has no UltimateRDP channel. For them the agent stays out of sight and does nothing visible:
 
-- It shows no icon, no window and no message. Its tray icon appears only while an UltimateRDP client is connected to the session, and goes away when that client disconnects. The `trayIcon` setting below changes this.
+- It shows no icon, no window and no message. Its tray icon appears only while an UltimateRDP client is connected to the session, and goes away when that client disconnects; in a RemoteApp session it never appears. The `trayIcon` setting below changes this.
 - While it waits, it uses a few megabytes of memory and no measurable processor time. It tries to open its channel every ten seconds, and at once when a client connects to the session, so that a user who reconnects with the UltimateRDP client finds the agent ready.
 - Its log gets one line when it starts and at most one line per hour while it waits.
 - It survives disconnections and reconnections, from either client. At sign out it releases the mouse button if a drop was in progress, closes the channel and exits, without delaying the sign out.
@@ -391,6 +393,101 @@ At the end of a direct transfer each log has a line that starts with `direct con
 
 With `logLevel` at `debug` in client.json or agent.json, both sides also log the rate of every second.
 
+## RemoteApp programs
+
+From version 0.8.0, UltimateRDP also opens RemoteApp programs: a program published on the server that shows in windows of its own on your desktop, without the remote desktop around it. Open its .rdp file as any other, for example the one your administrator gives you or the one of the web feed. A file with `remoteapplicationmode:i:1` opens a RemoteApp tab. RemoteApp support is new and was not tested against a real server at the time of the release: please report what you see, with both logs.
+
+### On your computer
+
+- The tab shows the name of the program, the state of the connection and of the agent, and the result of the last drop. The program itself opens in its own windows, outside the UltimateRDP window, which you can minimize once you are logged on.
+- Drop files on a window of the program. Nothing happens while you move over it: the drop happens where you release the button. The progress window "Drop into the session" opens over the window you dropped on, as for a desktop session, and large files go through the channel or the direct connection as described above.
+- The remote application shows no drop feedback while you move, since the drag only starts in the session when you release the button.
+- View, Resize session to window, Scale to window, Scale factor, Full screen and Use all monitors do not apply to a RemoteApp tab and are disabled there. The session always covers all your monitors.
+- When the program closes its last window, the server ends or disconnects the session and the tab closes.
+- Closing the tab, or quitting UltimateRDP, while windows of the program are open asks first: the program keeps running on the server and comes back at the next connection with the same file. To end it, close it in its own window, or use File, Log off the remote session.
+- Several tabs, desktop and RemoteApp, work side by side. A drop on a window of a program goes to the session of that program.
+
+The client reads `remoteapplicationprogram`, `remoteapplicationname`, `remoteapplicationcmdline`, `remoteapplicationexpandcmdline`, `remoteapplicationexpandworkingdir` and `remoteapplicationfile`. A file that asks for RemoteApp without a program is refused when you open it.
+
+### On the server
+
+A RemoteApp session does not run Explorer, so it ignores the `Run` entry that `--install-all-users` writes: the agent does not start there by itself. The administrator starts it with a scheduled task at logon. A RemoteApp session also ends when no program of the user is left in it, and an agent that keeps running would keep it open. The agent therefore takes care of it in two ways:
+
+- In a RemoteApp session, it lists the processes of its session every 15 seconds. Once nothing is left but the processes that every RemoteApp session runs and the names of the `SysProcs` key of the server, for two checks in a row, and no drop or transfer is in progress, it exits. It also exits when the session is disconnected and no program is left. In a desktop session it looks once, at start, and does nothing more.
+- Its tray icon never appears in a RemoteApp session while `trayIcon` is `auto`. Do not set `trayIcon` to `always` for RemoteApp users.
+
+The administrator adds the agent to `SysProcs` as well, so that Windows itself does not count it. UltimateRDP never writes the registry or creates a task: here are the commands, for an elevated PowerShell on the server. Replace the path of the agent with yours.
+
+1. Read the current state first, and keep the output:
+
+   ```powershell
+   Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\SysProcs'
+   Get-ScheduledTask -TaskPath '\UltimateRDP\' -ErrorAction SilentlyContinue
+   quser
+   ```
+
+2. Add the agent to `SysProcs`. Alone, this changes nothing, since the agent does not run in RemoteApp sessions yet. It applies to new sessions; do not restart the Remote Desktop Services for it, which would disconnect every user.
+
+   ```powershell
+   New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\SysProcs' -Name 'UltimateRDP.Agent.exe' -PropertyType DWord -Value 0
+   ```
+
+3. Create the task for one test account only:
+
+   ```powershell
+   $exe       = 'C:\Program Files\UltimateRDP\UltimateRDP.Agent.exe'
+   $action    = New-ScheduledTaskAction -Execute $exe
+   $trigger   = New-ScheduledTaskTrigger -AtLogOn -User '<DOMAIN\test account>'
+   $principal = New-ScheduledTaskPrincipal -UserId '<DOMAIN\test account>' -LogonType Interactive -RunLevel Limited
+   $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances Parallel -Priority 5 -Compatibility Win8
+   Register-ScheduledTask -TaskPath '\UltimateRDP\' -TaskName 'Agent' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Starts the UltimateRDP agent in each user session, RemoteApp sessions included.'
+   ```
+
+   `-LogonType Interactive` runs the agent in the session of the user with the rights of the user, and no password is stored. `-RunLevel Limited` keeps it from ever running elevated. `-ExecutionTimeLimit` zero removes the limit of 72 hours of a task. In a desktop session the `Run` entry and the task both start the agent; the second copy sees the first and exits at once.
+
+4. Test with the test account, as described below.
+
+5. Only then, start it for every user:
+
+   ```powershell
+   $users     = (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-545').Translate([System.Security.Principal.NTAccount]).Value
+   $trigger   = New-ScheduledTaskTrigger -AtLogOn
+   $principal = New-ScheduledTaskPrincipal -GroupId $users -RunLevel Limited
+   Set-ScheduledTask -TaskPath '\UltimateRDP\' -TaskName 'Agent' -Trigger $trigger -Principal $principal
+   ```
+
+   The first line gives the local name of the Users group, which depends on the language of Windows.
+
+After an update of the agent in another folder, point the task to it:
+
+```powershell
+Set-ScheduledTask -TaskPath '\UltimateRDP\' -TaskName 'Agent' -Action (New-ScheduledTaskAction -Execute 'C:\Program Files\UltimateRDP\<version>\UltimateRDP.Agent.exe')
+```
+
+Never use `Stop-ScheduledTask`, or End in the Task Scheduler, on this task: it would stop the agents of every session the task started.
+
+To remove it all, in this order:
+
+```powershell
+Unregister-ScheduledTask -TaskPath '\UltimateRDP\' -TaskName 'Agent' -Confirm:$false
+Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\SysProcs' -Name 'UltimateRDP.Agent.exe'
+```
+
+Removing the task does not stop the agents already running; they end with their session, or by themselves in RemoteApp sessions. Remove the `SysProcs` value last, once no agent runs in a RemoteApp session.
+
+`UltimateRDP.Agent.exe --status`, run in a session, says whether it is a RemoteApp session, whether the `SysProcs` value of the agent exists and whether the task `\UltimateRDP\Agent` exists. It only reads.
+
+### Testing on one account
+
+Before the task exists for everybody, with the test account only:
+
+1. Without any change, open the program with the Microsoft client, close it, and note what happens to the session with `quser`: it should end, or disconnect, about 20 seconds after the last window closed. This is the behaviour to keep.
+2. After steps 2 and 3 above, open the program again with the Microsoft client. The agent must run in the session (`Get-CimInstance Win32_Process -Filter "Name='UltimateRDP.Agent.exe'"`, with its `SessionId`), without any icon or window for the user, and its log must say `RemoteApp session detected`. Close the program: the session must end as in step 1, and the agent log must end with `the agent exits so that the session can end`, or with the end of the session.
+3. Open the program with UltimateRDP and drop a small file, then a large one, on a window of the program.
+4. The day after step 5 of "On the server", compare the number of sessions, and of disconnected ones, with the output of its step 1.
+
+If a session stays open after its program closed, remove the task first, see above, then report it with the agent log of that session.
+
 ## How it works
 
 The client hosts the Microsoft Remote Desktop ActiveX control and registers itself as a drop target on its windows. The agent runs in your session and listens on a static virtual channel named `ULTRDP`. For small files the client sends the local paths and the cursor position, and the session reads the files from the redirected drives. Large files are sent through the channel, as described after the steps below.
@@ -403,6 +500,8 @@ The client hosts the Microsoft Remote Desktop ActiveX control and registers itse
 6. The agent reports `dropResult` with the effect: `copy` or `link` when the target accepted, or `none` when nothing under the cursor accepted the files. With `none`, the drop is ignored. The client shows the result in the status bar.
 
 The drag offers copy and link only, never move. Modifier keys are recorded in the logs but not injected.
+
+In a RemoteApp session the windows of the server are windows of the client, and anything the agent shows would appear on your desktop too, its proxy window included. So the client sends nothing while you move: at the drop it sends `dragEnter` and then `drop` at the same point, and keeps the drop open on your side until the agent answered. The agent replays the drag right there, with a proxy window of 32 by 32 pixels under the point instead of one over the whole screen.
 
 For large files, the `dragEnter` carries the size of each item, and the agent answers `dragAck` with `transfer: true` when they must come through the channel. At step 5 the client then sends `drop` with `deferred: true`: the agent cancels the drag in the session and keeps the point. The client sends the files in chunks of 32 KiB by default, in base64, or in the denser `u15` form when the agent says the data of the client reaches it as UTF-16, with at most 4 MiB not yet acknowledged, the agent writes them into its staging folder and checks the size and SHA-256 of each one, answers `transferResult`, then drops the copies at the kept point with a short drag, and reports `dropResult` as in step 6.
 
@@ -420,6 +519,8 @@ Messages are JSON objects sent as ASCII lines, except the `u15` chunks, and each
 - **My applications are still open on the server after Quit.** This is expected: Quit and Close tab disconnect without ending the session. Use File, Log off the remote session.
 - **The texts are in the wrong language.** Choose the language in View, Language. A message from the agent follows the language the client announced at connection time; after a language change, the next message uses the new one.
 - **Drops are refused because of the drives.** Turn on drive redirection in the .rdp file, under Local Resources, More, Drives. On the server, check the policy "Do not allow drive redirection".
+- **A RemoteApp program opens, but drops on its windows are refused or do nothing.** The client log has one line per window of the program that starts with `RemoteApp window`, with the result of the registration of the drop target, and a warning when it failed. The lines `RemoteApp monitors` and `the target is at` say whether the windows on the server are where they are on your screen; a warning there means the monitors changed since the connection, and a new connection fixes it.
+- **A RemoteApp session stays open after its program closed.** Check that the agent log of the session says `RemoteApp session detected`, and what the lines `RemoteApp session:` say: a program that is still listed there keeps the session open, with or without the agent. See "RemoteApp programs".
 - **The drop lands on the wrong window.** Coordinate scaling after a window resize, or full screen over several monitors, can be the cause. Please report it with both logs.
 - **A transfer of large files fails, or is slow.** The status bar gives the reason. Both logs end each transfer with a summary line: files, bytes, seconds and MB/s, then with the lines described under "Measuring a slow transfer". The client log also gives the length of the first chunk line it sent, and the agent log has a line for the first chunk of each file it received. When the status bar says "The agent did not acknowledge the first data of the transfer.", the data did not get through: the client log then gives the byte model, the chunk size, the length of the lines and the number of lines sent. A smaller `transferChunkBytes` may help, see "Large files". To go back to drive redirection, choose Never in the agent tray menu, Fast transfer of large files.
 - **A transfer fails with "A message of the transfer was lost on the way".** The Remote Desktop control sometimes loses a short message sent just before a large one. From 0.5.1 on both sides this should no longer appear: the agent asks the client to send the missing lines again, and the summary of the transfer in both logs counts the lines sent again. If it still appears, one side runs an older version; if a transfer fails with "Lines of the transfer were lost on the way and could not be recovered", report it with both logs taken with `logLevel` set to `debug`.
