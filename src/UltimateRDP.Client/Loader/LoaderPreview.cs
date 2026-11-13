@@ -84,7 +84,7 @@ internal static class LoaderPreview
     }
 
     /// <summary>The loader at <paramref name="scale"/>, on a background, with rounded corners and a shadow.</summary>
-    private static Bitmap Draw(float scale, LoaderTheme theme, LoaderVisual visual)
+    public static Bitmap Draw(float scale, LoaderTheme theme, LoaderVisual visual)
     {
         var size = new Size((int)Math.Round(LoaderPainter.LogicalSize.Width * scale), (int)Math.Round(LoaderPainter.LogicalSize.Height * scale));
         using var fonts = new LoaderFonts(scale);

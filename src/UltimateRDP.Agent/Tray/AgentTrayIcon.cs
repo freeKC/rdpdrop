@@ -117,6 +117,9 @@ internal sealed class AgentTrayIcon : IDisposable
     /// <summary>Enables "Send files to my PC..." while a client that receives files is connected.</summary>
     public void SetCanSend(bool canSend) => _sendItem.Enabled = canSend;
 
+    /// <summary>The menu, to draw it for the README (<see cref="TrayMenuImage"/>).</summary>
+    public ContextMenuStrip Menu => _menu;
+
     public void Dispose()
     {
         _notifyIcon.Visible = false;

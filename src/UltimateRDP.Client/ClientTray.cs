@@ -69,21 +69,26 @@ internal sealed class ClientTray : IDisposable
             old.Dispose();
         }
 
-        var sessions = _sessions();
+        Fill(_menu.Items, _bold, _sessions(), _show, _disconnect, _exit);
+    }
+
+    /// <summary>The entries of the menu for <paramref name="sessions"/>; also used to draw it for the README.</summary>
+    public static void Fill(ToolStripItemCollection items, Font bold, IReadOnlyList<(string Program, string Server)> sessions, Action show, Action disconnect, Action exit)
+    {
         if (sessions.Count == 0)
         {
-            _menu.Items.Add(new ToolStripMenuItem(Strings.TrayNoSession) { Enabled = false });
+            items.Add(new ToolStripMenuItem(Strings.TrayNoSession) { Enabled = false });
         }
 
         foreach (var (program, server) in sessions)
         {
-            _menu.Items.Add(new ToolStripMenuItem(LocalText.Of(nameof(Strings.TraySessionLine), program, server).ToString().Replace("&", "&&", StringComparison.Ordinal)) { Enabled = false });
+            items.Add(new ToolStripMenuItem(LocalText.Of(nameof(Strings.TraySessionLine), program, server).ToString().Replace("&", "&&", StringComparison.Ordinal)) { Enabled = false });
         }
 
-        _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add(new ToolStripMenuItem(Strings.TrayShowClient, null, (_, _) => _show()) { Font = _bold });
-        _menu.Items.Add(new ToolStripMenuItem(Strings.TrayDisconnect, null, (_, _) => _disconnect()) { Enabled = sessions.Count > 0 });
-        _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add(new ToolStripMenuItem(Strings.TrayExit, null, (_, _) => _exit()));
+        items.Add(new ToolStripSeparator());
+        items.Add(new ToolStripMenuItem(Strings.TrayShowClient, null, (_, _) => show()) { Font = bold });
+        items.Add(new ToolStripMenuItem(Strings.TrayDisconnect, null, (_, _) => disconnect()) { Enabled = sessions.Count > 0 });
+        items.Add(new ToolStripSeparator());
+        items.Add(new ToolStripMenuItem(Strings.TrayExit, null, (_, _) => exit()));
     }
 }

@@ -1,6 +1,5 @@
 using System.Drawing.Imaging;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using UltimateRDP.Client.Localization;
 using UltimateRDP.Core.Launchers;
 
@@ -24,10 +23,6 @@ internal static class LauncherPreview
     private const string SampleExe = @"C:\Users\utilisateur\AppData\Local\UltimateRDP\client-0.10.0\UltimateRDP.exe";
 
     private const string SampleTypedExe = @"%LOCALAPPDATA%\UltimateRDP\client-0.10.0\UltimateRDP.exe";
-
-    private const int GwlStyle = -16;
-
-    private const long WsVisible = 0x10000000;
 
     /// <summary>What the previews could not draw as the dialog does, if anything.</summary>
     private static string _notes = string.Empty;
@@ -88,9 +83,10 @@ internal static class LauncherPreview
     /// (<c>__COMPAT_LAYER=DpiUnaware</c>), the 200 % ones by a process on a monitor at 200 %.
     /// files.txt says when the DPI did not match.
     /// </summary>
-    private static Bitmap Draw(float scale, LauncherDraft draft, bool advanced) => DrawAtCurrentDpi(scale, draft, advanced);
+    private static Bitmap Draw(float scale, LauncherDraft draft, bool advanced) => Draw(scale, draft, advanced, SampleExe, ref _notes);
 
-    private static Bitmap DrawAtCurrentDpi(float scale, LauncherDraft draft, bool advanced)
+    /// <summary>The dialog with <paramref name="draft"/>, framed, for the previews and the images of the README.</summary>
+    public static Bitmap Draw(float scale, LauncherDraft draft, bool advanced, string runningExe, ref string notes)
     {
         using var host = new Form
         {
@@ -102,7 +98,7 @@ internal static class LauncherPreview
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
         };
-        using var panel = LauncherForm.NewPanel(scale, SampleExe, canFillFromSession: true, out var font, out var monoFont);
+        using var panel = LauncherForm.NewPanel(scale, runningExe, canFillFromSession: true, out var font, out var monoFont);
         using (font)
         using (monoFont)
         {
@@ -110,85 +106,15 @@ internal static class LauncherPreview
             host.Controls.Add(panel);
             panel.SetDraft(draft);
             panel.ShowAdvanced(advanced);
-
-            // The handles of every control, parents first, without showing the window: the
-            // drawing goes through the windows that exist.
-            CreateHandles(host);
+            Previews.HiddenRender.CreateHandles(host);
             host.PerformLayout();
             if (host.DeviceDpi != (int)(96 * scale))
             {
-                _notes += string.Create(CultureInfo.InvariantCulture, $"The {scale * 100:0} % previews were drawn in windows of {host.DeviceDpi} DPI: the boxes of the check boxes and radio buttons have the size of that DPI. ");
+                notes += string.Create(CultureInfo.InvariantCulture, $"The {scale * 100:0} % images were drawn in windows of {host.DeviceDpi} DPI: the boxes of the check boxes and radio buttons have the size of that DPI. ");
             }
 
-            using var content = new Bitmap(panel.Width, panel.Height, PixelFormat.Format24bppRgb);
-            panel.DrawToBitmap(content, new Rectangle(Point.Empty, panel.Size));
-            using (var graphics = Graphics.FromImage(content))
-            {
-                DrawComboTexts(graphics, panel, panel);
-            }
-
-            var title = (int)Math.Round(32 * scale);
-            var border = Math.Max(1, (int)Math.Round(scale));
-            var canvas = new Bitmap(content.Width + (2 * border), content.Height + title + border, PixelFormat.Format24bppRgb);
-            using var canvasGraphics = Graphics.FromImage(canvas);
-            canvasGraphics.Clear(Color.FromArgb(160, 160, 160));
-            using (var bar = new SolidBrush(Color.White))
-            {
-                canvasGraphics.FillRectangle(bar, border, border, content.Width, title - border);
-            }
-
-            TextRenderer.DrawText(canvasGraphics, LauncherForm.TitleText, font, new Rectangle(border + (int)(12 * scale), border, content.Width, title - border), Color.Black, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
-            canvasGraphics.DrawImage(content, border, title);
-            return canvas;
+            using var content = Previews.HiddenRender.DrawControl(panel);
+            return Previews.HiddenRender.Frame(content, LauncherForm.TitleText, font, scale);
         }
     }
-
-    /// <summary>
-    /// A drop-down list does not draw its text into a bitmap: the text of each one shown is
-    /// drawn where the list shows it, left of its arrow.
-    /// </summary>
-    private static void DrawComboTexts(Graphics graphics, Control root, Control parent)
-    {
-        foreach (Control child in parent.Controls)
-        {
-            if (!HasVisibleStyle(child))
-            {
-                continue;
-            }
-
-            if (child is ComboBox combo)
-            {
-                var scale = combo.DeviceDpi / 96f;
-                var bounds = new Rectangle(root.PointToClient(combo.PointToScreen(Point.Empty)), combo.Size);
-                var arrow = (int)(SystemInformation.VerticalScrollBarWidth * scale);
-                var text = new Rectangle(bounds.X + (int)(4 * scale), bounds.Y, bounds.Width - arrow - (int)(6 * scale), bounds.Height);
-                using (var back = new SolidBrush(SystemColors.Window))
-                {
-                    graphics.FillRectangle(back, text);
-                }
-
-                // GDI+ text: GDI text drawn on a bitmap comes out bold, as for the previews of the loader.
-                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-                using var format = new StringFormat(StringFormatFlags.NoWrap) { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
-                graphics.DrawString(combo.Text, combo.Font, SystemBrushes.ControlText, text, format);
-            }
-
-            DrawComboTexts(graphics, root, child);
-        }
-    }
-
-    /// <summary>WS_VISIBLE of the window of <paramref name="control"/>: the window is hidden, so <see cref="Control.Visible"/> cannot tell.</summary>
-    private static bool HasVisibleStyle(Control control) => (GetWindowLongPtr(control.Handle, GwlStyle).ToInt64() & WsVisible) != 0;
-
-    private static void CreateHandles(Control control)
-    {
-        _ = control.Handle;
-        foreach (Control child in control.Controls)
-        {
-            CreateHandles(child);
-        }
-    }
-
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
-    private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
 }

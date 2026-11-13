@@ -36,6 +36,12 @@ internal static class Program
             return LoaderPreview.Render(previewFolder);
         }
 
+        // Development aid: the images of the README, without any window.
+        if (args is [Previews.ReadmeImages.Switch, var readmeFolder, .. var readmeLanguages])
+        {
+            return Previews.ReadmeImages.Render(readmeFolder, readmeLanguages);
+        }
+
         // Development aid: previews of the launcher generator as PNG files, without any window.
         if (args is [Launchers.LauncherPreview.Switch, var launcherFolder, .. var launcherScales])
         {
