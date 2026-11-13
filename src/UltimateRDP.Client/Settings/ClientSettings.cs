@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Core.Agent;
 using UltimateRDP.Core.Credentials;
+using UltimateRDP.Core.RemoteApp;
 using UltimateRDP.Core.Localization;
 using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.Recent;
@@ -106,6 +107,17 @@ internal sealed class ClientSettings
     [JsonIgnore]
     public bool ReceivesFiles => SendToClient.ParseAutoNever(ReceiveFiles, out _) && DirectTransferMode == DirectTransferMode.Auto;
 
+    /// <summary>
+    /// Since 0.9.3: <c>on</c> by default, a loader shows at once when the client starts with a
+    /// .rdp file and for each session that opens, until the start is over; <c>off</c> shows none.
+    /// Only editable in the file.
+    /// </summary>
+    public string Loader { get; set; } = LoaderRules.ToSetting(true);
+
+    /// <summary>True when <see cref="Loader"/> is <c>on</c>.</summary>
+    [JsonIgnore]
+    public bool LoaderOn => LoaderRules.ParseLoader(Loader, out _);
+
     /// <summary>True when <see cref="Credentials"/> is <c>ask</c>.</summary>
     [JsonIgnore]
     public bool AlwaysAskPassword
@@ -173,7 +185,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, direct connection {DirectTransfer} with up to {DirectConnections} connection(s), receive files {ReceiveFiles} into {ReceiveFolderPath}, credentials {Credentials}, log level {LogLevel}";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, direct connection {DirectTransfer} with up to {DirectConnections} connection(s), receive files {ReceiveFiles} into {ReceiveFolderPath}, credentials {Credentials}, loader {Loader}, log level {LogLevel}";
 
     private ClientSettings Normalized()
     {
@@ -225,6 +237,13 @@ internal sealed class ClientSettings
         }
 
         Credentials = CredentialPrompt.ToSetting(ask);
+        var loader = LoaderRules.ParseLoader(Loader, out recognized);
+        if (!recognized)
+        {
+            ClientLog.Warn($"The loader setting \"{Loader}\" is unknown; using \"on\". Use \"on\" or \"off\".");
+        }
+
+        Loader = LoaderRules.ToSetting(loader);
         if (ReceiveFolder is { } folder && (folder.Trim().Length == 0 || !Path.IsPathFullyQualified(Environment.ExpandEnvironmentVariables(folder.Trim()))))
         {
             ClientLog.Warn($"The receiveFolder setting \"{folder}\" is not a full path; using the Downloads folder.");

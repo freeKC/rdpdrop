@@ -240,6 +240,27 @@ The next connection asks for them again. The open session is not affected.</valu
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>Full screen is available once connected.</value>
   </data>
+  <data name="LoaderCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="LoaderConnecting" xml:space="preserve">
+    <value>Connecting to {0}...</value>
+    <comment>{0} is the host of the session.</comment>
+  </data>
+  <data name="LoaderOpeningSession" xml:space="preserve">
+    <value>Opening the session...</value>
+  </data>
+  <data name="LoaderSlow" xml:space="preserve">
+    <value>The server takes longer than usual.</value>
+  </data>
+  <data name="LoaderStarting" xml:space="preserve">
+    <value>Starting...</value>
+    <comment>First step of the loader, before the connection starts.</comment>
+  </data>
+  <data name="LoaderStartingProgram" xml:space="preserve">
+    <value>Starting {0}...</value>
+    <comment>{0} is the name of the RemoteApp program.</comment>
+  </data>
   <data name="LogOffFailedNoDetail" xml:space="preserve">
     <value>Log off failed: no detail from the agent.</value>
   </data>

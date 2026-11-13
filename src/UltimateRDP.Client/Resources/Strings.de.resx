@@ -211,6 +211,24 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>Vollbild ist verfügbar, sobald eine Verbindung besteht.</value>
   </data>
+  <data name="LoaderCancel" xml:space="preserve">
+    <value>Abbrechen</value>
+  </data>
+  <data name="LoaderConnecting" xml:space="preserve">
+    <value>Verbindung mit {0} wird hergestellt...</value>
+  </data>
+  <data name="LoaderOpeningSession" xml:space="preserve">
+    <value>Sitzung wird geöffnet...</value>
+  </data>
+  <data name="LoaderSlow" xml:space="preserve">
+    <value>Der Server braucht länger als gewöhnlich.</value>
+  </data>
+  <data name="LoaderStarting" xml:space="preserve">
+    <value>Wird gestartet...</value>
+  </data>
+  <data name="LoaderStartingProgram" xml:space="preserve">
+    <value>{0} wird gestartet...</value>
+  </data>
   <data name="LogOffFailedNoDetail" xml:space="preserve">
     <value>Abmelden fehlgeschlagen: keine Angabe vom Agent.</value>
   </data>

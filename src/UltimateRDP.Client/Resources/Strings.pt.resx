@@ -211,6 +211,24 @@ A próxima conexão vai solicitá-las novamente. A sessão aberta não é afetad
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>A tela inteira fica disponível depois de conectar.</value>
   </data>
+  <data name="LoaderCancel" xml:space="preserve">
+    <value>Cancelar</value>
+  </data>
+  <data name="LoaderConnecting" xml:space="preserve">
+    <value>Conectando a {0}...</value>
+  </data>
+  <data name="LoaderOpeningSession" xml:space="preserve">
+    <value>Abrindo a sessão...</value>
+  </data>
+  <data name="LoaderSlow" xml:space="preserve">
+    <value>O servidor está demorando mais do que o normal.</value>
+  </data>
+  <data name="LoaderStarting" xml:space="preserve">
+    <value>Iniciando...</value>
+  </data>
+  <data name="LoaderStartingProgram" xml:space="preserve">
+    <value>Iniciando {0}...</value>
+  </data>
   <data name="LogOffFailedNoDetail" xml:space="preserve">
     <value>Falha ao encerrar a sessão: nenhum detalhe do agente.</value>
   </data>

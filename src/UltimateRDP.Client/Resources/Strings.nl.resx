@@ -211,6 +211,24 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>Volledig scherm is beschikbaar zodra er verbinding is.</value>
   </data>
+  <data name="LoaderCancel" xml:space="preserve">
+    <value>Annuleren</value>
+  </data>
+  <data name="LoaderConnecting" xml:space="preserve">
+    <value>Verbinden met {0}...</value>
+  </data>
+  <data name="LoaderOpeningSession" xml:space="preserve">
+    <value>Sessie openen...</value>
+  </data>
+  <data name="LoaderSlow" xml:space="preserve">
+    <value>De server doet er langer over dan gewoonlijk.</value>
+  </data>
+  <data name="LoaderStarting" xml:space="preserve">
+    <value>Starten...</value>
+  </data>
+  <data name="LoaderStartingProgram" xml:space="preserve">
+    <value>{0} starten...</value>
+  </data>
   <data name="LogOffFailedNoDetail" xml:space="preserve">
     <value>Afmelden mislukt: geen details van de agent.</value>
   </data>

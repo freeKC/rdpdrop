@@ -211,6 +211,24 @@ La prochaine connexion les demandera de nouveau. La session ouverte n'est pas to
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>Le plein écran est disponible une fois connecté.</value>
   </data>
+  <data name="LoaderCancel" xml:space="preserve">
+    <value>Annuler</value>
+  </data>
+  <data name="LoaderConnecting" xml:space="preserve">
+    <value>Connexion à {0}...</value>
+  </data>
+  <data name="LoaderOpeningSession" xml:space="preserve">
+    <value>Ouverture de la session...</value>
+  </data>
+  <data name="LoaderSlow" xml:space="preserve">
+    <value>Le serveur met plus de temps que d'habitude.</value>
+  </data>
+  <data name="LoaderStarting" xml:space="preserve">
+    <value>Démarrage...</value>
+  </data>
+  <data name="LoaderStartingProgram" xml:space="preserve">
+    <value>Démarrage de {0}...</value>
+  </data>
   <data name="LogOffFailedNoDetail" xml:space="preserve">
     <value>Échec de la fermeture de session : l'agent n'a donné aucun détail.</value>
   </data>
