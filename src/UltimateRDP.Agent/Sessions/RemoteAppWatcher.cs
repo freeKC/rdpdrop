@@ -168,7 +168,7 @@ internal sealed class RemoteAppWatcher
         }
 
         _listFailures = 0;
-        var check = _watch.Check(applications, _busy());
+        var check = _watch.Check(applications, _busy(), TimeSpan.FromMilliseconds(Environment.TickCount64 - _startTicks));
         if (check.Changed)
         {
             _logger.Info($"RemoteApp session: {check.Describe()}.");

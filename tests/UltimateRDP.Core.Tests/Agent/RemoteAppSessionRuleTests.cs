@@ -119,6 +119,49 @@ public class RemoteAppSessionRuleTests
     }
 
     [Fact]
+    public void Empty_checks_do_not_count_while_the_program_may_still_be_starting()
+    {
+        var watch = new RemoteAppExitWatch();
+
+        var first = watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(15));
+        var second = watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(30));
+        var third = watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(75));
+
+        Assert.Equal(RemoteAppVerdict.StayAtStart, first.Verdict);
+        Assert.True(first.Changed);
+        Assert.Equal(RemoteAppVerdict.StayAtStart, second.Verdict);
+        Assert.False(second.Changed);
+        Assert.Equal(RemoteAppVerdict.StayAtStart, third.Verdict);
+
+        // After the wait, the usual two checks decide.
+        Assert.Equal(RemoteAppVerdict.Stay, watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(90)).Verdict);
+        Assert.Equal(RemoteAppVerdict.Exit, watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(105)).Verdict);
+    }
+
+    [Fact]
+    public void The_wait_at_start_ends_with_the_first_application()
+    {
+        var watch = new RemoteAppExitWatch();
+
+        Assert.Equal(RemoteAppVerdict.StayAtStart, watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(15)).Verdict);
+        Assert.Equal(RemoteAppVerdict.Stay, watch.Check(["MyApp.exe"], busy: false, sinceStart: TimeSpan.FromSeconds(30)).Verdict);
+
+        // The program was seen and closed: the checks count at once, also within the wait.
+        Assert.Equal(RemoteAppVerdict.Stay, watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(45)).Verdict);
+        Assert.Equal(RemoteAppVerdict.Exit, watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(60)).Verdict);
+    }
+
+    [Fact]
+    public void A_disconnected_session_makes_the_agent_exit_even_within_the_wait_at_start()
+    {
+        var watch = new RemoteAppExitWatch();
+
+        watch.Check([], busy: false, sinceStart: TimeSpan.FromSeconds(15));
+
+        Assert.Equal(RemoteAppVerdict.Exit, watch.OnDisconnected([]).Verdict);
+    }
+
+    [Fact]
     public void An_application_between_two_empty_checks_starts_the_count_again()
     {
         var watch = new RemoteAppExitWatch();

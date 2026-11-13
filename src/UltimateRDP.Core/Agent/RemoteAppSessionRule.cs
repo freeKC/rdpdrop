@@ -22,6 +22,12 @@ public enum RemoteAppVerdict
     /// <summary>No application is left, but a drag or a transfer runs: the next check decides.</summary>
     StayWhileBusy,
 
+    /// <summary>
+    /// No application ran yet and the agent started a short time ago: the program of the
+    /// session may still be starting, so the check does not count.
+    /// </summary>
+    StayAtStart,
+
     /// <summary>No application is left: the agent exits, so that the session can end.</summary>
     Exit,
 }
@@ -51,6 +57,14 @@ public static class RemoteAppSessionRule
     /// after its last window closed.
     /// </summary>
     public const int EmptyChecksToExit = 2;
+
+    /// <summary>
+    /// How long after its start the agent waits for a first application before an empty
+    /// check counts: a task started at logon runs before the program of the session, and a
+    /// busy server may take a while to start it. A disconnected session still makes the
+    /// agent exit at once, so this wait cannot hold a session that nobody uses.
+    /// </summary>
+    public static readonly TimeSpan StartGrace = TimeSpan.FromSeconds(90);
 
     /// <summary>
     /// The processes that run in every RemoteApp session whatever the program, as a survey
@@ -172,6 +186,7 @@ public sealed record RemoteAppCheck(RemoteAppVerdict Verdict, int EmptyChecks, I
     {
         RemoteAppVerdict.Exit => FormattableString.Invariant($"no application is left after {EmptyChecks} check(s)"),
         RemoteAppVerdict.StayWhileBusy => FormattableString.Invariant($"no application is left after {EmptyChecks} check(s), but a drag or a transfer runs"),
+        RemoteAppVerdict.StayAtStart => FormattableString.Invariant($"no application runs yet; the agent waits {RemoteAppSessionRule.StartGrace.TotalSeconds:0} s after its start before it counts the checks"),
         _ when Applications.Count == 0 => FormattableString.Invariant($"no application is left at check {EmptyChecks} of {RemoteAppSessionRule.EmptyChecksToExit}"),
         _ => "applications running: " + string.Join(", ", Applications),
     };
@@ -188,16 +203,28 @@ public sealed class RemoteAppExitWatch
     private int _emptyChecks;
     private RemoteAppVerdict? _lastVerdict;
     private IReadOnlyList<string> _lastApplications = [];
+    private bool _seenApplication;
 
-    /// <summary>A regular check, with the applications found and whether a drag or a transfer runs.</summary>
-    public RemoteAppCheck Check(IReadOnlyList<string> applications, bool busy)
+    /// <summary>
+    /// A regular check, with the applications found, whether a drag or a transfer runs, and
+    /// the time since the agent started when it is known. Until a first application was
+    /// seen, an empty check within <see cref="RemoteAppSessionRule.StartGrace"/> of the
+    /// start does not count.
+    /// </summary>
+    public RemoteAppCheck Check(IReadOnlyList<string> applications, bool busy, TimeSpan? sinceStart = null)
     {
         ArgumentNullException.ThrowIfNull(applications);
         RemoteAppVerdict verdict;
         if (applications.Count > 0)
         {
+            _seenApplication = true;
             _emptyChecks = 0;
             verdict = RemoteAppVerdict.Stay;
+        }
+        else if (!_seenApplication && sinceStart is { } elapsed && elapsed < RemoteAppSessionRule.StartGrace)
+        {
+            _emptyChecks = 0;
+            verdict = RemoteAppVerdict.StayAtStart;
         }
         else
         {
@@ -225,7 +252,7 @@ public sealed class RemoteAppExitWatch
     {
         var changed = verdict != _lastVerdict
             || !applications.SequenceEqual(_lastApplications, StringComparer.OrdinalIgnoreCase)
-            || (applications.Count == 0 && _emptyChecks == 1);
+            || (applications.Count == 0 && _emptyChecks == 1 && verdict != RemoteAppVerdict.StayAtStart);
         _lastVerdict = verdict;
         _lastApplications = [.. applications];
         return new RemoteAppCheck(verdict, applications.Count == 0 ? Math.Max(1, _emptyChecks) : 0, _lastApplications, changed);

@@ -3175,7 +3175,12 @@ In a RemoteApp session, the rules are `RemoteAppSessionRule` and `RemoteAppExitW
   and exits with code 0. The first check comes 15 seconds after the detection, so the agent
   leaves 30 seconds at the earliest after the program closed, after the 20 seconds a
   RemoteApp session waits after its last window.
-* When the session is disconnected and no application is left, the agent exits at once.
+* Until a first application was seen, an empty check within 90 seconds of the start of the
+  agent does not count: a task started at logon runs before the program of the session, and
+  a busy server may take a while to start it. Without this wait the agent would leave such a
+  session for good before its program appears.
+* When the session is disconnected and no application is left, the agent exits at once, also
+  within these 90 seconds.
 * The processes that cannot be listed twice in a row, or a timer that cannot be started, also
   make the agent exit: an agent that cannot see the session must not keep it open. An exit
   for no reason only costs the UltimateRDP user the agent until the next logon; staying for
