@@ -3686,3 +3686,12 @@ direct connection keeps version 2 and gains the role byte, which only the revers
 uses, so that a drop between 0.9.0 and 0.8.0 or 0.7.0 goes as before. A client 0.8.0 or older
 never says `acceptsFiles`, so an agent 0.9.0 never creates the shortcut for it, and an agent 0.8.0
 ignores the field. Both sides ship as 0.9.0.
+
+## Version 0.9.1
+
+Two fixes of the client after the first real tests of 0.9.0.
+
+- The control of the Windows version of the tests never raises OnRemoteWindowDisplayed: every window of the program was found by the WinEvent hook of the process. The first window of the program, which closes the connecting window and starts the memory lines, is therefore also taken from the windows that `RailDropTargets` knows: a visible window of a program that belongs to the session, or to no known session when several RemoteApp sessions run in the process.
+- A menu of the main window stayed open at a click in the remote session. Windows Forms closes its menus from a filter of the mouse messages of the thread of the window, and the control takes the mouse in a window of another thread, so the filter saw nothing. `MenuClickAway` runs a timer of 30 ms only while the menu is active; a mouse button down over a window that is not a menu is told to Windows Forms as a click outside the menus, with a mouse message posted to a hidden window of the client, so the menu closes by its usual path. When the menu is still active at the next tick, its open lists are closed directly. No hook is installed and no input is sent to another window.
+
+Measured in production with 0.9.0: sends from the session reach 115 to 134 MB/s over eight connections, which is the ceiling of the path from that server (about 120 MB/s with raw TCP over 8 or 16 connections, 15 to 20 MB/s over one). The same path at times carries only 20 to 40 MB/s for tens of seconds, with raw TCP as well, with about 2 % of the segments sent again; neither the adapter of the server nor the one of the client counts an error. A cap of 85 MB/s (`directMaxMegabytesPerSecond`) held for the length of a test with 0.3 % of the segments sent again.
