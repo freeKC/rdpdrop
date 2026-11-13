@@ -358,19 +358,28 @@ public sealed class DirectReceiver
     /// for the files that the session sends since 0.9.0. Connection 0 comes first. Returns when
     /// the connection is over; never throws for what the other side sends.
     /// </summary>
-    public DirectServeResult Attach(int index, Stream stream)
+    public DirectServeResult Attach(int index, Stream stream) =>
+        Register(index, stream) is { } refusal ? new DirectServeResult(-1, refusal) : RunRegistered(index);
+
+    /// <summary>
+    /// Registers connection <paramref name="index"/>, whose token frame the caller sent and
+    /// whose ready frame it read, without reading it yet: the caller registers connection 0
+    /// before it opens the others, so that their order never depends on threads. Returns null
+    /// when registered, otherwise why not, in English. <see cref="RunRegistered"/> reads it.
+    /// </summary>
+    public string? Register(int index, Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
         lock (_gate)
         {
             if (IsFinished)
             {
-                return new DirectServeResult(-1, "The transfer is over.");
+                return "The transfer is over.";
             }
 
             if (index < 0 || index >= MaxConnections || _connections[index] is not null || (index != 0 && _connections[0] is null))
             {
-                return new DirectServeResult(-1, $"Connection {index} cannot be attached now.");
+                return $"Connection {index} cannot be attached now.";
             }
 
             _connections[index] = new Connection(stream);
@@ -378,6 +387,26 @@ public sealed class DirectReceiver
             {
                 _state = DirectReceiverState.AwaitingBegin;
             }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads connection <paramref name="index"/>, registered by <see cref="Register(int, Stream)"/>, until
+    /// it is over. Never throws for what the other side sends.
+    /// </summary>
+    public DirectServeResult RunRegistered(int index)
+    {
+        Stream stream;
+        lock (_gate)
+        {
+            if (index < 0 || index >= MaxConnections || _connections[index] is not { } connection)
+            {
+                return new DirectServeResult(-1, $"Connection {index} is not registered.");
+            }
+
+            stream = connection.Stream;
         }
 
         try

@@ -57,6 +57,65 @@ public class DirectReverseTests
     }
 
     [Fact]
+    public void The_files_arrive_in_a_part_folder_on_disk_and_move_into_the_folder_for_received_files_without_replacing_anything()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ultimaterdp-tests-" + Guid.NewGuid().ToString("N"));
+        var part = Path.Combine(root, ReceiveNames.PartFolderName("0f3c")!);
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "Photos"));
+            File.WriteAllText(Path.Combine(root, "report.pdf"), "an older file");
+            var a = Data((2 * Block) + 5, 1);
+            var b = Data(100, 2);
+            var completed = new ConcurrentQueue<string>();
+            var storage = new FolderDirectStorage(part, completed.Enqueue);
+            TransferFile[] files = [new("report.pdf", a.Length, new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc)), new(@"Photos\b.jpg", b.Length)];
+
+            using (var run = new ReverseRun(files, [a, b], 2, storage: storage))
+            {
+                run.Start();
+                Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
+            }
+
+            Assert.Equal(2, completed.Count);
+            var moved = ReceivePolicy.MoveIn(part, root, Items);
+
+            Assert.Equal([Path.Combine(root, "report (2).pdf"), Path.Combine(root, "Photos (2)")], moved);
+            Assert.Equal("an older file", File.ReadAllText(Path.Combine(root, "report.pdf")));
+            Assert.Equal(a, File.ReadAllBytes(Path.Combine(root, "report (2).pdf")));
+            Assert.Equal(b, File.ReadAllBytes(Path.Combine(root, "Photos (2)", "b.jpg")));
+            Assert.Equal(new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc), File.GetLastWriteTimeUtc(Path.Combine(root, "report (2).pdf")));
+            Assert.Throws<IOException>(() => storage.FullPath(@"..\outside.txt"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_failed_transfer_deletes_its_part_folder_on_disk()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ultimaterdp-tests-" + Guid.NewGuid().ToString("N"));
+        var part = Path.Combine(root, ReceiveNames.PartFolderName("77")!);
+        try
+        {
+            var a = Data(64 * Block, 1);
+            using (var run = new ReverseRun([new("report.pdf", a.Length)], [a], 4, storage: new FolderDirectStorage(part), cutAgentToClientAfter: index => index == 1 ? 2L * Block : long.MaxValue))
+            {
+                run.Start();
+                Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
+            }
+
+            Assert.False(Directory.Exists(part));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void A_cancel_on_the_client_that_receives_ends_both_sides_and_deletes_what_came()
     {
         var a = Data(30 * Block, 1);
@@ -314,9 +373,12 @@ public class DirectReverseTests
             DirectFrames.Write(clientEnd, DirectFrameType.Token, DirectFrames.TokenPayload(Token, (byte)index, DirectRole.ClientReceives));
             Assert.True(new DirectFrameReader(clientEnd).TryRead(out var type, out _));
             Assert.Equal(DirectFrameType.Ready, type);
+
+            // Registered here, in the order of the indexes, as the client does; only the reads run on threads.
+            Assert.Null(Receiver.Register(index, clientEnd));
             var client = new Thread(() =>
             {
-                Receiver.Attach(index, clientEnd);
+                Receiver.RunRegistered(index);
                 clientEnd.Dispose();
             })
             {
