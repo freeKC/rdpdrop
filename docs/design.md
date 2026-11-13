@@ -1,6 +1,6 @@
 # UltimateRDP design
 
-Date: 2026-11-05, updated on 2026-11-13 for version 0.9.0.
+Date: 2026-11-05, updated on 2026-11-13 for version 0.9.3.
 
 ## Goal
 
@@ -3699,3 +3699,121 @@ Measured in production with 0.9.0: sends from the session reach 115 to 134 MB/s 
 ## Version 0.9.2
 
 One setting of the agent. `directMaxMegabytesPerSecond` limits both directions, and the two directions of a server are seldom alike: the server of the tests receives 255 to 296 MB/s and sends at most about 120 MB/s, with its other sessions on the same outbound link. `sendMaxMegabytesPerSecond` limits the sending alone (`DirectTransferPolicy.SendLimit`): above 0 it is the limit of a send, otherwise the limit of `directMaxMegabytesPerSecond` stays, as in 0.9.0. It is read at startup, from the file of the user or from the machine settings, and written in the first line of the agent log.
+
+## Version 0.9.3
+
+A loader that shows at once when UltimateRDP starts with a .rdp file, from a .bat file, a
+shortcut or the executable, since the start of a RemoteApp program took about 12 seconds in the
+real tests of 0.9.x: 7 seconds to OnConnected, 10 to OnLoginComplete, 12 to the first window. It
+replaces the connecting window of 0.9.0: one component, for RemoteApp programs and desktops.
+
+### What it shows
+
+A borderless window of 380 by 136 pixels at 96 DPI, scaled to the DPI of its monitor: the mark of
+UltimateRDP, the arrow into a tray of the tray icon of the agent, drawn by the client;
+"UltimateRDP" and, once the .rdp file is read, what is opening, the name of the RemoteApp program or
+the server of a desktop; a moving bar drawn by the client, a segment of 30 % of the track that
+crosses it in 1.6 s, from a timer of 33 ms; the step; and Cancel once a session is attached. After
+10 seconds a second line says that the server takes longer than usual. Light or dark after the app
+theme of Windows (`AppsUseLightTheme`). On Windows 11 the corners are rounded by Windows
+(`DWMWA_WINDOW_CORNER_PREFERENCE`); the shadow is the drop shadow of the window class. No image and
+no new dependency ship with it. The texts are drawn with GDI+ antialiasing, which looks the same on
+the screen and in a bitmap.
+
+The steps are `LoaderProgress` in Core, tested without a window:
+
+| Event | Step | Text |
+| --- | --- | --- |
+| the process starts | Starting | "Starting..." |
+| Connect | Connecting | "Connecting to {server}..." |
+| OnConnected | OpeningSession | "Opening the session..." |
+| OnLoginComplete of a RemoteApp session | StartingProgram | "Starting {program}..." |
+| OnLoginComplete of a desktop | closed | |
+| first window of the program, from the event of the control or from the windows found in the process (0.9.1) | closed | |
+| a failure, a disconnection, a cancel, the close of the tab | closed | |
+
+Steps only go forward. An end before the start is over closes the loader, and the existing paths
+show their messages, as in 0.9.0. Cancel does what Cancel of the connecting window did: the tab
+closes, which disconnects the session, and the client exits when it was out of sight with no other
+tab.
+
+### At the start of the process
+
+`Program` does, in this order: the configuration of Windows Forms; the two settings the loader
+needs, read from client.json with a JSON tokenizer and without its full reader
+(`LoaderRules.ReadEarlySettings`: `loader` and `language`); the command line; the pipe of the single
+instance; then, when a .rdp file was given and `loader` is not `off`, the loader, shown and painted
+at once. Only then come the log, the full settings, the reading of the .rdp file, which gives the
+loader its title, and the main window. A second start that hands its file to the running client
+shows no loader of its own: the running client shows the loader of the new session at once. The
+log says `Loader shown N ms after the process started`, from the start time of the process.
+
+### Where it sits
+
+In the middle of the monitor of the mouse while the main window is out of sight. While the main
+window is on a monitor, as for a desktop or with `--show`, it sits over the main window and is
+owned by it, so that it stays above it: the tab of a desktop that connects shows the loader over
+its surface rather than the black control alone. Drawing the loader inside the tab was the other
+choice; it would have meant a control over the Remote Desktop control, a windowed ActiveX control,
+whose z order the 0.8.0 tab with its panel showed to be fragile, so the floating window was chosen.
+Several sessions that start together each get their own loader, one below the other, without
+overlap.
+
+### Dialogs
+
+The loader never takes the focus: it is shown without activation, has `WS_EX_NOACTIVATE` and
+`WS_EX_TOOLWINDOW`, answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE`, is not topmost, and has no
+taskbar button. Every 250 ms it looks for a visible top level window that waits for an answer
+(`LoaderRules.IsAnswerAwaited`): a dialog of the client process, class `#32770`, such as the
+certificate question of the control or a message box of the client, or the credential prompt of
+Windows, class `Credential Dialog Xaml Host`, whatever its process. While one shows, the loader
+hides; it comes back when the dialog is gone if the start still runs. Both are logged:
+
+```
+Loader of <title> hidden after 3150 ms: a window waits for an answer (class #32770, process 1234, this one, title "...").
+Loader of <title> shown again after 9870 ms: no window waits for an answer any more.
+```
+
+### Settings
+
+`loader` in client.json, `on` by default, `off` for no loader; only editable in the file.
+
+### Logs
+
+```
+Loader shown 95 ms after the process started.
+Loader of the start shown at {X=...,Y=...,Width=...,Height=...} on a monitor of 144 DPI, dark theme.
+Loader of <title>: Connecting after 410 ms (Connecting).
+Loader of <title>: OpeningSession after 7210 ms (Connected).
+Loader of <title>: StartingProgram after 9830 ms (LoggedOn).
+Loader of <title>: Closed after 12190 ms (FirstProgramWindow).
+Loader of <title> closed after 12190 ms: the first window of the program appeared.
+```
+
+### Previews
+
+Development aid: `UltimateRDP.exe --render-loader <folder>` writes PNG previews of the loader with
+the paint code of the window, into bitmaps, without showing any window: 100 % and 200 %, light and
+dark, the steps Starting, a RemoteApp program that starts, a desktop that connects, and a desktop
+with the notice of a slow start, in French. The previews add the rounded corners and a soft shadow
+that Windows draws around the real window. A file `timings.txt` gives the time from the start of the
+process to the first preview painted. The switch is not in the help of the command line.
+
+### The cost of the start
+
+Measured on this development computer with the client published as the release workflow does
+(self contained, single file, native libraries inside, no compression), with `--render-loader`, so
+from the start of the process to a painted loader without a window: 80 to 90 ms on a warm start,
+134 to 168 ms on the first start after a publish. With `PublishReadyToRun` the same path takes 78 to
+83 ms, a gain of about 5 ms, for 14.7 MB more (133.4 MB against 118.7 MB): the framework assemblies
+of a self contained publish are already precompiled, and only the assemblies of UltimateRDP and of
+the interop of the control would be. The setting was not applied. The single file is not
+compressed, which would cost time at every start, and not trimmed, which Windows Forms does not
+support. The first start of a new executable can take much longer while an antivirus scans it: a
+freshly built executable took 31.9 s once on this computer, then 0.1 s.
+
+### Not verified without a real screen and a server
+
+The look on a real monitor, the rounding and the shadow of Windows 11 and 10, the position over the
+main window, the hiding while the certificate question or the credential prompt shows, and that the
+loader never takes the focus from them. The log lines above tell the steps and the dialogs met.

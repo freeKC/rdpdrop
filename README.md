@@ -487,7 +487,7 @@ start "" "C:\Tools\UltimateRDP\UltimateRDP.exe" "C:\Users\me\Documents\notepad-s
 
 or a shortcut whose target is `"C:\Tools\UltimateRDP\UltimateRDP.exe" "C:\Users\me\Documents\notepad-server.example.com.rdp"`.
 
-- A small window "Connecting to Notepad..." with Cancel shows in the bottom right corner of the screen until the window of the program appears.
+- From version 0.9.3, a loader shows at once, with the name of the program, a moving bar and the step of the start, "Connecting to server.example.com...", "Opening the session...", then "Starting Notepad...", until the window of the program appears. Its Cancel stops the connection. It hides while the certificate question of the server or the password prompt waits for an answer. A desktop file shows it too, over the UltimateRDP window, until the desktop is logged on. `"loader": "off"` in `%LOCALAPPDATA%\UltimateRDP\client.json` turns it off.
 - The UltimateRDP window stays out of sight. A notification icon names the program and its server, and its menu holds Show UltimateRDP, Disconnect and Exit. No taskbar button shows besides those of the windows of the program.
 - When you close the last window of the program, the server keeps the session about 20 seconds, then ends it, and UltimateRDP exits by itself without a message. Until then, only the notification icon is left.
 - When the connection fails, or ends for another reason, a message says why; when it failed before the logon, the UltimateRDP window shows too, with the reason in its tab and Session, Connect.
