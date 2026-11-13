@@ -35,6 +35,12 @@ public enum DirectReceiverState
 /// <param name="Refusal">Why the token was refused, in English, for the log; null when accepted.</param>
 public readonly record struct DirectServeResult(int Index, string? Refusal);
 
+/// <summary>How long the clean up of the files took after the end of a transfer, for the log.</summary>
+/// <param name="WaitMilliseconds">From the end of the transfer to the moment no thread wrote or read the files any more.</param>
+/// <param name="CloseMilliseconds">Closing the files.</param>
+/// <param name="DeleteMilliseconds">Deleting the folder of the transfer; null after a success, which keeps the files.</param>
+public sealed record DirectCleanUpTimes(long WaitMilliseconds, long CloseMilliseconds, long? DeleteMilliseconds);
+
 /// <summary>
 /// The agent side of a direct transfer, version 2 of the protocol, over up to
 /// <see cref="MaxConnections"/> connections that already did their TLS handshake. Each
@@ -44,7 +50,8 @@ public readonly record struct DirectServeResult(int Index, string? Refusal);
 /// frame sent; then every connection carries blocks, written at their offsets as they
 /// come. A verifier thread reads back the part of each file that is complete from its
 /// start and hashes it, compares the SHA-256 with the trailer, acknowledges on connection 0
-/// and ends with the final frame. Anything that is not a success deletes what was written.
+/// and ends with the final frame. Anything that is not a success deletes what was written, on
+/// a thread of its own after the end, so that nothing waits for the file system.
 /// </summary>
 /// <remarks>
 /// The caller bounds the time: it closes a connection whose token does not come in time,
@@ -72,6 +79,8 @@ public sealed class DirectReceiver
     private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<TransferFile> _headers = [];
     private readonly ManualResetEventSlim _ended = new(false);
+    private readonly ManualResetEventSlim _stopped = new(false);
+    private long _finishStamp;
     private FileSlot[] _files = [];
     private long _announcedBytes;
     private long _bytesAtLastAck;
@@ -141,8 +150,17 @@ public sealed class DirectReceiver
     public event Action<int, string>? ConnectionDropped;
 
     /// <summary>
+    /// Raised once the transfer is over and its connections are closed, or connection 0 is
+    /// left to drain after the final frame; the files may still be closing and deleting.
+    /// </summary>
+    public event Action? Stopped;
+
+    /// <summary>Raised when the transfer ends, before the final frame is written, so that the caller can bound that write.</summary>
+    public event Action? Finishing;
+
+    /// <summary>
     /// Raised once the transfer is over and nothing touches its files any more: every file is
-    /// closed, and deleted unless the transfer succeeded.
+    /// closed, and deleted unless the transfer succeeded. Raised on a thread of its own.
     /// </summary>
     public event Action? Ended;
 
@@ -160,6 +178,12 @@ public sealed class DirectReceiver
 
     /// <summary>True once <see cref="Ended"/> was raised.</summary>
     public bool HasEnded => _ended.IsSet;
+
+    /// <summary>True once <see cref="Stopped"/> was raised.</summary>
+    public bool HasStopped => _stopped.IsSet;
+
+    /// <summary>How long the clean up of the files took, once <see cref="Ended"/> was raised.</summary>
+    public DirectCleanUpTimes? CleanUpTimes { get; private set; }
 
     /// <summary>Why the transfer failed, when <see cref="State"/> is <see cref="DirectReceiverState.Failed"/>.</summary>
     public DirectFailure Failure { get; private set; }
@@ -253,6 +277,9 @@ public sealed class DirectReceiver
 
     /// <summary>Waits at most <paramref name="timeout"/> for <see cref="Ended"/>.</summary>
     public bool WaitEnded(TimeSpan timeout) => _ended.Wait(timeout);
+
+    /// <summary>Waits at most <paramref name="timeout"/> for <see cref="Stopped"/>.</summary>
+    public bool WaitStopped(TimeSpan timeout) => _stopped.Wait(timeout);
 
     /// <summary>
     /// Runs one connection until it is over: reads its token frame, checks the proof for its
@@ -1113,9 +1140,11 @@ public sealed class DirectReceiver
         Finish(DirectReceiverState.Failed, failure, relativePath, detail);
 
     /// <summary>
-    /// Ends the transfer once: the final frame goes out on connection 0 unless a connection
-    /// broke, the other connections close, and the files are closed and, unless it succeeded,
-    /// deleted as soon as no thread writes or reads them.
+    /// Ends the transfer once. The connections other than 0 close first; the final frame goes
+    /// out on connection 0 unless a connection broke, and connection 0 closes when it cannot
+    /// carry one. Then <see cref="Stopped"/> says that the transfer is over. The files are
+    /// closed and, unless it succeeded, deleted afterwards, on a thread of their own, as soon
+    /// as no thread writes or reads them: nothing waits for the file system to end a transfer.
     /// </summary>
     private void Finish(DirectReceiverState state, DirectFailure failure, string? relativePath, string? detail)
     {
@@ -1130,6 +1159,7 @@ public sealed class DirectReceiver
             }
 
             _endTicks = _clock();
+            _finishStamp = Stopwatch.GetTimestamp();
             Failure = failure;
             FailurePath = relativePath;
             FailureDetail = detail;
@@ -1149,11 +1179,17 @@ public sealed class DirectReceiver
         }
 
         Meter.Stop();
+        foreach (var stream in others)
+        {
+            Dispose(stream);
+        }
+
         var sendFinal = control is not null && failure is not (DirectFailure.Token or DirectFailure.Broken);
         if (sendFinal)
         {
             try
             {
+                Finishing?.Invoke();
                 WriteControl(DirectFrameType.Final, DirectFrames.FinalPayload(Result(_describe(this))));
                 FinalWasSent = true;
                 FinalSent?.Invoke();
@@ -1165,23 +1201,20 @@ public sealed class DirectReceiver
             }
         }
 
-        foreach (var stream in others)
-        {
-            Dispose(stream);
-        }
-
         if (!sendFinal && control is not null)
         {
             Dispose(control);
         }
 
+        _stopped.Set();
+        Stopped?.Invoke();
         if (cleanUp)
         {
-            CleanUp();
+            StartCleanUp();
         }
     }
 
-    /// <summary>A thread is done with the files; the last one after the end cleans up.</summary>
+    /// <summary>A thread is done with the files; the last one after the end starts the clean up.</summary>
     private void LeaveBusy()
     {
         bool cleanUp;
@@ -1194,16 +1227,30 @@ public sealed class DirectReceiver
 
         if (cleanUp)
         {
-            CleanUp();
+            StartCleanUp();
         }
+    }
+
+    /// <summary>The clean up runs on a thread of its own, so that no caller, the channel thread included, waits for the file system.</summary>
+    private void StartCleanUp()
+    {
+        var thread = new Thread(CleanUp)
+        {
+            IsBackground = true,
+            Name = "UltimateRDP direct clean up",
+        };
+        thread.Start();
     }
 
     private void CleanUp()
     {
+        var start = Stopwatch.GetTimestamp();
         FileSlot[] files;
+        long finished;
         lock (_gate)
         {
             files = _files;
+            finished = _finishStamp;
             if (_tokenCleared is false)
             {
                 CryptographicOperations.ZeroMemory(_token);
@@ -1216,6 +1263,7 @@ public sealed class DirectReceiver
             slot.Close();
         }
 
+        var closed = Stopwatch.GetTimestamp();
         if (_state != DirectReceiverState.Succeeded)
         {
             try
@@ -1228,9 +1276,16 @@ public sealed class DirectReceiver
             }
         }
 
+        var deleted = Stopwatch.GetTimestamp();
+        CleanUpTimes = new DirectCleanUpTimes(
+            TicksToMilliseconds(start - finished),
+            TicksToMilliseconds(closed - start),
+            _state == DirectReceiverState.Succeeded ? null : TicksToMilliseconds(deleted - closed));
         _ended.Set();
         Ended?.Invoke();
     }
+
+    private static long TicksToMilliseconds(long ticks) => ticks * 1000 / Stopwatch.Frequency;
 
     private static void Dispose(Stream stream)
     {

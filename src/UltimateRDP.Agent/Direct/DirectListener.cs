@@ -73,6 +73,9 @@ internal sealed class DirectListener
     private bool _closed;
     private int _accepted;
     private int _finished;
+    private int _released;
+    private long _stoppedStamp;
+    private long _releasedStamp;
 
     private DirectListener(FileLogger logger, TcpListener listener, int port, SslStreamCertificateContext certificate, string certificateSha256, string dragId, string transferId, IReadOnlyList<TransferItem> items, StagingFolder staging, ClientLanguage language, int maxConnections, int maxMegabytesPerSecond)
     {
@@ -96,7 +99,8 @@ internal sealed class DirectListener
         _receiver.Started += OnStarted;
         _receiver.FinalSent += OnFinalSent;
         _receiver.ConnectionDropped += (index, detail) => _logger.Info($"Transfer {TransferId}: connection {index} closed before it carried any block ({detail}); the transfer goes on without it.");
-        _receiver.Ended += StopListening;
+        _receiver.Stopped += OnStopped;
+        _receiver.Finishing += OnFinishing;
     }
 
     /// <summary>Raised once on the thread of the listener when it is over: true when every file arrived and was checked.</summary>
@@ -347,9 +351,19 @@ internal sealed class DirectListener
             Accept();
 
             // The transfer always ends: by its final frame, a lost connection, the timeouts of
-            // the sockets, or Close, which the drag, the drop and the agent call.
-            _receiver.WaitEnded(Timeout.InfiniteTimeSpan);
+            // the sockets, or Close, which the drag, the drop and the agent call. Its end only
+            // waits for its connections: the files close and delete afterwards.
+            _receiver.WaitStopped(Timeout.InfiniteTimeSpan);
+            if (_receiver.State == DirectReceiverState.Succeeded)
+            {
+                // The copies are dropped next, so their files must be closed, which the
+                // verifier did as it checked them: this wait is short.
+                _receiver.WaitEnded(Timeout.InfiniteTimeSpan);
+            }
+
+            Release();
             Summarize();
+            LogCleanUp();
         }
         catch (Exception ex)
         {
@@ -358,25 +372,97 @@ internal sealed class DirectListener
         }
         finally
         {
-            StopListening();
-            lock (_gate)
-            {
-                _closed = true;
-                _connectTimer?.Dispose();
-                _rateTimer?.Dispose();
-            }
+            Release();
+        }
+    }
 
-            Succeeded = _receiver.State == DirectReceiverState.Succeeded;
-            Volatile.Write(ref _finished, 1);
-            try
+    /// <summary>
+    /// The direct connection of the session is free again: a new offer may start at once, on
+    /// the next free port of the range when this one is still closing. Runs once.
+    /// </summary>
+    private void Release()
+    {
+        if (Interlocked.Exchange(ref _released, 1) != 0)
+        {
+            return;
+        }
+
+        StopListening();
+        lock (_gate)
+        {
+            _closed = true;
+            _connectTimer?.Dispose();
+            _rateTimer?.Dispose();
+        }
+
+        Succeeded = _receiver.State == DirectReceiverState.Succeeded;
+        Interlocked.Exchange(ref _releasedStamp, System.Diagnostics.Stopwatch.GetTimestamp());
+        Volatile.Write(ref _finished, 1);
+        try
+        {
+            Finished?.Invoke(this, Succeeded);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Transfer {TransferId}: the end handler of the direct connection failed.", ex);
+        }
+    }
+
+    private void OnStopped()
+    {
+        Interlocked.Exchange(ref _stoppedStamp, System.Diagnostics.Stopwatch.GetTimestamp());
+        StopListening();
+    }
+
+    /// <summary>The final frame is about to go out: a client that no longer reads holds it at most a second.</summary>
+    private void OnFinishing()
+    {
+        lock (_gate)
+        {
+            if (_control is { } control)
             {
-                Finished?.Invoke(this, Succeeded);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Transfer {TransferId}: the end handler of the direct connection failed.", ex);
+                try
+                {
+                    control.SendTimeout = 1000;
+                    control.ReceiveTimeout = (int)CloseWait.TotalMilliseconds;
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Closed already.
+                }
             }
         }
+    }
+
+    /// <summary>Milliseconds from the end of the transfer to the release of the direct connection.</summary>
+    private long ReleaseMilliseconds()
+    {
+        var stopped = Interlocked.Read(ref _stoppedStamp);
+        var released = Interlocked.Read(ref _releasedStamp);
+        return stopped == 0 || released < stopped ? 0 : (released - stopped) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+    }
+
+    /// <summary>One line once the files are closed, and deleted unless the transfer succeeded: what the file system took after the end.</summary>
+    private void LogCleanUp()
+    {
+        lock (_gate)
+        {
+            if (_control is null)
+            {
+                return;
+            }
+        }
+
+        _receiver.WaitEnded(Timeout.InfiniteTimeSpan);
+        if (_receiver.CleanUpTimes is not { } times)
+        {
+            return;
+        }
+
+        var total = times.WaitMilliseconds + times.CloseMilliseconds + (times.DeleteMilliseconds ?? 0);
+        _logger.Info(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Transfer {TransferId}: the files of the direct connection were {(times.DeleteMilliseconds is null ? "closed" : "closed and deleted")} {total} ms after its end: {times.WaitMilliseconds} ms until no thread wrote or read them, {times.CloseMilliseconds} ms closing them{(times.DeleteMilliseconds is { } delete ? string.Create(CultureInfo.InvariantCulture, $", {delete} ms deleting the folder") : string.Empty)}."));
     }
 
     /// <summary>
@@ -620,7 +706,7 @@ internal sealed class DirectListener
         var rate = seconds > 0 ? receiver.ReceivedBytes / seconds : 0;
         var line = string.Create(
             CultureInfo.InvariantCulture,
-            $"Transfer {TransferId} of drag {DragId}: {receiver.State} through the direct connection from {remote} on port {Port}, {protocol}, {receiver.ReceivedFiles} of {receiver.ExpectedFiles} file(s), {receiver.ReceivedBytes} of {receiver.ExpectedBytes} bytes in {seconds:0.0} s, {MegabytesPerSecond(rate)} MB/s, {receiver.AcksSent} acknowledgement(s)");
+            $"Transfer {TransferId} of drag {DragId}: {receiver.State} through the direct connection from {remote} on port {Port}, {protocol}, {receiver.ReceivedFiles} of {receiver.ExpectedFiles} file(s), {receiver.ReceivedBytes} of {receiver.ExpectedBytes} bytes in {seconds:0.0} s, {MegabytesPerSecond(rate)} MB/s, {receiver.AcksSent} acknowledgement(s), the direct connection free again {ReleaseMilliseconds()} ms after the end");
         switch (receiver.State)
         {
             case DirectReceiverState.Succeeded:
@@ -628,11 +714,11 @@ internal sealed class DirectListener
                 break;
 
             case DirectReceiverState.Cancelled:
-                _logger.Info($"{line}. Cancelled by the client {(receiver.CancelledThroughChannel ? "through the channel" : "with a cancel frame")}, {receiver.CancelReason}; the files that came are deleted.");
+                _logger.Info($"{line}. Cancelled by the client {(receiver.CancelledThroughChannel ? "through the channel" : "with a cancel frame")}, {receiver.CancelReason}; the files that came are being deleted.");
                 break;
 
             case DirectReceiverState.Failed when receiver.ClosedByAgent:
-                _logger.Info($"{line}. Closed by the agent, {_closeReason}; the files that came are deleted.");
+                _logger.Info($"{line}. Closed by the agent, {_closeReason}; the files that came are being deleted.");
                 break;
 
             default:

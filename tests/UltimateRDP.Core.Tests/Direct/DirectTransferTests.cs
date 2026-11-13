@@ -752,6 +752,83 @@ public class DirectTransferTests(ITestOutputHelper output)
         Assert.Equal(DirectFailure.WriteFailed, run.Outcome.Result!.Failure);
     }
 
+    [Fact]
+    public void A_cancel_through_the_channel_stops_the_transfer_at_once_while_the_files_are_still_being_deleted()
+    {
+        var a = Data(30 * Block, 1);
+        var storage = new SlowDeleteStorage(TimeSpan.FromSeconds(3));
+        using var agent = new Agent(storage: storage);
+        var cancelled = 0;
+        long returned = -1, stopped = -1;
+        var endedAtStop = true;
+        var run = Run([new("a.bin", a.Length)], [a], connections: 4, agent: agent, onAck: (_, _) =>
+        {
+            if (Interlocked.Exchange(ref cancelled, 1) != 0)
+            {
+                return;
+            }
+
+            var watch = Stopwatch.StartNew();
+            agent.Receiver.ClientCancelled("The user cancelled the transfer.");
+            returned = watch.ElapsedMilliseconds;
+            Assert.True(agent.Receiver.WaitStopped(TimeSpan.FromSeconds(5)));
+            stopped = watch.ElapsedMilliseconds;
+            endedAtStop = agent.Receiver.HasEnded;
+        });
+        output.WriteLine($"ClientCancelled returned after {returned} ms, the receiver stopped after {stopped} ms, the files took {agent.Receiver.CleanUpTimes}.");
+
+        Assert.Equal(DirectSendStatus.AgentCancelled, run.Outcome.Status);
+        Assert.InRange(returned, 0, 500);
+        Assert.InRange(stopped, 0, 500);
+        Assert.False(endedAtStop);
+        Assert.True(agent.Receiver.HasEnded);
+        Assert.True(agent.Receiver.CleanUpTimes!.DeleteMilliseconds >= 2900);
+        Assert.Equal(1, storage.Inner.DeleteAllCalls);
+    }
+
+    [Fact]
+    public void A_lost_connection_stops_the_transfer_at_once_while_the_files_are_still_being_deleted()
+    {
+        var a = Data(12 * Block, 1);
+        var storage = new SlowDeleteStorage(TimeSpan.FromSeconds(3));
+        using var agent = new Agent(storage: storage);
+        var stoppedAt = new Stopwatch();
+        var endedAt = new Stopwatch();
+        var watch = Stopwatch.StartNew();
+        agent.Receiver.Stopped += () => stoppedAt.Start();
+        agent.Receiver.Ended += () => endedAt.Start();
+        var sender = new DirectSender(() => [new TransferFile("a.bin", a.Length)], _ => new MemoryStream(a, writable: false), 1, () => Environment.TickCount64);
+
+        var outcome = sender.Run(new DirectConnection(agent.Connect(10L * Block)), Token, null);
+        var returned = watch.ElapsedMilliseconds;
+        Assert.True(agent.Receiver.WaitStopped(TimeSpan.FromSeconds(5)));
+        var stopped = watch.ElapsedMilliseconds;
+        var endedWhenStopped = agent.Receiver.HasEnded;
+        agent.Join();
+        output.WriteLine($"The client returned after {returned} ms, the receiver stopped after {stopped} ms and ended after {watch.ElapsedMilliseconds} ms.");
+
+        Assert.Equal(DirectSendStatus.Broken, outcome.Status);
+        Assert.Equal(DirectReceiverState.Failed, agent.Receiver.State);
+        Assert.False(endedWhenStopped);
+        Assert.True(agent.Receiver.CleanUpTimes!.DeleteMilliseconds >= 2900);
+    }
+
+    [Fact]
+    public void A_transfer_that_succeeds_ends_without_waiting_for_a_deletion()
+    {
+        var a = Data(3 * Block, 1);
+        var storage = new SlowDeleteStorage(TimeSpan.FromSeconds(3));
+        using var agent = new Agent(storage: storage);
+        var watch = Stopwatch.StartNew();
+        var run = Run([new("a.bin", a.Length)], [a], agent: agent);
+
+        Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"The transfer took {watch.ElapsedMilliseconds} ms.");
+        Assert.Null(agent.Receiver.CleanUpTimes!.DeleteMilliseconds);
+        Assert.Equal(0, storage.Inner.DeleteAllCalls);
+        Assert.Equal(a, storage.Inner.Content("a.bin"));
+    }
+
     private static (Stream Stream, DirectFrameReader Reader) Open(Agent agent, byte index)
     {
         var stream = agent.Connect();

@@ -250,3 +250,21 @@ internal sealed class BlockingStream(byte[] data) : Stream
         base.Dispose(disposing);
     }
 }
+
+/// <summary>A storage in memory whose deletion takes a while, as a large partial file may on a server.</summary>
+internal sealed class SlowDeleteStorage(TimeSpan delay) : IDirectStorage
+{
+    public MemoryDirectStorage Inner { get; } = new();
+
+    public void CreateDirectory(string relativePath) => Inner.CreateDirectory(relativePath);
+
+    public IDirectFile CreateFile(string relativePath, long size) => Inner.CreateFile(relativePath, size);
+
+    public void CompleteFile(string relativePath, DateTime? modified) => Inner.CompleteFile(relativePath, modified);
+
+    public void DeleteAll()
+    {
+        Thread.Sleep(delay);
+        Inner.DeleteAll();
+    }
+}
