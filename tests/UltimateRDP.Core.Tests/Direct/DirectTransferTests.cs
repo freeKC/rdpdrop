@@ -1,19 +1,22 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using UltimateRDP.Core.Direct;
 using UltimateRDP.Core.Protocol;
-using UltimateRDP.Core.Tests.Transfer;
 using UltimateRDP.Core.Transfer;
 using Xunit.Abstractions;
 
 namespace UltimateRDP.Core.Tests.Direct;
 
 /// <summary>
-/// Whole direct transfers between a <see cref="DirectSender"/> and a <see cref="DirectReceiver"/>
-/// through an in memory connection, as the client and the agent run them over TLS.
+/// Whole direct transfers of version 2 between a <see cref="DirectSender"/> and a
+/// <see cref="DirectReceiver"/> through in memory connections, as the client and the agent
+/// run them over TLS, and frames written by hand where the rules of the receiver are tested.
 /// </summary>
 public class DirectTransferTests(ITestOutputHelper output)
 {
+    private const int Block = DirectFrames.BlockSize;
+
     private static readonly byte[] Token = RandomNumberGenerator.GetBytes(DirectFrames.TokenLength);
 
     private static readonly TransferItem[] Items =
@@ -29,215 +32,661 @@ public class DirectTransferTests(ITestOutputHelper output)
         return data;
     }
 
-    [Fact]
-    public void A_transfer_writes_every_file_and_acknowledges_by_eight_mebibytes_and_at_each_file_end()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    [InlineData(8)]
+    public void Files_go_through_one_or_several_connections_with_their_content_and_dates(int connections)
     {
-        var a = Data(20 * 1024 * 1024, 1);
+        var a = Data((9 * Block) + 123, 1);
         var b = Data(3, 2);
         var c = Data(0, 3);
-        var modified = new DateTime(2026, 11, 10, 8, 30, 0, DateTimeKind.Utc);
+        var d = Data(2 * Block, 4);
+        var modified = new DateTime(2026, 11, 13, 8, 30, 0, DateTimeKind.Utc);
         TransferFile[] files =
         [
             new("a.bin", a.Length, modified),
             new(@"Folder\sub\b.txt", b.Length),
             new(@"Folder\été ü.txt", c.Length, modified),
+            new(@"Folder\d.bin", d.Length),
         ];
 
-        var run = Run(files, [a, b, c]);
+        var run = Run(files, [a, b, c, d], connections);
 
         Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
         Assert.True(run.Outcome.Acknowledged);
         Assert.Equal(DropStatus.Ok, run.Outcome.Result!.Status);
-        Assert.Equal(a.Length + b.Length, run.Outcome.Result.Bytes);
+        Assert.Equal(a.Length + b.Length + d.Length, run.Outcome.Result.Bytes);
         Assert.Equal("done", run.Outcome.Result.Message);
-        Assert.Equal(DirectReceiverState.Succeeded, run.Receiver.State);
-        Assert.True(run.Receiver.FinalWasSent);
-        Assert.Equal(a, run.Storage.Content("a.bin"));
-        Assert.Equal(b, run.Storage.Content(@"Folder\sub\b.txt"));
-        Assert.Equal(c, run.Storage.Content(@"Folder\été ü.txt"));
-        Assert.Equal(modified, run.Storage.Completed["a.bin"]);
-        Assert.Null(run.Storage.Completed[@"Folder\sub\b.txt"]);
-        Assert.Equal(["Folder"], run.Storage.Directories);
-        Assert.Equal(0, run.Storage.DeleteAllCalls);
+        Assert.Equal(DirectReceiverState.Succeeded, run.Agent.Receiver.State);
+        Assert.Equal(a, run.Agent.Memory.Content("a.bin"));
+        Assert.Equal(b, run.Agent.Memory.Content(@"Folder\sub\b.txt"));
+        Assert.Equal(c, run.Agent.Memory.Content(@"Folder\été ü.txt"));
+        Assert.Equal(d, run.Agent.Memory.Content(@"Folder\d.bin"));
+        Assert.Equal(modified, run.Agent.Memory.Completed["a.bin"]);
+        Assert.Null(run.Agent.Memory.Completed[@"Folder\sub\b.txt"]);
+        Assert.Equal(new[] { "Folder" }, run.Agent.Memory.Directories);
+        Assert.Equal(0, run.Agent.Memory.DeleteAllCalls);
+        Assert.All(run.Agent.Memory.Files.Values, file => Assert.True(file.Disposed));
 
-        // Two acknowledgements inside the first file, one at the end of each of the three files.
-        Assert.Equal(
-            [
-                new DirectAck(0, 8L * 1024 * 1024, 8L * 1024 * 1024),
-                new DirectAck(0, 16L * 1024 * 1024, 16L * 1024 * 1024),
-                new DirectAck(0, a.Length, a.Length),
-                new DirectAck(1, b.Length, a.Length + b.Length),
-                new DirectAck(2, 0, a.Length + b.Length),
-            ],
-            run.Acks);
+        var stats = run.Sender.Stats();
+        Assert.Equal(connections, stats.Connections);
+        Assert.Equal(connections, run.Agent.Receiver.Connections);
+        Assert.Equal(a.Length + b.Length + d.Length, stats.BytesPerConnection.Where(bytes => bytes > 0).Sum());
+        Assert.Equal(stats.BytesPerConnection.Where(bytes => bytes > 0), run.Agent.Receiver.BytesPerConnection.Where(bytes => bytes > 0));
+
+        // An acknowledgement at the end of each file, and the bytes only grow.
+        Assert.All(Enumerable.Range(0, files.Length), index => Assert.Contains(run.Acks, ack => ack.FileIndex == index && ack.FileBytes == files[index].Size));
+        Assert.Equal(a.Length + b.Length + d.Length, run.Acks[^1].TotalBytes);
+        Assert.True(run.Acks.Zip(run.Acks.Skip(1)).All(pair => pair.First.TotalBytes <= pair.Second.TotalBytes));
     }
 
     [Fact]
-    public void A_transfer_of_empty_folders_only_ends_at_the_begin_frame()
+    public void A_transfer_of_empty_folders_only_succeeds_without_data()
     {
         var run = Run([], [], items: [new TransferItem("Empty", true)]);
 
         Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
         Assert.False(run.Outcome.Acknowledged);
-        Assert.Equal(["Empty"], run.Storage.Directories);
+        Assert.Equal(new[] { "Empty" }, run.Agent.Memory.Directories);
     }
 
     [Fact]
-    public void A_wrong_token_gets_no_answer_and_the_client_sees_a_refusal()
+    public void Blocks_may_arrive_in_any_order_and_on_any_connection()
     {
-        var a = Data(1000, 1);
-        var run = Run([new("a.bin", a.Length)], [a], clientToken: RandomNumberGenerator.GetBytes(DirectFrames.TokenLength));
+        var a = Data((5 * Block) + 100, 1);
+        var b = Data(10, 2);
+        using var agent = new Agent();
+        var (control, reader) = Open(agent, 0);
+        var (extra, _) = Open(agent, 1);
+        SendList(control, reader, new TransferFile("a.bin", a.Length), new TransferFile(@"Folder\b.bin", b.Length));
 
-        Assert.Equal(DirectSendStatus.Refused, run.Outcome.Status);
-        Assert.False(run.Outcome.Acknowledged);
-        Assert.Equal(DirectFailure.Token, run.Receiver.Failure);
-        Assert.False(run.Receiver.FinalWasSent);
-        Assert.False(run.Authenticated);
-        Assert.Empty(run.Storage.Files);
-    }
-
-    [Fact]
-    public void A_token_of_another_version_is_refused()
-    {
-        var (client, agent) = DuplexPipe.Create();
-        var receiver = new DirectReceiver(Token, Items, new MemoryTransferStorage(), () => 0);
-        var thread = new Thread(() =>
+        // The trailers first, then the blocks backwards, spread over both connections.
+        DirectFrames.Write(control, DirectFrameType.FileTrailer, DirectFrames.FileTrailerPayload(1, SHA256.HashData(b)));
+        DirectFrames.Write(control, DirectFrameType.FileTrailer, DirectFrames.FileTrailerPayload(0, SHA256.HashData(a)));
+        SendBlock(extra, 1, 0, b);
+        long sentOnExtra = 1, sentOnControl = 0;
+        for (var block = 5; block >= 0; block--)
         {
-            receiver.Run(agent, _ => null);
-            agent.Dispose();
-        });
-        thread.Start();
-        DirectFrames.Write(client, DirectFrameType.Token, DirectFrames.TokenPayload(Token, version: 2));
-        var reader = new DirectFrameReader(client);
+            var offset = (long)block * Block;
+            var data = a.AsSpan((int)offset, DirectFrames.BlockLength(a.Length, offset));
+            if (block % 2 == 0)
+            {
+                SendBlock(control, 0, offset, data);
+                sentOnControl++;
+            }
+            else
+            {
+                SendBlock(extra, 0, offset, data);
+                sentOnExtra++;
+            }
+        }
 
-        Assert.False(reader.TryRead(out _, out _));
-        thread.Join();
-        Assert.Equal(DirectFailure.Token, receiver.Failure);
-        Assert.Contains("version 2", receiver.FailureDetail, StringComparison.Ordinal);
+        DirectFrames.Write(extra, DirectFrameType.End, DirectFrames.EndPayload(sentOnExtra));
+        DirectFrames.Write(control, DirectFrameType.End, DirectFrames.EndPayload(sentOnControl));
+        var result = ReadFinal(reader);
+        control.Dispose();
+        extra.Dispose();
+        agent.Join();
+
+        Assert.Equal(DropStatus.Ok, result.Status);
+        Assert.Equal(a, agent.Memory.Content("a.bin"));
+        Assert.Equal(b, agent.Memory.Content(@"Folder\b.bin"));
+        Assert.Equal(new[] { 3L * Block, (2L * Block) + 110 }, agent.Receiver.BytesPerConnection.Take(2));
     }
 
     [Fact]
-    public void The_token_is_single_use()
+    public void A_block_that_comes_twice_is_a_protocol_error()
     {
-        var (client, agent) = DuplexPipe.Create();
-        var receiver = new DirectReceiver(Token, Items, new MemoryTransferStorage(), () => 0);
-        var thread = new Thread(() =>
-        {
-            receiver.Run(agent, _ => null);
-            agent.Dispose();
-        });
-        thread.Start();
-        DirectFrames.Write(client, DirectFrameType.Token, DirectFrames.TokenPayload(Token));
-        var reader = new DirectFrameReader(client);
-        Assert.True(reader.TryRead(out var ready, out _));
-        Assert.Equal(DirectFrameType.Ready, ready);
-
-        // The same token a second time is a frame out of order, and ends the transfer.
-        DirectFrames.Write(client, DirectFrameType.Token, DirectFrames.TokenPayload(Token));
-        Assert.True(reader.TryRead(out var final, out var payload));
-        Assert.Equal(DirectFrameType.Final, final);
-        Assert.True(DirectFrames.TryParseFinal(payload.Span, out var result));
-        client.Dispose();
-        thread.Join();
-        Assert.Equal(DropStatus.Error, result.Status);
-        Assert.Equal(DirectFailure.Protocol, result.Failure);
-    }
-
-    [Fact]
-    public void A_stream_cut_before_the_first_acknowledgement_is_broken_without_acknowledgement()
-    {
-        var a = Data(5 * 1024 * 1024, 1);
-        var run = Run([new("a.bin", a.Length)], [a], cutAfter: 2 * 1024 * 1024);
-
-        Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
-        Assert.False(run.Outcome.Acknowledged);
-        Assert.Equal(DirectReceiverState.Failed, run.Receiver.State);
-        Assert.Equal(DirectFailure.Broken, run.Receiver.Failure);
-        Assert.False(run.Receiver.FinalWasSent);
-        Assert.Equal(1, run.Storage.DeleteAllCalls);
-    }
-
-    [Fact]
-    public void A_stream_cut_after_an_acknowledgement_is_broken_with_acknowledgement()
-    {
-        var a = Data(12 * 1024 * 1024, 1);
-        var run = Run([new("a.bin", a.Length)], [a], cutAfter: 10 * 1024 * 1024);
-
-        Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
-        Assert.True(run.Outcome.Acknowledged);
-        Assert.Equal(DirectFailure.Broken, run.Receiver.Failure);
-        Assert.Equal(1, run.Storage.DeleteAllCalls);
-    }
-
-    [Fact]
-    public void A_wrong_checksum_fails_the_transfer_with_a_final_frame_and_deletes_what_was_written()
-    {
-        var a = Data(3000, 1);
-        var (client, agent, receiver, storage, thread) = StartAgent();
-        var reader = Authenticate(client);
-        DirectFrames.Write(client, DirectFrameType.Begin, DirectFrames.BeginPayload(1, a.Length));
-        DirectFrames.Write(client, DirectFrameType.FileHeader, DirectFrames.FileHeaderPayload(0, new TransferFile("a.bin", a.Length)));
-        DirectFrames.Write(client, DirectFrameType.Data, a);
-        var wrong = SHA256.HashData(a);
-        wrong[0] ^= 1;
-        DirectFrames.Write(client, DirectFrameType.FileTrailer, DirectFrames.FileTrailerPayload(0, wrong));
+        var a = Data(3 * Block, 1);
+        using var agent = new Agent();
+        var (control, reader) = Open(agent, 0);
+        var (extra, _) = Open(agent, 1);
+        SendList(control, reader, new TransferFile("a.bin", a.Length));
+        SendBlock(control, 0, Block, a.AsSpan(Block, Block));
+        SendBlock(extra, 0, 0, a.AsSpan(0, Block));
+        SendBlock(extra, 0, Block, a.AsSpan(Block, Block));
 
         var result = ReadFinal(reader);
-        client.Dispose();
-        thread.Join();
+        control.Dispose();
+        extra.Dispose();
+        agent.Join();
+
+        Assert.Equal(DirectFailure.Protocol, result.Failure);
+        Assert.Contains("came twice", agent.Receiver.FailureDetail, StringComparison.Ordinal);
+        Assert.Equal(1, agent.Memory.DeleteAllCalls);
+    }
+
+    [Theory]
+    [InlineData(0, 100, Block)]
+    [InlineData(0, 3L * Block, Block)]
+    [InlineData(0, Block, Block - 1)]
+    [InlineData(0, 2L * Block, 10)]
+    [InlineData(5, 0, Block)]
+    public void A_misaligned_or_out_of_range_block_is_a_protocol_error(int fileIndex, long offset, int length)
+    {
+        using var agent = new Agent();
+        var (control, reader) = Open(agent, 0);
+        SendList(control, reader, new TransferFile("a.bin", (2L * Block) + 20));
+        SendBlock(control, fileIndex, offset, new byte[length]);
+
+        var result = ReadFinal(reader);
+        control.Dispose();
+        agent.Join();
+
+        Assert.Equal(DirectFailure.Protocol, result.Failure);
+        Assert.Equal(DirectReceiverState.Failed, agent.Receiver.State);
+    }
+
+    [Fact]
+    public void A_block_that_never_comes_fails_as_incomplete_once_every_connection_ended()
+    {
+        var a = Data(3 * Block, 1);
+        using var agent = new Agent();
+        var (control, reader) = Open(agent, 0);
+        var (extra, _) = Open(agent, 1);
+        SendList(control, reader, new TransferFile("a.bin", a.Length));
+        SendBlock(control, 0, 0, a.AsSpan(0, Block));
+        SendBlock(extra, 0, 2L * Block, a.AsSpan(2 * Block, Block));
+        DirectFrames.Write(control, DirectFrameType.FileTrailer, DirectFrames.FileTrailerPayload(0, SHA256.HashData(a)));
+        DirectFrames.Write(extra, DirectFrameType.End, DirectFrames.EndPayload(1));
+        DirectFrames.Write(control, DirectFrameType.End, DirectFrames.EndPayload(1));
+
+        var result = ReadFinal(reader);
+        control.Dispose();
+        extra.Dispose();
+        agent.Join();
+
+        Assert.Equal(DirectFailure.Incomplete, result.Failure);
+        Assert.Equal("a.bin", agent.Receiver.FailurePath);
+        Assert.Contains("Block 1 of the file never came", agent.Receiver.FailureDetail, StringComparison.Ordinal);
+        Assert.Equal(1, agent.Memory.DeleteAllCalls);
+    }
+
+    [Fact]
+    public void An_end_frame_that_counts_other_blocks_is_a_protocol_error()
+    {
+        using var agent = new Agent();
+        var (control, reader) = Open(agent, 0);
+        SendList(control, reader, new TransferFile("a.bin", 10));
+        SendBlock(control, 0, 0, new byte[10]);
+        DirectFrames.Write(control, DirectFrameType.End, DirectFrames.EndPayload(2));
+
+        var result = ReadFinal(reader);
+        control.Dispose();
+        agent.Join();
+
+        Assert.Equal(DirectFailure.Protocol, result.Failure);
+        Assert.Contains("carried 2 block(s); 1 arrived", agent.Receiver.FailureDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_wrong_checksum_fails_the_transfer_and_deletes_what_was_written()
+    {
+        var a = Data(3000, 1);
+        using var agent = new Agent();
+        var (control, reader) = Open(agent, 0);
+        SendList(control, reader, new TransferFile("a.bin", a.Length));
+        SendBlock(control, 0, 0, a);
+        var wrong = SHA256.HashData(a);
+        wrong[0] ^= 1;
+        DirectFrames.Write(control, DirectFrameType.FileTrailer, DirectFrames.FileTrailerPayload(0, wrong));
+
+        var result = ReadFinal(reader);
+        control.Dispose();
+        agent.Join();
 
         Assert.Equal(DropStatus.Error, result.Status);
         Assert.Equal(DirectFailure.HashMismatch, result.Failure);
         Assert.Equal("failed HashMismatch", result.Message);
-        Assert.Equal(DirectFailure.HashMismatch, receiver.Failure);
-        Assert.Equal("a.bin", receiver.FailurePath);
-        Assert.Equal(1, storage.DeleteAllCalls);
-        Assert.Empty(storage.Completed);
+        Assert.Equal("a.bin", agent.Receiver.FailurePath);
+        Assert.Equal(1, agent.Memory.DeleteAllCalls);
+        Assert.Empty(agent.Memory.Completed);
     }
 
     [Fact]
-    public void A_cancel_frame_ends_the_transfer_as_cancelled()
+    public void A_data_frame_before_the_go_frame_is_a_protocol_error()
     {
-        var a = Data(30 * 1024 * 1024, 1);
-        DirectSender? sender = null;
-        var run = Run([new("a.bin", a.Length)], [a], onAck: (s, _) => s.Cancel("The user cancelled the transfer."), created: s => sender = s);
+        using var agent = new Agent();
+        var (control, reader) = Open(agent, 0);
+        DirectFrames.Write(control, DirectFrameType.Begin, DirectFrames.BeginPayload(1, 10));
+        DirectFrames.Write(control, DirectFrameType.FileHeader, DirectFrames.FileHeaderPayload(0, new TransferFile("a.bin", 10)));
+        SendBlock(control, 0, 0, new byte[10]);
 
-        Assert.NotNull(sender);
+        var result = ReadFinal(reader);
+        control.Dispose();
+        agent.Join();
+
+        Assert.Equal(DirectFailure.Protocol, result.Failure);
+        Assert.Equal(1, agent.Memory.DeleteAllCalls);
+    }
+
+    [Fact]
+    public void A_frame_longer_than_allowed_breaks_the_connection()
+    {
+        using var agent = new Agent();
+        var (control, reader) = Open(agent, 0);
+        var header = new byte[DirectFrames.HeaderLength];
+        DirectFrames.WriteHeader(header, DirectFrameType.Data, DirectFrames.MaxPayloadLength + 1);
+        control.Write(header);
+
+        var result = ReadFinal(reader);
+        control.Dispose();
+        agent.Join();
+
+        Assert.Equal(DirectFailure.Protocol, result.Failure);
+        Assert.Contains("more than", agent.Receiver.FailureDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_token_of_version_1_from_a_client_0_6_gets_no_answer()
+    {
+        using var agent = new Agent();
+        var client = agent.Connect();
+        var version1 = new byte[1 + DirectFrames.TokenLength];
+        version1[0] = 1;
+        Token.CopyTo(version1, 1);
+        DirectFrames.Write(client, DirectFrameType.Token, version1);
+
+        Assert.False(new DirectFrameReader(client).TryRead(out _, out _));
+        client.Dispose();
+        agent.JoinThreads();
+        var refusal = Assert.Single(agent.Results);
+        Assert.Equal(-1, refusal.Index);
+        Assert.Contains("version 1", refusal.Refusal, StringComparison.Ordinal);
+        Assert.Equal(DirectReceiverState.AwaitingControl, agent.Receiver.State);
+    }
+
+    [Fact]
+    public void A_wrong_token_or_an_index_beyond_the_offer_gets_no_answer()
+    {
+        using var agent = new Agent(maxConnections: 2);
+        var wrong = agent.Connect();
+        DirectFrames.Write(wrong, DirectFrameType.Token, DirectFrames.TokenPayload(RandomNumberGenerator.GetBytes(DirectFrames.TokenLength), 0));
+        Assert.False(new DirectFrameReader(wrong).TryRead(out _, out _));
+        var (control, _) = Open(agent, 0);
+        var beyond = agent.Connect();
+        DirectFrames.Write(beyond, DirectFrameType.Token, DirectFrames.TokenPayload(Token, 2));
+        Assert.False(new DirectFrameReader(beyond).TryRead(out _, out _));
+
+        wrong.Dispose();
+        beyond.Dispose();
+        agent.Receiver.Close("the test ends");
+        control.Dispose();
+        agent.Join();
+        Assert.Contains(agent.Results, result => result.Refusal == "The token is not the one of the offer.");
+        Assert.Contains(agent.Results, result => result.Refusal?.Contains("beyond the 2 connection(s)", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void A_replayed_index_is_refused()
+    {
+        using var agent = new Agent();
+        var (control, _) = Open(agent, 0);
+        var (extra, _) = Open(agent, 1);
+        var replay = agent.Connect();
+        DirectFrames.Write(replay, DirectFrameType.Token, DirectFrames.TokenPayload(Token, 1));
+
+        Assert.False(new DirectFrameReader(replay).TryRead(out _, out _));
+        var zero = agent.Connect();
+        DirectFrames.Write(zero, DirectFrameType.Token, DirectFrames.TokenPayload(Token, 0));
+        Assert.False(new DirectFrameReader(zero).TryRead(out _, out _));
+        replay.Dispose();
+        zero.Dispose();
+        agent.Receiver.Close("the test ends");
+        control.Dispose();
+        extra.Dispose();
+        agent.Join();
+        Assert.Equal(2, agent.Results.Count(result => result.Refusal?.Contains("was already used", StringComparison.Ordinal) == true));
+        Assert.Equal(2, agent.Receiver.Connections);
+    }
+
+    [Fact]
+    public void An_index_before_connection_0_is_refused()
+    {
+        using var agent = new Agent();
+        var early = agent.Connect();
+        DirectFrames.Write(early, DirectFrameType.Token, DirectFrames.TokenPayload(Token, 3));
+
+        Assert.False(new DirectFrameReader(early).TryRead(out _, out _));
+        early.Dispose();
+        agent.JoinThreads();
+        Assert.Contains("came before connection 0", Assert.Single(agent.Results).Refusal, StringComparison.Ordinal);
+
+        // Connection 3 is still free once connection 0 came.
+        var (control, _) = Open(agent, 0);
+        var (third, _) = Open(agent, 3);
+        agent.Receiver.Close("the test ends");
+        control.Dispose();
+        third.Dispose();
+        agent.Join();
+        Assert.Equal(2, agent.Receiver.Connections);
+    }
+
+    [Fact]
+    public void A_cancel_at_the_first_acknowledgement_ends_both_sides_as_cancelled()
+    {
+        var a = Data(30 * Block, 1);
+        var run = Run([new("a.bin", a.Length)], [a], connections: 4, onAck: (sender, _) => sender.Cancel("The user cancelled the transfer."));
+
         Assert.Equal(DirectSendStatus.Cancelled, run.Outcome.Status);
         Assert.True(run.Outcome.Acknowledged);
         Assert.Equal(DropStatus.Cancelled, run.Outcome.Result!.Status);
-        Assert.Equal(DirectReceiverState.Cancelled, run.Receiver.State);
-        Assert.Equal("The user cancelled the transfer.", run.Receiver.CancelReason);
-        Assert.Equal(1, run.Storage.DeleteAllCalls);
+        Assert.Equal(DirectReceiverState.Cancelled, run.Agent.Receiver.State);
+        Assert.Equal("The user cancelled the transfer.", run.Agent.Receiver.CancelReason);
+        Assert.False(run.Agent.Receiver.CancelledThroughChannel);
+        Assert.Equal(1, run.Agent.Memory.DeleteAllCalls);
     }
 
     [Fact]
-    public void A_path_that_leaves_the_items_is_refused()
+    public void A_cancel_before_the_files_are_listed_tells_the_agent()
+    {
+        var a = Data(100, 1);
+        var run = Run([new("a.bin", a.Length)], [a], created: sender => sender.Cancel("The tab of the session was closed."));
+
+        Assert.Equal(DirectSendStatus.Cancelled, run.Outcome.Status);
+        Assert.Equal(DirectReceiverState.Cancelled, run.Agent.Receiver.State);
+        Assert.Equal("The tab of the session was closed.", run.Agent.Receiver.CancelReason);
+    }
+
+    [Fact]
+    public void A_cancel_while_the_reader_is_blocked_in_a_file_read_returns_within_about_a_second()
+    {
+        var a = Data(4 * Block, 1);
+        var blocking = new BlockingStream(a);
+        var lines = new ConcurrentQueue<string>();
+        using var agent = new Agent();
+        var sender = new DirectSender(() => [new TransferFile("a.bin", a.Length)], _ => blocking, 2, () => Environment.TickCount64) { BytesPerConnection = Block };
+        sender.Info += lines.Enqueue;
+        var watch = new Stopwatch();
+        var canceller = new Thread(() =>
+        {
+            blocking.Entered.Wait();
+            watch.Start();
+            sender.Cancel("The user cancelled the transfer.");
+        });
+        canceller.Start();
+
+        var outcome = sender.Run(new DirectConnection(agent.Connect()), Token, (_, _) => new DirectConnection(agent.Connect()));
+        watch.Stop();
+        output.WriteLine($"Run returned {watch.ElapsedMilliseconds} ms after the cancel.");
+        agent.Join();
+
+        Assert.Equal(DirectSendStatus.Cancelled, outcome.Status);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"Run returned {watch.ElapsedMilliseconds} ms after the cancel.");
+        Assert.Equal(DirectReceiverState.Cancelled, agent.Receiver.State);
+        Assert.Contains(lines, line => line.StartsWith("The reader is still reading a.bin", StringComparison.Ordinal));
+
+        // The read returns long after: the reader says so and sends nothing.
+        Thread.Sleep(800);
+        blocking.Release();
+        var late = Stopwatch.StartNew();
+        while (!lines.Any(line => line.Contains("after the connections closed", StringComparison.Ordinal)) && late.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            Thread.Sleep(20);
+        }
+
+        Assert.Contains(lines, line => line.StartsWith("The read of a.bin", StringComparison.Ordinal) && line.Contains("after the connections closed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_cancel_while_a_writer_is_blocked_in_a_socket_write_returns_within_about_a_second()
+    {
+        var a = Data(20 * Block, 1);
+        var (client, agentEnd) = DuplexPipe.Create(capacity: 64 * 1024);
+        var listed = new ManualResetEventSlim(false);
+
+        // An agent that accepts the token and the list, says go, then never reads again.
+        var stalled = new Thread(() =>
+        {
+            var reader = new DirectFrameReader(agentEnd);
+            reader.TryRead(out _, out _);
+            DirectFrames.Write(agentEnd, DirectFrameType.Ready, []);
+            while (reader.TryRead(out var type, out _) && type != DirectFrameType.ListEnd)
+            {
+            }
+
+            DirectFrames.Write(agentEnd, DirectFrameType.Go, []);
+            listed.Set();
+        });
+        stalled.Start();
+        var lines = new ConcurrentQueue<string>();
+        var sender = new DirectSender(() => [new TransferFile("a.bin", a.Length)], _ => new MemoryStream(a, writable: false), 1, () => Environment.TickCount64);
+        sender.Info += lines.Enqueue;
+        var watch = new Stopwatch();
+        var canceller = new Thread(() =>
+        {
+            listed.Wait();
+            Thread.Sleep(300);
+            watch.Start();
+            sender.Cancel("The user cancelled the transfer.");
+        });
+        canceller.Start();
+
+        var outcome = sender.Run(new DirectConnection(client), Token, null);
+        watch.Stop();
+        output.WriteLine($"Run returned {watch.ElapsedMilliseconds} ms after the cancel.");
+        agentEnd.Dispose();
+        stalled.Join();
+
+        Assert.Equal(DirectSendStatus.Cancelled, outcome.Status);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"Run returned {watch.ElapsedMilliseconds} ms after the cancel.");
+        Assert.Contains(lines, line => line.StartsWith("The cancel frame could not be sent within 1 s", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_cancel_through_the_channel_ends_the_transfer_as_cancelled()
+    {
+        var a = Data(30 * Block, 1);
+        using var agent = new Agent();
+        var run = Run([new("a.bin", a.Length)], [a], connections: 2, agent: agent, onAck: (_, _) => agent.Receiver.ClientCancelled("The user cancelled the transfer."));
+
+        Assert.Equal(DirectSendStatus.AgentCancelled, run.Outcome.Status);
+        Assert.Equal(DirectReceiverState.Cancelled, agent.Receiver.State);
+        Assert.True(agent.Receiver.CancelledThroughChannel);
+        Assert.Equal(1, agent.Memory.DeleteAllCalls);
+    }
+
+    [Fact]
+    public void Connections_that_closed_just_before_a_cancel_through_the_channel_count_as_cancelled()
+    {
+        var a = Data(12 * Block, 1);
+        using var agent = new Agent();
+        var run = Run([new("a.bin", a.Length)], [a], agent: agent, cutControlAfter: 10L * Block);
+
+        Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
+        Assert.Equal(DirectFailure.Broken, agent.Receiver.Failure);
+        agent.Receiver.ClientCancelled("The user cancelled the transfer.");
+        Assert.Equal(DirectReceiverState.Cancelled, agent.Receiver.State);
+        Assert.Equal(DirectFailure.None, agent.Receiver.Failure);
+    }
+
+    [Fact]
+    public void A_close_by_the_agent_stays_a_close_by_the_agent()
+    {
+        var a = Data(30 * Block, 1);
+        using var agent = new Agent();
+        var run = Run([new("a.bin", a.Length)], [a], connections: 2, agent: agent, onAck: (_, _) => agent.Receiver.Close("the agent stops"));
+        agent.Receiver.ClientCancelled("The user cancelled the transfer.");
+
+        Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
+        Assert.True(run.Outcome.Acknowledged);
+        Assert.Equal(DirectReceiverState.Failed, agent.Receiver.State);
+        Assert.True(agent.Receiver.ClosedByAgent);
+        Assert.Equal("Closed by the agent: the agent stops", agent.Receiver.FailureDetail);
+    }
+
+    [Fact]
+    public void A_connection_cut_before_the_first_acknowledgement_is_broken_without_acknowledgement()
+    {
+        var a = Data(5 * Block, 1);
+        var run = Run([new("a.bin", a.Length)], [a], cutControlAfter: 2L * Block);
+
+        Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
+        Assert.False(run.Outcome.Acknowledged);
+        Assert.Equal(DirectReceiverState.Failed, run.Agent.Receiver.State);
+        Assert.Equal(DirectFailure.Broken, run.Agent.Receiver.Failure);
+        Assert.False(run.Agent.Receiver.FinalWasSent);
+        Assert.Equal(1, run.Agent.Memory.DeleteAllCalls);
+    }
+
+    [Fact]
+    public void One_connection_breaking_in_the_middle_fails_the_whole_transfer()
+    {
+        var a = Data(64 * Block, 1);
+        using var agent = new Agent();
+        var run = Run(
+            [new("a.bin", a.Length)],
+            [a],
+            connections: 4,
+            agent: agent,
+            openExtra: (index, _) => new DirectConnection(agent.Connect(index == 2 ? 3L * Block : long.MaxValue)));
+
+        Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
+        Assert.Equal(DirectReceiverState.Failed, agent.Receiver.State);
+        Assert.Equal(DirectFailure.Broken, agent.Receiver.Failure);
+        Assert.Contains("Connection 2 was lost", agent.Receiver.FailureDetail, StringComparison.Ordinal);
+        Assert.Equal(1, agent.Memory.DeleteAllCalls);
+        Assert.Empty(agent.Memory.Files);
+    }
+
+    [Fact]
+    public void An_extra_connection_that_cannot_be_opened_is_not_an_error()
+    {
+        var a = Data(8 * Block, 1);
+        using var agent = new Agent();
+        var lines = new ConcurrentQueue<string>();
+        var run = Run(
+            [new("a.bin", a.Length)],
+            [a],
+            connections: 4,
+            agent: agent,
+            created: sender => sender.Info += lines.Enqueue,
+            openExtra: (index, _) => index switch
+            {
+                2 => throw new IOException("did not answer within 3 s"),
+                3 => null,
+                _ => new DirectConnection(agent.Connect()),
+            });
+
+        Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
+        Assert.Equal(a, agent.Memory.Content("a.bin"));
+        Assert.Equal(2, run.Sender.Stats().Connections);
+        Assert.Contains("Connection 2 is not used: did not answer within 3 s", lines);
+    }
+
+    [Fact]
+    public void An_extra_connection_that_closes_before_any_block_is_dropped_and_the_transfer_goes_on()
+    {
+        var a = Data(10, 1);
+        using var agent = new Agent();
+        var dropped = new ConcurrentQueue<int>();
+        agent.Receiver.ConnectionDropped += (index, _) => dropped.Enqueue(index);
+        var (control, reader) = Open(agent, 0);
+        var (extra, _) = Open(agent, 1);
+        extra.Dispose();
+        SendList(control, reader, new TransferFile("a.bin", a.Length));
+        SendBlock(control, 0, 0, a);
+        DirectFrames.Write(control, DirectFrameType.FileTrailer, DirectFrames.FileTrailerPayload(0, SHA256.HashData(a)));
+        DirectFrames.Write(control, DirectFrameType.End, DirectFrames.EndPayload(1));
+
+        var result = ReadFinal(reader);
+        control.Dispose();
+        agent.Join();
+
+        Assert.Equal(DropStatus.Ok, result.Status);
+        Assert.Equal(new[] { 1 }, dropped);
+    }
+
+    [Fact]
+    public void Many_small_files_and_empty_files_go_through_four_connections()
+    {
+        var random = new Random(5);
+        var files = new List<TransferFile> { new("a.bin", 1000) };
+        var contents = new List<byte[]?> { Data(1000, 0) };
+        for (var i = 0; i < 400; i++)
+        {
+            var size = i % 5 == 0 ? 0 : random.Next(1, 5000);
+            files.Add(new TransferFile($@"Folder\f{i:000}.txt", size));
+            contents.Add(Data(size, i + 1));
+        }
+
+        var run = Run([.. files], [.. contents], connections: 4, bytesPerConnection: 1024);
+
+        Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
+        Assert.Equal(4, run.Sender.Stats().Connections);
+        Assert.Equal(401, run.Agent.Memory.Completed.Count);
+        for (var i = 0; i < files.Count; i++)
+        {
+            Assert.Equal(contents[i], run.Agent.Memory.Content(files[i].RelativePath));
+        }
+
+        Assert.Equal(401, run.Agent.Receiver.ReceivedFiles);
+    }
+
+    [Fact]
+    public void Two_hundred_megabytes_go_through_eight_connections_in_about_two_seconds()
+    {
+        const long Size = 200_000_000;
+        var block = Data(Block, 7);
+        var storage = new StreamingDirectStorage();
+        using var agent = new Agent(storage: storage);
+        var watch = Stopwatch.StartNew();
+        var run = Run([new("a.bin", Size)], [], connections: 8, agent: agent, bytesPerConnection: 16L * 1024 * 1024, open: _ => new RepeatingStream(block, Size));
+        watch.Stop();
+        var stats = run.Sender.Stats();
+        output.WriteLine($"200 MB over {stats.Connections} connections in {watch.ElapsedMilliseconds} ms; the agent read {agent.Receiver.ReadSeconds:0.00} s, wrote {agent.Receiver.WriteSeconds:0.00} s, hashed {agent.Receiver.HashSeconds:0.00} s; the client read {stats.ReadSeconds:0.00} s, wrote {stats.WriteSeconds:0.00} s.");
+
+        Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
+        Assert.Equal(8, stats.Connections);
+        Assert.Equal(Size, storage.Written);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"200 MB took {watch.ElapsedMilliseconds} ms.");
+    }
+
+    [Fact]
+    public void The_pacer_limits_all_the_connections_together()
+    {
+        var a = Data(20 * Block, 1);
+        using var agent = new Agent(pacer: new DirectPacer(40_000_000, () => Environment.TickCount64));
+        var watch = Stopwatch.StartNew();
+        var run = Run([new("a.bin", a.Length)], [a], connections: 4, agent: agent);
+        watch.Stop();
+        output.WriteLine($"20 MiB at 40 MB/s over 4 connections in {watch.ElapsedMilliseconds} ms, {agent.Receiver.PacedSeconds:0.00} s of waits.");
+
+        Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
+        Assert.True(watch.Elapsed > TimeSpan.FromMilliseconds(350), $"20 MiB took {watch.ElapsedMilliseconds} ms.");
+        Assert.True(agent.Receiver.PacedSeconds > 0);
+    }
+
+    [Fact]
+    public void A_path_that_leaves_the_items_is_refused_before_any_data()
     {
         var a = Data(10, 1);
         var run = Run([new(@"a.bin\..\..\evil.txt", a.Length)], [a]);
 
         Assert.Equal(DirectSendStatus.AgentFailed, run.Outcome.Status);
         Assert.Equal(DirectFailure.BadName, run.Outcome.Result!.Failure);
-        Assert.Empty(run.Storage.Files);
+        Assert.Empty(run.Agent.Memory.Files);
     }
 
     [Fact]
-    public void A_dropped_file_that_never_comes_leaves_the_transfer_incomplete()
+    public void A_dropped_file_missing_from_the_list_is_refused_before_any_data()
     {
         var b = Data(10, 1);
         var run = Run([new(@"Folder\b.txt", b.Length)], [b]);
 
         Assert.Equal(DirectSendStatus.AgentFailed, run.Outcome.Status);
         Assert.Equal(DirectFailure.Incomplete, run.Outcome.Result!.Failure);
-        Assert.Equal("a.bin", run.Receiver.FailurePath);
+        Assert.Equal("a.bin", run.Agent.Receiver.FailurePath);
+        Assert.Empty(run.Agent.Memory.Files);
     }
 
     [Fact]
     public void Announced_bytes_that_do_not_fit_are_refused_at_the_begin_frame()
     {
         var a = Data(5000, 1);
-        var run = Run([new("a.bin", a.Length)], [a], hasRoomFor: bytes => bytes < 1000);
+        using var agent = new Agent(hasRoomFor: bytes => bytes < 1000);
+        var run = Run([new("a.bin", a.Length)], [a], agent: agent);
 
         Assert.Equal(DirectSendStatus.AgentFailed, run.Outcome.Status);
         Assert.Equal(DirectFailure.NoSpace, run.Outcome.Result!.Failure);
@@ -253,7 +702,7 @@ public class DirectTransferTests(ITestOutputHelper output)
         Assert.Equal(DirectSendStatus.LocalFailure, run.Outcome.Status);
         Assert.True(run.Outcome.FileChanged);
         Assert.Equal("a.bin", run.Outcome.Path);
-        Assert.Equal(DirectReceiverState.Cancelled, run.Receiver.State);
+        Assert.Equal(DirectReceiverState.Cancelled, run.Agent.Receiver.State);
     }
 
     [Fact]
@@ -263,139 +712,75 @@ public class DirectTransferTests(ITestOutputHelper output)
 
         Assert.Equal(DirectSendStatus.LocalFailure, run.Outcome.Status);
         Assert.False(run.Outcome.FileChanged);
-        Assert.Equal(DirectReceiverState.Cancelled, run.Receiver.State);
+        Assert.Equal(DirectReceiverState.Cancelled, run.Agent.Receiver.State);
     }
 
     [Fact]
     public void Items_that_cannot_be_listed_after_the_token_cancel_the_transfer()
     {
-        var (client, agent) = DuplexPipe.Create();
-        var storage = new MemoryTransferStorage();
-        var receiver = new DirectReceiver(Token, Items, storage, () => 0);
-        var thread = new Thread(() =>
-        {
-            receiver.Run(agent, _ => null);
-            agent.Dispose();
-        });
-        thread.Start();
+        using var agent = new Agent();
         var listed = false;
-        var sender = new DirectSender(() =>
-        {
-            listed = true;
-            return null;
-        }, _ => throw new InvalidOperationException("Nothing to open."));
+        var sender = new DirectSender(
+            () =>
+            {
+                listed = true;
+                return null;
+            },
+            _ => throw new InvalidOperationException("Nothing to open."),
+            1,
+            () => Environment.TickCount64);
 
-        var outcome = sender.Run(client, Token);
-        client.Dispose();
-        thread.Join();
+        var outcome = sender.Run(new DirectConnection(agent.Connect()), Token, null);
+        agent.Join();
 
         Assert.True(listed);
         Assert.Equal(DirectSendStatus.LocalFailure, outcome.Status);
         Assert.Null(outcome.Path);
-        Assert.Equal(DirectReceiverState.Cancelled, receiver.State);
+        Assert.Equal(DirectReceiverState.Cancelled, agent.Receiver.State);
         Assert.Equal(DropStatus.Cancelled, outcome.Result!.Status);
     }
 
     [Fact]
-    public void A_data_frame_before_any_file_breaks_the_rules()
-    {
-        var (client, _, receiver, storage, thread) = StartAgent();
-        var reader = Authenticate(client);
-        DirectFrames.Write(client, DirectFrameType.Begin, DirectFrames.BeginPayload(1, 10));
-        DirectFrames.Write(client, DirectFrameType.Data, new byte[10]);
-
-        var result = ReadFinal(reader);
-        client.Dispose();
-        thread.Join();
-
-        Assert.Equal(DirectFailure.Protocol, result.Failure);
-        Assert.Equal(DirectFailure.Protocol, receiver.Failure);
-        Assert.Equal(1, storage.DeleteAllCalls);
-    }
-
-    [Fact]
-    public void A_frame_longer_than_allowed_breaks_the_connection()
-    {
-        var (client, _, receiver, _, thread) = StartAgent();
-        var reader = Authenticate(client);
-        var header = new byte[DirectFrames.HeaderLength];
-        DirectFrames.WriteHeader(header, DirectFrameType.Data, DirectFrames.MaxPayloadLength + 1);
-        client.Write(header);
-
-        var result = ReadFinal(reader);
-        client.Dispose();
-        thread.Join();
-
-        Assert.Equal(DirectFailure.Protocol, result.Failure);
-        Assert.Contains("more than", receiver.FailureDetail, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_file_longer_than_announced_fails()
-    {
-        var (client, _, receiver, _, thread) = StartAgent();
-        var reader = Authenticate(client);
-        DirectFrames.Write(client, DirectFrameType.Begin, DirectFrames.BeginPayload(1, 10));
-        DirectFrames.Write(client, DirectFrameType.FileHeader, DirectFrames.FileHeaderPayload(0, new TransferFile("a.bin", 10)));
-        DirectFrames.Write(client, DirectFrameType.Data, new byte[11]);
-
-        var result = ReadFinal(reader);
-        client.Dispose();
-        thread.Join();
-
-        Assert.Equal(DirectFailure.SizeMismatch, result.Failure);
-        Assert.Equal(DirectFailure.SizeMismatch, receiver.Failure);
-    }
-
-    [Fact]
-    public void A_storage_that_cannot_write_fails_the_transfer()
+    public void A_storage_that_cannot_create_the_files_fails_the_transfer()
     {
         var a = Data(100, 1);
-        var storage = new MemoryTransferStorage { FailOnCreate = true };
-        var run = Run([new("a.bin", a.Length)], [a], storage: storage);
+        using var agent = new Agent();
+        agent.Memory.FailOnCreate = true;
+        var run = Run([new("a.bin", a.Length)], [a], agent: agent);
 
         Assert.Equal(DirectSendStatus.AgentFailed, run.Outcome.Status);
         Assert.Equal(DirectFailure.WriteFailed, run.Outcome.Result!.Failure);
     }
 
-    [Fact]
-    public void One_hundred_megabytes_go_through_in_about_a_second()
+    private static (Stream Stream, DirectFrameReader Reader) Open(Agent agent, byte index)
     {
-        const int Size = 100_000_000;
-        var data = Data(Size, 7);
-        var storage = new NullTransferStorage();
-        var watch = Stopwatch.StartNew();
-        var run = Run([new("a.bin", Size)], [data], storage: storage);
-        watch.Stop();
-        output.WriteLine($"100 MB through the direct frames in {watch.ElapsedMilliseconds} ms.");
-
-        Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
-        Assert.Equal(Size, storage.Written);
-        Assert.Equal(12, run.Acks.Count);
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(15), $"100 MB took {watch.ElapsedMilliseconds} ms.");
-    }
-
-    private static (Stream Client, Stream Agent, DirectReceiver Receiver, MemoryTransferStorage Storage, Thread Thread) StartAgent()
-    {
-        var (client, agent) = DuplexPipe.Create();
-        var storage = new MemoryTransferStorage();
-        var receiver = new DirectReceiver(Token, Items, storage, () => 0);
-        var thread = new Thread(() =>
-        {
-            receiver.Run(agent, r => "failed " + r.Failure);
-            agent.Dispose();
-        });
-        thread.Start();
-        return (client, agent, receiver, storage, thread);
-    }
-
-    private static DirectFrameReader Authenticate(Stream client)
-    {
-        DirectFrames.Write(client, DirectFrameType.Token, DirectFrames.TokenPayload(Token));
-        var reader = new DirectFrameReader(client);
+        var stream = agent.Connect();
+        DirectFrames.Write(stream, DirectFrameType.Token, DirectFrames.TokenPayload(Token, index));
+        var reader = new DirectFrameReader(stream);
         Assert.True(reader.TryRead(out var type, out _));
         Assert.Equal(DirectFrameType.Ready, type);
-        return reader;
+        return (stream, reader);
+    }
+
+    private static void SendList(Stream control, DirectFrameReader reader, params TransferFile[] files)
+    {
+        DirectFrames.Write(control, DirectFrameType.Begin, DirectFrames.BeginPayload(files.Length, files.Sum(file => file.Size)));
+        for (var i = 0; i < files.Length; i++)
+        {
+            DirectFrames.Write(control, DirectFrameType.FileHeader, DirectFrames.FileHeaderPayload(i, files[i]));
+        }
+
+        DirectFrames.Write(control, DirectFrameType.ListEnd, []);
+        Assert.True(reader.TryRead(out var type, out _));
+        Assert.Equal(DirectFrameType.Go, type);
+    }
+
+    private static void SendBlock(Stream stream, int fileIndex, long offset, ReadOnlySpan<byte> data)
+    {
+        var frame = new byte[DirectFrames.DataFrameOverhead + data.Length];
+        DirectFrames.WriteDataHeader(frame, fileIndex, offset, data.Length);
+        data.CopyTo(frame.AsSpan(DirectFrames.DataFrameOverhead));
+        stream.Write(frame);
     }
 
     private static DirectResult ReadFinal(DirectFrameReader reader)
@@ -415,30 +800,25 @@ public class DirectTransferTests(ITestOutputHelper output)
     private static RunResult Run(
         TransferFile[] files,
         byte[]?[] contents,
+        int connections = 1,
         TransferItem[]? items = null,
-        byte[]? clientToken = null,
-        long cutAfter = long.MaxValue,
-        Func<long, bool>? hasRoomFor = null,
-        ITransferStorage? storage = null,
+        Agent? agent = null,
+        long bytesPerConnection = Block,
+        long cutControlAfter = long.MaxValue,
         Action<DirectSender, DirectAck>? onAck = null,
-        Action<DirectSender>? created = null)
+        Action<DirectSender>? created = null,
+        Func<int, CancellationToken, DirectConnection?>? openExtra = null,
+        Func<int, Stream>? open = null)
     {
-        var (client, agent) = DuplexPipe.Create(cutAfter);
-        var memory = storage as MemoryTransferStorage ?? new MemoryTransferStorage();
-        var receiver = new DirectReceiver(Token, items ?? Items, storage ?? memory, () => Environment.TickCount64, hasRoomFor);
-        var authenticated = false;
-        receiver.Authenticated += () => authenticated = true;
-        var agentThread = new Thread(() =>
+        agent ??= new Agent(items: items);
+        var sender = new DirectSender(
+            () => files,
+            open ?? (index => contents[index] is { } content ? new MemoryStream(content, writable: false) : throw new IOException("The file is locked.")),
+            connections,
+            () => Environment.TickCount64)
         {
-            receiver.Run(agent, r => r.State == DirectReceiverState.Succeeded ? "done" : "failed " + r.Failure);
-            agent.Dispose();
-        })
-        {
-            IsBackground = true,
+            BytesPerConnection = bytesPerConnection,
         };
-        agentThread.Start();
-
-        var sender = new DirectSender(files, index => contents[index] is { } content ? new MemoryStream(content, writable: false) : throw new IOException("The file is locked."));
         created?.Invoke(sender);
         var acks = new List<DirectAck>();
         sender.Acknowledged += ack =>
@@ -450,11 +830,90 @@ public class DirectTransferTests(ITestOutputHelper output)
 
             onAck?.Invoke(sender, ack);
         };
-        var outcome = sender.Run(client, clientToken ?? Token);
-        client.Dispose();
-        Assert.True(agentThread.Join(TimeSpan.FromSeconds(30)), "The agent did not end.");
-        return new RunResult(outcome, receiver, memory, acks, authenticated);
+        var outcome = sender.Run(new DirectConnection(agent.Connect(cutControlAfter)), Token, openExtra ?? ((_, _) => new DirectConnection(agent.Connect())));
+        agent.Join();
+        return new RunResult(outcome, agent, sender, acks);
     }
 
-    private sealed record RunResult(DirectSendOutcome Outcome, DirectReceiver Receiver, MemoryTransferStorage Storage, List<DirectAck> Acks, bool Authenticated);
+    private sealed record RunResult(DirectSendOutcome Outcome, Agent Agent, DirectSender Sender, List<DirectAck> Acks);
+
+    /// <summary>A receiver and the threads that serve its connections, as the listener of the agent runs them.</summary>
+    private sealed class Agent : IDisposable
+    {
+        private readonly List<Thread> _threads = [];
+
+        public Agent(TransferItem[]? items = null, IDirectStorage? storage = null, int maxConnections = 8, Func<long, bool>? hasRoomFor = null, DirectPacer? pacer = null)
+        {
+            Memory = new MemoryDirectStorage();
+            Receiver = new DirectReceiver(
+                Token,
+                maxConnections,
+                items ?? Items,
+                storage ?? Memory,
+                () => Environment.TickCount64,
+                receiver => receiver.State == DirectReceiverState.Succeeded ? "done" : "failed " + receiver.Failure,
+                hasRoomFor,
+                pacer);
+        }
+
+        public DirectReceiver Receiver { get; }
+
+        public MemoryDirectStorage Memory { get; }
+
+        public ConcurrentQueue<DirectServeResult> Results { get; } = new();
+
+        /// <summary>A new connection, served on a thread of its own; the agent closes its end when the receiver is done with it.</summary>
+        public Stream Connect(long cutClientToAgentAfter = long.MaxValue)
+        {
+            var (client, agent) = DuplexPipe.Create(cutClientToAgentAfter);
+            var thread = new Thread(() =>
+            {
+                Results.Enqueue(Receiver.Serve(agent));
+                agent.Dispose();
+            })
+            {
+                IsBackground = true,
+            };
+            lock (_threads)
+            {
+                _threads.Add(thread);
+            }
+
+            thread.Start();
+            return client;
+        }
+
+        /// <summary>Waits for the end of the transfer and of every connection.</summary>
+        public void Join()
+        {
+            if (Receiver.HasControl)
+            {
+                Assert.True(Receiver.WaitEnded(TimeSpan.FromSeconds(30)), "The receiver did not end.");
+            }
+
+            JoinThreads();
+        }
+
+        public void JoinThreads()
+        {
+            Thread[] threads;
+            lock (_threads)
+            {
+                threads = [.. _threads];
+            }
+
+            foreach (var thread in threads)
+            {
+                Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "A connection of the agent did not end.");
+            }
+        }
+
+        public void Dispose()
+        {
+            if (!Receiver.IsFinished)
+            {
+                Receiver.Close("the test ends");
+            }
+        }
+    }
 }

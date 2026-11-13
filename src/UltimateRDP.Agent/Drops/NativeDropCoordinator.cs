@@ -263,6 +263,13 @@ internal sealed class NativeDropCoordinator : IDisposable
             direct.Close("the client sends the files through the channel");
         }
 
+        if (message is TransferCancelMessage cancel && FindByTransfer(transferId)?.Direct is { Succeeded: false } cancelled)
+        {
+            // Before the channel ends the drag: the direct transfer, or what is left of it once
+            // its connections closed, ends as cancelled by the client rather than as broken.
+            cancelled.OnClientCancel(cancel.Reason ?? "no reason given");
+        }
+
         switch (route)
         {
             case TransferRoute.Deliver:
@@ -747,7 +754,7 @@ internal sealed class NativeDropCoordinator : IDisposable
             }
         }
 
-        var direct = DirectListener.TryStart(_logger, _settings.DirectPortRange, drag.Id, transferId, items, _staging, _language);
+        var direct = DirectListener.TryStart(_logger, _settings.DirectPortRange, _settings.DirectConnections, _settings.DirectMaxMegabytesPerSecond, drag.Id, transferId, items, _staging, _language);
         if (direct is null)
         {
             return;

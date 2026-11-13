@@ -40,6 +40,9 @@ internal sealed partial class SessionView
     /// <summary>Whether a direct connection offered by the agent is used, from the <c>directTransfer</c> setting.</summary>
     private readonly DirectTransferMode _directTransferMode;
 
+    /// <summary>The most connections of a direct transfer, from the <c>directConnections</c> setting.</summary>
+    private readonly int _directConnections;
+
     private TransferUpload? _upload;
 
     /// <summary>The transfer through the direct connection, while it runs.</summary>
@@ -155,14 +158,14 @@ internal sealed partial class SessionView
 
     private void StartDirectTransfer(string dragId, string transferId, IReadOnlyList<DropItem> items, DirectTransferOffer direct)
     {
-        var upload = new DirectUpload(this, dragId, transferId, items, direct, Host);
+        var upload = new DirectUpload(this, dragId, transferId, items, direct, Host, _directConnections);
         upload.Planned += OnDirectPlanned;
         upload.Acknowledged += OnDirectAcknowledged;
         upload.FellBack += OnDirectFellBack;
         upload.Failed += OnDirectFailed;
         upload.Completed += OnDirectCompleted;
         _direct = upload;
-        ClientLog.Info(Invariant($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s) through the direct connection, port {direct.Port} of {Host}{(direct.Host is { } hint ? ", address hint " + hint : string.Empty)}, certificate pinned to SHA-256 {direct.CertSha256}; the channel takes the files when the connection cannot be used."));
+        ClientLog.Info(Invariant($"Transfer {transferId} of drag {dragId}: started with {items.Count} item(s) through the direct connection, port {direct.Port} of {Host}{(direct.Host is { } hint ? ", address hint " + hint : string.Empty)}, up to {Math.Min(direct.Connections ?? 1, _directConnections)} connection(s) (the agent accepts {direct.Connections}, the setting allows {_directConnections}), certificate pinned to SHA-256 {direct.CertSha256}; the channel takes the files when the connection cannot be used."));
         ShowDropStatus(LocalText.Joined(LocalText.Of(nameof(Strings.TransferPreparing), items.Count), LocalText.Of(nameof(Strings.TransferDirect))));
         OpenProgressWindow(dragId, items, transfer: true);
         ProgressWindowOf(dragId)?.ShowDirect(true);
@@ -177,8 +180,9 @@ internal sealed partial class SessionView
             return;
         }
 
+        // The window and the status bar keep the preparing stage until the first
+        // acknowledgement: a slow open of a file must not look like a transfer at 0 B/s.
         ClientLog.Info(Invariant($"Transfer {upload.TransferId}: {upload.FileCount} file(s), {upload.TotalBytes} bytes, for the direct connection."));
-        ShowTransferProgress(upload);
     }
 
     private void OnDirectAcknowledged(DirectUpload upload)
@@ -630,6 +634,6 @@ internal sealed partial class SessionView
             ? "no final frame of the agent"
             : Invariant($"{result.Milliseconds / 1000.0:0.0} s and {TransferProgressText.MegabytesPerSecond(result.Bytes, result.Milliseconds / 1000.0):0.0} MB/s measured by the agent");
         ClientLog.Info(Invariant(
-            $"Transfer {upload.TransferId} of drag {upload.DragId}: {(result is null ? "Failed" : result.Status)} through the direct connection to {upload.Endpoint ?? "(not connected)"}, port {upload.Port}, {upload.Tls ?? "no TLS session"}, {upload.FileCount} file(s), {bytes} of {upload.TotalBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s from the drop; {agent}."));
+            $"Transfer {upload.TransferId} of drag {upload.DragId}: {(result is null ? "Failed" : result.Status)} through the direct connection to {upload.Endpoint ?? "(not connected)"}, port {upload.Port}, {upload.Tls ?? "no TLS session"}, {upload.ConnectionsUsed} connection(s), {upload.FileCount} file(s), {bytes} of {upload.TotalBytes} bytes in {seconds:0.0} s, {rate:0.0} MB/s from the drop; {agent}."));
     }
 }

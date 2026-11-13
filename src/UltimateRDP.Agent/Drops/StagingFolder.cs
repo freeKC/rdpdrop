@@ -1,6 +1,8 @@
 using Timer = System.Threading.Timer;
 using System.Security;
+using Microsoft.Win32.SafeHandles;
 using UltimateRDP.Agent.Logging;
+using UltimateRDP.Core.Direct;
 using UltimateRDP.Core.Transfer;
 
 namespace UltimateRDP.Agent.Drops;
@@ -167,6 +169,20 @@ internal sealed class StagingFolder : IDisposable
         return new TransferStorage(this, FolderOf(transferId));
     }
 
+    /// <summary>
+    /// Where the files of a direct transfer go: the folder <paramref name="folderId"/>, with
+    /// files written by blocks at their offsets from several threads.
+    /// </summary>
+    public IDirectStorage CreateDirectStorage(string folderId)
+    {
+        if (!Path.IsPathFullyQualified(_root))
+        {
+            throw new IOException("The folder of the user profile is unknown, so there is no staging folder.");
+        }
+
+        return new DirectTransferStorage(new TransferStorage(this, FolderOf(folderId)));
+    }
+
     /// <summary>Deletes the folder of drag <paramref name="id"/> after <paramref name="delay"/>.</summary>
     private void ScheduleDelete(string id, TimeSpan delay)
     {
@@ -284,7 +300,7 @@ internal sealed class StagingFolder : IDisposable
         public void DeleteAll() => owner.Delete(folder, "after a transfer that did not end");
 
         /// <summary>The checked relative path below the folder; anything else is refused.</summary>
-        private string FullPath(string relativePath)
+        public string FullPath(string relativePath)
         {
             var path = Path.GetFullPath(Path.Combine(folder, relativePath));
             if (!path.StartsWith(_prefix, StringComparison.OrdinalIgnoreCase))
@@ -293,6 +309,58 @@ internal sealed class StagingFolder : IDisposable
             }
 
             return path;
+        }
+    }
+
+    /// <summary>The storage of a direct transfer, with the same folder and the same checks of the paths as the channel.</summary>
+    private sealed class DirectTransferStorage(TransferStorage files) : IDirectStorage
+    {
+        public void CreateDirectory(string relativePath) => files.CreateDirectory(relativePath);
+
+        public IDirectFile CreateFile(string relativePath, long size)
+        {
+            var path = files.FullPath(relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            // Created now, opened at its first block: a folder of many small files does not
+            // hold a handle per file for the whole transfer.
+            File.OpenHandle(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read).Dispose();
+            return new DirectFile(path);
+        }
+
+        public void CompleteFile(string relativePath, DateTime? modified) => files.CompleteFile(relativePath, modified);
+
+        public void DeleteAll() => files.DeleteAll();
+    }
+
+    /// <summary>One file of a direct transfer: positional reads and writes on one handle, opened at the first use, closed at the end.</summary>
+    private sealed class DirectFile(string path) : IDirectFile
+    {
+        private readonly Lock _gate = new();
+        private SafeFileHandle? _handle;
+        private bool _disposed;
+
+        public void Write(long offset, ReadOnlySpan<byte> data) => RandomAccess.Write(Handle(), data, offset);
+
+        public int Read(long offset, Span<byte> buffer) => RandomAccess.Read(Handle(), buffer, offset);
+
+        public void Dispose()
+        {
+            lock (_gate)
+            {
+                _disposed = true;
+                _handle?.Dispose();
+                _handle = null;
+            }
+        }
+
+        private SafeFileHandle Handle()
+        {
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _handle ??= File.OpenHandle(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+            }
         }
     }
 }

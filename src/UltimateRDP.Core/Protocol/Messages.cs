@@ -321,10 +321,10 @@ public sealed record DragAckMessage(string Id, bool Accepted, string? Message = 
 
 /// <summary>
 /// The direct connection offered by the agent in a <see cref="DragAckMessage"/>, since 0.6.0:
-/// a TCP port it listens on for this transfer only, the single use token the client sends
-/// once the TLS handshake is done, and the SHA-256 of the certificate the agent presents,
-/// which the client pins. The RDP channel that carries the offer is already authenticated
-/// and encrypted.
+/// a TCP port it listens on for this transfer only, the single use token from which the
+/// client derives the proof of each connection once its TLS handshake is done, and the
+/// SHA-256 of the certificate the agent presents, which the client pins. The RDP channel
+/// that carries the offer is already authenticated and encrypted.
 /// </summary>
 /// <param name="Port">TCP port of the listener, one of the <c>directPortRange</c> setting of the agent.</param>
 /// <param name="Token">The token, <see cref="Direct.DirectFrames.TokenLength"/> random bytes as lower case hexadecimal digits.</param>
@@ -333,14 +333,26 @@ public sealed record DragAckMessage(string Id, bool Accepted, string? Message = 
 /// A hint: the primary IPv4 address of the server, which the client tries only when the host
 /// of its .rdp file cannot be reached. Not written when the agent knows none.
 /// </param>
-public sealed record DirectTransferOffer(int Port, string Token, string CertSha256, string? Host = null)
+/// <param name="Version">
+/// Since 0.7.0: the version of the protocol of the direct connection,
+/// <see cref="Direct.DirectFrames.ProtocolVersion"/>. An agent 0.6.0 writes none; a client
+/// 0.7.0 uses only an offer of its own version, and the channel otherwise.
+/// </param>
+/// <param name="Connections">Since 0.7.0: the most connections the agent accepts for the transfer, 1 to 16.</param>
+public sealed record DirectTransferOffer(int Port, string Token, string CertSha256, string? Host = null, int? Version = null, int? Connections = null)
 {
-    /// <summary>True when the port is a TCP port and the token and the hash are 64 hexadecimal digits each.</summary>
+    /// <summary>
+    /// True when the port is a TCP port, the token and the hash are 64 hexadecimal digits
+    /// each, and the offer is of version <see cref="Direct.DirectFrames.ProtocolVersion"/>
+    /// with 1 to <see cref="Direct.DirectFrames.MaxConnections"/> connections.
+    /// </summary>
     public bool IsWellFormed() =>
         Port is > 0 and <= 65535
         && Transfer.TransferHash.IsValidHex(Token)
         && Transfer.TransferHash.IsValidHex(CertSha256)
-        && (Host is null || Host.Length is > 0 and <= 255);
+        && (Host is null || Host.Length is > 0 and <= 255)
+        && Version == Direct.DirectFrames.ProtocolVersion
+        && Connections is >= 1 and <= Direct.DirectFrames.MaxConnections;
 }
 
 /// <summary>

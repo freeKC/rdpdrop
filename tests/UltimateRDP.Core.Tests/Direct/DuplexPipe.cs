@@ -4,7 +4,8 @@ namespace UltimateRDP.Core.Tests.Direct;
 /// Two connected in memory streams, as the two ends of a TCP connection: what one end
 /// writes, the other reads, with a bounded buffer per direction so that a writer waits for
 /// its reader as with TCP. Disposing an end closes it: the other end reads the end of the
-/// stream once the data written before is read, and its writes fail as after a reset.
+/// stream once the data written before is read, and its writes fail as after a reset; a
+/// read or a write blocked on the closed end fails at once.
 /// </summary>
 internal static class DuplexPipe
 {
@@ -45,13 +46,14 @@ internal static class DuplexPipe
                         throw new IOException("The connection was cut.");
                     }
 
-                    while (_buffered >= capacity && !_abandoned)
+                    while (_buffered >= capacity && !_abandoned && !_completed)
                     {
                         Monitor.Wait(_gate);
                     }
 
-                    if (_abandoned)
+                    if (_abandoned || _completed)
                     {
+                        // A write blocked on a full connection fails when either end closes, as on a socket.
                         throw new IOException("The connection was reset by the other end.");
                     }
 

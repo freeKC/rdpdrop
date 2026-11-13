@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Security.Cryptography;
 using System.Text;
 using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.Transfer;
@@ -6,40 +7,51 @@ using UltimateRDP.Core.Transfer;
 namespace UltimateRDP.Core.Direct;
 
 /// <summary>
-/// The type byte of a frame of the direct connection. The client sends <see cref="Token"/>,
-/// <see cref="Begin"/>, <see cref="FileHeader"/>, <see cref="Data"/>,
-/// <see cref="FileTrailer"/> and <see cref="Cancel"/>; the agent sends <see cref="Ready"/>,
-/// <see cref="Ack"/> and <see cref="Final"/>.
+/// The type byte of a frame of the direct connection, version 2. The client sends
+/// <see cref="Token"/> on every connection, then on connection 0 <see cref="Begin"/>,
+/// <see cref="FileHeader"/>, <see cref="ListEnd"/>, <see cref="FileTrailer"/> and
+/// <see cref="Cancel"/>, and on every connection <see cref="Data"/> and <see cref="End"/>.
+/// The agent sends <see cref="Ready"/> on every connection, then on connection 0 only
+/// <see cref="Go"/>, <see cref="Ack"/> and <see cref="Final"/>.
 /// </summary>
 public enum DirectFrameType : byte
 {
-    /// <summary>The first frame of the client: the protocol version, one byte, then the token of the offer.</summary>
+    /// <summary>
+    /// The first frame of the client on each connection: the protocol version (1 byte), the
+    /// index of the connection (1 byte), then the proof of the token for that index (32 bytes).
+    /// </summary>
     Token = 1,
 
-    /// <summary>The agent accepted the token; empty.</summary>
+    /// <summary>The agent accepted the token of this connection; empty.</summary>
     Ready = 2,
 
     /// <summary>The files and bytes of the transfer: two signed little endian integers of 4 and 8 bytes.</summary>
     Begin = 3,
 
     /// <summary>
-    /// Before the data of a file: its index (4 bytes), its size (8 bytes), its last write
-    /// time in UTC as ticks (8 bytes, 0 when unknown), then its relative path in UTF-8.
+    /// One file of the transfer, all before any data: its index (4 bytes), its size (8
+    /// bytes), its last write time in UTC as ticks (8 bytes, 0 when unknown), then its
+    /// relative path in UTF-8.
     /// </summary>
     FileHeader = 4,
 
-    /// <summary>Raw bytes of the open file, 1 to <see cref="DirectFrames.MaxDataBytes"/>.</summary>
+    /// <summary>
+    /// One block of a file: the file index (4 bytes), the offset (8 bytes, a multiple of
+    /// <see cref="DirectFrames.BlockSize"/>), then 1 to <see cref="DirectFrames.BlockSize"/>
+    /// raw bytes, exactly the rest of the file when it is shorter than a block.
+    /// </summary>
     Data = 5,
 
-    /// <summary>After the data of a file: its index (4 bytes) and its SHA-256 (32 bytes).</summary>
+    /// <summary>The client read the whole file: its index (4 bytes) and its SHA-256 (32 bytes).</summary>
     FileTrailer = 6,
 
     /// <summary>The client stops the transfer; the rest is the reason in UTF-8, in English, for the log.</summary>
     Cancel = 7,
 
     /// <summary>
-    /// The bytes received and written: the index of the file (4 bytes), the bytes of that
-    /// file (8 bytes) and of the whole transfer (8 bytes).
+    /// The bytes received and written: the index of the file being checked (4 bytes), the
+    /// bytes of that file checked so far (8 bytes) and the bytes of the whole transfer
+    /// received and written (8 bytes).
     /// </summary>
     Ack = 8,
 
@@ -49,6 +61,15 @@ public enum DirectFrameType : byte
     /// agent in milliseconds (8 bytes), then a text for the user in UTF-8.
     /// </summary>
     Final = 9,
+
+    /// <summary>Every file header was sent; empty.</summary>
+    ListEnd = 10,
+
+    /// <summary>The agent checked the list and created the files: the data may flow; empty.</summary>
+    Go = 11,
+
+    /// <summary>The client sent its last data frame on this connection: the number of data frames it sent on it (8 bytes).</summary>
+    End = 12,
 }
 
 /// <summary>Why a direct transfer did not succeed.</summary>
@@ -57,10 +78,10 @@ public enum DirectFailure : byte
     /// <summary>No failure.</summary>
     None = 0,
 
-    /// <summary>A frame is malformed, unknown, too long or out of order.</summary>
+    /// <summary>A frame is malformed, unknown, too long, out of order, or a block is misaligned, out of range or came twice.</summary>
     Protocol = 1,
 
-    /// <summary>The first frame was not the token of the offer, or not of this protocol version.</summary>
+    /// <summary>The first frame was not a token of the offer, or not of this protocol version.</summary>
     Token = 2,
 
     /// <summary>The staging folder lacks the space for the announced bytes.</summary>
@@ -69,19 +90,19 @@ public enum DirectFailure : byte
     /// <summary>A relative path is not allowed, or names a file a second time.</summary>
     BadName = 4,
 
-    /// <summary>A file did not have its announced size, or the transfer more bytes than announced.</summary>
+    /// <summary>The files do not add up to the bytes of the begin frame.</summary>
     SizeMismatch = 5,
 
     /// <summary>The SHA-256 of a file does not match its trailer.</summary>
     HashMismatch = 6,
 
-    /// <summary>Writing a file failed.</summary>
+    /// <summary>Writing or reading back a file failed.</summary>
     WriteFailed = 7,
 
-    /// <summary>The transfer ended without some of the dropped files.</summary>
+    /// <summary>The transfer ended without some of the dropped files, or without some blocks of a file.</summary>
     Incomplete = 8,
 
-    /// <summary>The stream ended or failed before the transfer was over.</summary>
+    /// <summary>A connection ended or failed before the transfer was over, or the agent closed it.</summary>
     Broken = 9,
 
     /// <summary>The client could not read a file, or a file changed while it was sent.</summary>
@@ -89,8 +110,8 @@ public enum DirectFailure : byte
 }
 
 /// <summary>An acknowledgement of the agent on the direct connection.</summary>
-/// <param name="FileIndex">The file the last bytes belong to.</param>
-/// <param name="FileBytes">Bytes of that file received and written.</param>
+/// <param name="FileIndex">The file being checked.</param>
+/// <param name="FileBytes">Bytes of that file checked so far.</param>
 /// <param name="TotalBytes">Bytes of the whole transfer received and written.</param>
 public readonly record struct DirectAck(int FileIndex, long FileBytes, long TotalBytes);
 
@@ -121,16 +142,25 @@ public sealed class DirectProtocolException : IOException
 public static class DirectFrames
 {
     /// <summary>Version of the protocol of the direct connection, the first byte of the token frame.</summary>
-    public const byte ProtocolVersion = 1;
+    public const byte ProtocolVersion = 2;
+
+    /// <summary>Most connections of one transfer.</summary>
+    public const int MaxConnections = 16;
 
     /// <summary>Bytes of the length and the type in front of every payload.</summary>
     public const int HeaderLength = 5;
 
-    /// <summary>Most raw bytes in one data frame: the client writes the files by 1 MiB.</summary>
-    public const int MaxDataBytes = 1024 * 1024;
+    /// <summary>Bytes in front of the raw bytes of a data frame: the file index and the offset.</summary>
+    public const int DataPrefixLength = 12;
+
+    /// <summary>Bytes in front of the raw bytes of a data frame, header included.</summary>
+    public const int DataFrameOverhead = HeaderLength + DataPrefixLength;
+
+    /// <summary>Size of a block: the files go by blocks of 1 MiB at offsets that are multiples of it.</summary>
+    public const int BlockSize = 1024 * 1024;
 
     /// <summary>Longest payload accepted; anything longer breaks the connection.</summary>
-    public const int MaxPayloadLength = MaxDataBytes;
+    public const int MaxPayloadLength = DataPrefixLength + BlockSize;
 
     /// <summary>The agent acknowledges at least every this many bytes, and at the end of each file.</summary>
     public const long AckIntervalBytes = 8L * 1024 * 1024;
@@ -138,11 +168,23 @@ public static class DirectFrames
     /// <summary>Bytes of the random token of an offer.</summary>
     public const int TokenLength = 32;
 
-    /// <summary>Bytes of a SHA-256.</summary>
+    /// <summary>Bytes of a SHA-256, and of the proof of a token.</summary>
     public const int HashLength = 32;
+
+    /// <summary>Bytes of the payload of a token frame of version 2.</summary>
+    public const int TokenPayloadLength = 2 + HashLength;
 
     /// <summary>Longest text of a cancel or final frame, in bytes; longer texts are cut.</summary>
     public const int MaxTextBytes = 4096;
+
+    /// <summary>The text the proof of a connection signs, followed by the index byte.</summary>
+    private static readonly byte[] ProofLabel = Encoding.ASCII.GetBytes("UltimateRDP direct v2");
+
+    /// <summary>Number of blocks of a file of <paramref name="size"/> bytes; 0 for an empty file.</summary>
+    public static long BlockCount(long size) => (size + BlockSize - 1) / BlockSize;
+
+    /// <summary>Bytes of the block at <paramref name="offset"/> of a file of <paramref name="size"/> bytes.</summary>
+    public static int BlockLength(long size, long offset) => (int)Math.Min(BlockSize, size - offset);
 
     /// <summary>Writes the 5 bytes in front of a payload of <paramref name="length"/> bytes.</summary>
     public static void WriteHeader(Span<byte> destination, DirectFrameType type, int length)
@@ -150,6 +192,17 @@ public static class DirectFrames
         ArgumentOutOfRangeException.ThrowIfNegative(length);
         BinaryPrimitives.WriteInt32LittleEndian(destination, length);
         destination[4] = (byte)type;
+    }
+
+    /// <summary>
+    /// Writes the <see cref="DataFrameOverhead"/> bytes in front of <paramref name="length"/>
+    /// raw bytes of file <paramref name="fileIndex"/> at <paramref name="offset"/>.
+    /// </summary>
+    public static void WriteDataHeader(Span<byte> destination, int fileIndex, long offset, int length)
+    {
+        WriteHeader(destination, DirectFrameType.Data, DataPrefixLength + length);
+        BinaryPrimitives.WriteInt32LittleEndian(destination[HeaderLength..], fileIndex);
+        BinaryPrimitives.WriteInt64LittleEndian(destination[(HeaderLength + 4)..], offset);
     }
 
     /// <summary>Writes one whole frame to <paramref name="stream"/>, in one write.</summary>
@@ -167,12 +220,26 @@ public static class DirectFrames
         stream.Write(frame);
     }
 
-    /// <summary>The payload of the token frame.</summary>
-    public static byte[] TokenPayload(ReadOnlySpan<byte> token, byte version = ProtocolVersion)
+    /// <summary>
+    /// The proof of the token for connection <paramref name="index"/>: HMAC-SHA256 keyed with
+    /// the token, over "UltimateRDP direct v2" followed by the index byte. The token itself
+    /// never goes on a connection, and each connection has a proof of its own.
+    /// </summary>
+    public static byte[] ConnectionProof(ReadOnlySpan<byte> token, byte index)
     {
-        var payload = new byte[1 + token.Length];
-        payload[0] = version;
-        token.CopyTo(payload.AsSpan(1));
+        Span<byte> message = stackalloc byte[ProofLabel.Length + 1];
+        ProofLabel.CopyTo(message);
+        message[^1] = index;
+        return HMACSHA256.HashData(token, message);
+    }
+
+    /// <summary>The payload of the token frame of connection <paramref name="index"/>.</summary>
+    public static byte[] TokenPayload(ReadOnlySpan<byte> token, byte index)
+    {
+        var payload = new byte[TokenPayloadLength];
+        payload[0] = ProtocolVersion;
+        payload[1] = index;
+        ConnectionProof(token, index).CopyTo(payload.AsSpan(2));
         return payload;
     }
 
@@ -246,6 +313,23 @@ public static class DirectFrames
         return true;
     }
 
+    /// <summary>Reads the payload of a data frame: the file, the offset and the raw bytes, at least one.</summary>
+    public static bool TryParseData(ReadOnlySpan<byte> payload, out int fileIndex, out long offset, out ReadOnlySpan<byte> data)
+    {
+        fileIndex = 0;
+        offset = 0;
+        data = default;
+        if (payload.Length <= DataPrefixLength)
+        {
+            return false;
+        }
+
+        fileIndex = BinaryPrimitives.ReadInt32LittleEndian(payload);
+        offset = BinaryPrimitives.ReadInt64LittleEndian(payload[4..]);
+        data = payload[DataPrefixLength..];
+        return fileIndex >= 0 && offset >= 0;
+    }
+
     /// <summary>The payload of the trailer frame of file <paramref name="index"/>.</summary>
     public static byte[] FileTrailerPayload(int index, ReadOnlySpan<byte> sha256)
     {
@@ -273,6 +357,27 @@ public static class DirectFrames
         index = BinaryPrimitives.ReadInt32LittleEndian(payload);
         sha256 = payload[4..];
         return index >= 0;
+    }
+
+    /// <summary>The payload of the end frame of a connection that carried <paramref name="dataFrames"/> data frames.</summary>
+    public static byte[] EndPayload(long dataFrames)
+    {
+        var payload = new byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(payload, dataFrames);
+        return payload;
+    }
+
+    /// <summary>Reads the payload of an end frame.</summary>
+    public static bool TryParseEnd(ReadOnlySpan<byte> payload, out long dataFrames)
+    {
+        dataFrames = 0;
+        if (payload.Length != 8)
+        {
+            return false;
+        }
+
+        dataFrames = BinaryPrimitives.ReadInt64LittleEndian(payload);
+        return dataFrames >= 0;
     }
 
     /// <summary>The payload of an acknowledgement.</summary>
@@ -368,7 +473,7 @@ public static class DirectFrames
 /// Reads the frames of the direct connection from a stream, one after the other, into a
 /// buffer of its own: the payload returned stays valid until the next read.
 /// </summary>
-/// <remarks>This class is not thread safe: one reader per direction.</remarks>
+/// <remarks>This class is not thread safe: one reader per direction of a connection.</remarks>
 public sealed class DirectFrameReader
 {
     private readonly Stream _stream;

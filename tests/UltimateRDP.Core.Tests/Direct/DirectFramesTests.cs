@@ -24,15 +24,15 @@ public class DirectFramesTests
     {
         using var stream = new MemoryStream();
         DirectFrames.Write(stream, DirectFrameType.Ready, []);
-        DirectFrames.Write(stream, DirectFrameType.Data, [1, 2, 3]);
+        DirectFrames.Write(stream, DirectFrameType.Cancel, [1, 2, 3]);
         DirectFrames.Write(stream, DirectFrameType.Ack, DirectFrames.AckPayload(new DirectAck(2, 10, 20)));
         var reader = new DirectFrameReader(new OneByteStream(stream.ToArray()));
 
         Assert.True(reader.TryRead(out var ready, out var empty));
         Assert.Equal(DirectFrameType.Ready, ready);
         Assert.Equal(0, empty.Length);
-        Assert.True(reader.TryRead(out var data, out var bytes));
-        Assert.Equal(DirectFrameType.Data, data);
+        Assert.True(reader.TryRead(out var cancel, out var bytes));
+        Assert.Equal(DirectFrameType.Cancel, cancel);
         Assert.Equal([1, 2, 3], bytes.ToArray());
         Assert.True(reader.TryRead(out var ack, out var payload));
         Assert.Equal(DirectFrameType.Ack, ack);
@@ -45,7 +45,7 @@ public class DirectFramesTests
     public void A_stream_that_ends_inside_a_frame_is_an_error()
     {
         using var stream = new MemoryStream();
-        DirectFrames.Write(stream, DirectFrameType.Data, [1, 2, 3]);
+        DirectFrames.Write(stream, DirectFrameType.Cancel, [1, 2, 3]);
         var cut = stream.ToArray()[..^1];
 
         Assert.Throws<EndOfStreamException>(() => new DirectFrameReader(new MemoryStream(cut)).TryRead(out _, out _));
@@ -134,10 +134,60 @@ public class DirectFramesTests
         Assert.Equal((2, 99L), (files, bytes));
         Assert.False(DirectFrames.TryParseBegin(DirectFrames.BeginPayload(-1, 99), out _, out _));
 
-        var token = DirectFrames.TokenPayload(hash);
-        Assert.Equal(DirectFrames.ProtocolVersion, token[0]);
-        Assert.Equal(hash, token[1..]);
         Assert.Equal("stop", Encoding.UTF8.GetString(DirectFrames.CancelPayload("stop")));
+        Assert.True(DirectFrames.TryParseEnd(DirectFrames.EndPayload(77), out var frames));
+        Assert.Equal(77, frames);
+        Assert.False(DirectFrames.TryParseEnd(new byte[7], out _));
+    }
+
+    [Fact]
+    public void A_token_frame_of_version_2_carries_the_index_and_an_hmac_of_the_token_for_that_index()
+    {
+        var token = Enumerable.Range(0, 32).Select(i => (byte)i).ToArray();
+        var payload = DirectFrames.TokenPayload(token, 3);
+
+        Assert.Equal(DirectFrames.TokenPayloadLength, payload.Length);
+        Assert.Equal(2, payload[0]);
+        Assert.Equal(3, payload[1]);
+        var expected = System.Security.Cryptography.HMACSHA256.HashData(token, (byte[])[.. Encoding.ASCII.GetBytes("UltimateRDP direct v2"), (byte)3]);
+        Assert.Equal(expected, payload[2..]);
+
+        // Each connection has its own proof, and none of them is the token.
+        Assert.NotEqual(DirectFrames.ConnectionProof(token, 0), DirectFrames.ConnectionProof(token, 1));
+        Assert.NotEqual(token, DirectFrames.ConnectionProof(token, 0));
+    }
+
+    [Fact]
+    public void A_data_frame_carries_the_file_the_offset_and_the_bytes()
+    {
+        var frame = new byte[DirectFrames.DataFrameOverhead + 3];
+        DirectFrames.WriteDataHeader(frame, 7, 3L * DirectFrames.BlockSize, 3);
+        frame[^3] = 1;
+        frame[^2] = 2;
+        frame[^1] = 3;
+        var reader = new DirectFrameReader(new MemoryStream(frame));
+
+        Assert.True(reader.TryRead(out var type, out var payload));
+        Assert.Equal(DirectFrameType.Data, type);
+        Assert.True(DirectFrames.TryParseData(payload.Span, out var file, out var offset, out var data));
+        Assert.Equal(7, file);
+        Assert.Equal(3L * DirectFrames.BlockSize, offset);
+        Assert.Equal([1, 2, 3], data.ToArray());
+        Assert.False(DirectFrames.TryParseData(new byte[DirectFrames.DataPrefixLength], out _, out _, out _));
+    }
+
+    [Theory]
+    [InlineData(0, 0L)]
+    [InlineData(1, 1L)]
+    [InlineData(1024 * 1024, 1L)]
+    [InlineData((1024 * 1024) + 1, 2L)]
+    public void A_file_is_cut_into_blocks_of_one_mebibyte(int size, long blocks)
+    {
+        Assert.Equal(blocks, DirectFrames.BlockCount(size));
+        if (size > 0)
+        {
+            Assert.Equal(size - ((blocks - 1) * DirectFrames.BlockSize), DirectFrames.BlockLength(size, (blocks - 1) * DirectFrames.BlockSize));
+        }
     }
 
     [Theory]

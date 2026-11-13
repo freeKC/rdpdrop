@@ -16,21 +16,22 @@ namespace UltimateRDP.Client.Sessions;
 
 /// <summary>
 /// Sends the files of one drop to the agent through the direct connection that its dragAck
-/// offered, outside the RDP channel: a TCP connection to the host of the session, then a
-/// TLS handshake that accepts only the certificate whose SHA-256 the agent gave, then the
-/// token, then the files with a <see cref="DirectSender"/>. A background thread does all of
-/// it; the events are raised on the UI thread.
+/// offered, outside the RDP channel: connection 0 to the host of the session, then a TLS
+/// handshake that accepts only the certificate whose SHA-256 the agent gave, then the token,
+/// then the files with a <see cref="DirectSender"/>, which opens the other connections to
+/// the same address. A background thread does all of it; the events are raised on the UI
+/// thread.
 /// </summary>
 /// <remarks>
-/// When the connection cannot be made, the handshake fails, the token is refused or the
-/// stream breaks before the first acknowledgement, <see cref="FellBack"/> asks the owner to
-/// send the files through the channel instead, without anything to do for the user. Once
-/// an acknowledgement came, a broken stream fails the transfer
+/// When connection 0 cannot be made, its handshake fails, its token is refused or a
+/// connection breaks before the first acknowledgement, <see cref="FellBack"/> asks the owner
+/// to send the files through the channel instead, without anything to do for the user. Once
+/// an acknowledgement came, a broken connection fails the transfer
 /// (<see cref="Strings.TransferDirectLost"/>), and the agent keeps nothing of it.
 /// </remarks>
 internal sealed class DirectUpload : IUploadView
 {
-    /// <summary>Time allowed to reach the port of the agent, from each address.</summary>
+    /// <summary>Time allowed to reach the port of the agent, from each address and for each connection.</summary>
     public static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
 
     /// <summary>Time allowed for the TLS handshake and the answer to the token.</summary>
@@ -43,11 +44,13 @@ internal sealed class DirectUpload : IUploadView
     private readonly IReadOnlyList<DropItem> _items;
     private readonly DirectTransferOffer _offer;
     private readonly string _host;
+    private readonly int _connections;
     private readonly CancellationTokenSource _stop = new();
     private readonly Lock _gate = new();
     private DirectSender? _sender;
-    private Stream? _stream;
-    private Timer? _closeTimer;
+    private Socket? _handshake;
+    private Timer? _rateTimer;
+    private string? _reached;
     private List<(string Path, TransferFile File)> _files = [];
     private TransferListingException? _listingFailure;
     private volatile bool _stopped;
@@ -58,7 +61,8 @@ internal sealed class DirectUpload : IUploadView
     /// <param name="items">The dropped items, in the order of the dragEnter.</param>
     /// <param name="offer">The direct connection of the dragAck, well formed.</param>
     /// <param name="host">The host of the session, from the full address of the .rdp file, without the port.</param>
-    public DirectUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, DirectTransferOffer offer, string host)
+    /// <param name="connections">The <c>directConnections</c> setting of the client.</param>
+    public DirectUpload(Control owner, string dragId, string transferId, IReadOnlyList<DropItem> items, DirectTransferOffer offer, string host, int connections)
     {
         _owner = owner;
         DragId = dragId;
@@ -66,6 +70,7 @@ internal sealed class DirectUpload : IUploadView
         _items = items;
         _offer = offer;
         _host = host;
+        _connections = Math.Clamp(Math.Min(offer.Connections ?? 1, connections), 1, DirectFrames.MaxConnections);
     }
 
     /// <summary>Raised once the files are listed.</summary>
@@ -96,11 +101,14 @@ internal sealed class DirectUpload : IUploadView
     /// <summary>The port of the agent.</summary>
     public int Port => _offer.Port;
 
-    /// <summary>The address the connection reached, as "host:port", once connected.</summary>
+    /// <summary>The address connection 0 reached, as "host:port", once connected.</summary>
     public string? Endpoint { get; private set; }
 
-    /// <summary>The TLS protocol and cipher suite, once the handshake is done.</summary>
+    /// <summary>The TLS protocol and cipher suite of connection 0, once the handshake is done.</summary>
     public string? Tls { get; private set; }
+
+    /// <summary>The connections that carried the transfer, once it is over.</summary>
+    public int ConnectionsUsed { get; private set; }
 
     public int FileCount { get; private set; }
 
@@ -127,23 +135,27 @@ internal sealed class DirectUpload : IUploadView
 
     /// <summary>
     /// Stops the transfer: the agent gets a cancel frame with <paramref name="reason"/>, in
-    /// English, and the connection closes a few seconds later at most. Raises nothing.
+    /// English, and every connection closes about a second later at most. Raises nothing.
     /// Callable from any thread.
     /// </summary>
     public void Stop(string reason)
     {
         _stopped = true;
         _stop.Cancel();
+        Socket? handshake;
         lock (_gate)
         {
             _sender?.Cancel(reason);
-            if (_stream is { } stream && _closeTimer is null)
-            {
-                // A write blocked by a full connection does not see the cancel: the close ends it.
-                _closeTimer = new Timer(_ => stream.Dispose(), null, DirectSender.CancelWait + TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan);
-            }
+            handshake = _sender is null ? _handshake : null;
         }
+
+        // Before the sender runs, a handshake in progress ends at once.
+        handshake?.Dispose();
     }
+
+    private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
+
+    private static string MegabytesPerSecond(double bytesPerSecond) => Invariant($"{bytesPerSecond / 1_000_000:0.0}");
 
     private void Run()
     {
@@ -169,14 +181,14 @@ internal sealed class DirectUpload : IUploadView
         {
             lock (_gate)
             {
-                _closeTimer?.Dispose();
+                _rateTimer?.Dispose();
             }
         }
     }
 
     /// <summary>
-    /// Lists the files once the agent accepted the token, and shows them. Null when an item
-    /// cannot be read; <see cref="_listingFailure"/> then says which.
+    /// Lists the files once the agent accepted connection 0, and shows them. Null when an
+    /// item cannot be read; <see cref="_listingFailure"/> then says which.
     /// </summary>
     private IReadOnlyList<TransferFile>? ListFiles()
     {
@@ -206,8 +218,8 @@ internal sealed class DirectUpload : IUploadView
     }
 
     /// <summary>
-    /// Connects to the host of the session, then to the address hint of the agent when the
-    /// host cannot be reached. Null when neither works: the owner was told to fall back.
+    /// Connection 0: to the host of the session, then to the address hint of the agent when
+    /// the host cannot be reached. Null when neither works: the owner was told to fall back.
     /// </summary>
     private Socket? Connect()
     {
@@ -225,26 +237,21 @@ internal sealed class DirectUpload : IUploadView
 
         foreach (var host in hosts)
         {
-            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-            timeout.CancelAfter(ConnectTimeout);
             try
             {
-                socket.ConnectAsync(host, _offer.Port, timeout.Token).AsTask().GetAwaiter().GetResult();
+                var socket = ConnectTo(host, _stop.Token);
+                _reached = host;
                 Endpoint = host + ":" + _offer.Port.ToString(CultureInfo.InvariantCulture);
                 return socket;
             }
-            catch (Exception ex) when (ex is SocketException or OperationCanceledException or ArgumentException)
+            catch (IOException ex)
             {
-                socket.Dispose();
                 if (_stopped)
                 {
                     return null;
                 }
 
-                failures.Add(ex is OperationCanceledException
-                    ? Invariant($"{host}:{_offer.Port} did not answer within {ConnectTimeout.TotalSeconds:0} s")
-                    : Invariant($"{host}:{_offer.Port} refused or unreachable ({ex.Message})"));
+                failures.Add(ex.Message);
             }
         }
 
@@ -252,12 +259,33 @@ internal sealed class DirectUpload : IUploadView
         return null;
     }
 
-    private void Send(Socket socket)
+    /// <summary>A TCP connection to <paramref name="host"/> within <see cref="ConnectTimeout"/>; an <see cref="IOException"/> says why not.</summary>
+    private Socket ConnectTo(string host, CancellationToken stop)
     {
-        socket.ReceiveTimeout = (int)HandshakeTimeout.TotalMilliseconds;
-        socket.SendTimeout = (int)HandshakeTimeout.TotalMilliseconds;
-        using var network = new NetworkStream(socket, ownsSocket: false);
-        using var tls = new SslStream(network, leaveInnerStreamOpen: false, ValidatePinned);
+        // No SO_SNDBUF or SO_RCVBUF: setting them turns off the autotuning of TCP on Windows.
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop);
+        timeout.CancelAfter(ConnectTimeout);
+        try
+        {
+            socket.ConnectAsync(host, _offer.Port, timeout.Token).AsTask().GetAwaiter().GetResult();
+            socket.ReceiveTimeout = (int)HandshakeTimeout.TotalMilliseconds;
+            socket.SendTimeout = (int)HandshakeTimeout.TotalMilliseconds;
+            return socket;
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException or ArgumentException)
+        {
+            socket.Dispose();
+            throw new IOException(ex is OperationCanceledException
+                ? Invariant($"{host}:{_offer.Port} did not answer within {ConnectTimeout.TotalSeconds:0} s")
+                : Invariant($"{host}:{_offer.Port} refused or unreachable ({ex.Message})"));
+        }
+    }
+
+    /// <summary>The TLS handshake on <paramref name="socket"/>, the certificate pinned; an <see cref="IOException"/> says why it failed.</summary>
+    private SslStream Handshake(Socket socket, string endpoint)
+    {
+        var tls = new SslStream(new NetworkStream(socket, ownsSocket: true), leaveInnerStreamOpen: false, (_, certificate, _, _) => IsPinned(certificate, endpoint));
         try
         {
             tls.AuthenticateAsClient(new SslClientAuthenticationOptions
@@ -268,25 +296,66 @@ internal sealed class DirectUpload : IUploadView
                 CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
                 EncryptionPolicy = EncryptionPolicy.RequireEncryption,
             });
+            return tls;
         }
         catch (Exception ex) when (ex is AuthenticationException or IOException or ObjectDisposedException or SocketException or System.ComponentModel.Win32Exception)
         {
+            tls.Dispose();
+            throw new IOException($"the TLS handshake with {endpoint} failed ({ex.Message})");
+        }
+    }
+
+    /// <summary>Connection <paramref name="index"/> above 0, to the address connection 0 reached; called by the sender on a thread of its own.</summary>
+    private DirectConnection? OpenExtra(int index, CancellationToken stop)
+    {
+        if (_stopped || _reached is not { } host)
+        {
+            return null;
+        }
+
+        var socket = ConnectTo(host, stop);
+        var tls = Handshake(socket, Endpoint!);
+        return new DirectConnection(tls, ready: () => SetIdleTimeouts(socket), abort: socket.Dispose);
+    }
+
+    private static void SetIdleTimeouts(Socket socket)
+    {
+        socket.ReceiveTimeout = (int)IdleTimeout.TotalMilliseconds;
+        socket.SendTimeout = (int)IdleTimeout.TotalMilliseconds;
+    }
+
+    private void Send(Socket socket)
+    {
+        lock (_gate)
+        {
+            _handshake = socket;
+        }
+
+        SslStream tls;
+        try
+        {
+            if (_stopped)
+            {
+                return;
+            }
+
+            tls = Handshake(socket, Endpoint!);
+        }
+        catch (IOException ex)
+        {
             if (!_stopped)
             {
-                FallBack($"the TLS handshake with {Endpoint} failed ({ex.Message})", acknowledged: false);
+                FallBack(ex.Message, acknowledged: false);
             }
 
             return;
         }
 
         Tls = Invariant($"{tls.SslProtocol} ({tls.NegotiatedCipherSuite})");
-        var sender = new DirectSender(ListFiles, index => new FileStream(_files[index].Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1024 * 1024, FileOptions.SequentialScan));
-        sender.Ready += () =>
-        {
-            socket.ReceiveTimeout = (int)IdleTimeout.TotalMilliseconds;
-            socket.SendTimeout = (int)IdleTimeout.TotalMilliseconds;
-            ClientLog.Info($"Transfer {TransferId}: direct connection to {Endpoint} with {Tls}; the agent accepted the token.");
-        };
+        var sender = new DirectSender(ListFiles, OpenFile, _connections, () => Environment.TickCount64);
+        sender.Ready += () => ClientLog.Info($"Transfer {TransferId}: connection 0 to {Endpoint} with {Tls}; the agent accepted the token.");
+        sender.Started += () => OnStarted(sender);
+        sender.Info += line => ClientLog.Info($"Transfer {TransferId}: {line}");
         sender.Acknowledged += ack => Post(() =>
         {
             Progress?.Report(Environment.TickCount64, ack.TotalBytes);
@@ -295,7 +364,7 @@ internal sealed class DirectUpload : IUploadView
         lock (_gate)
         {
             _sender = sender;
-            _stream = tls;
+            _handshake = null;
             if (_stopped)
             {
                 sender.Cancel("The transfer was stopped before it started.");
@@ -303,9 +372,55 @@ internal sealed class DirectUpload : IUploadView
         }
 
         var token = Convert.FromHexString(_offer.Token);
-        var outcome = sender.Run(tls, token);
+        var outcome = sender.Run(new DirectConnection(tls, ready: () => SetIdleTimeouts(socket), abort: socket.Dispose), token, OpenExtra);
         CryptographicOperations.ZeroMemory(token);
+        lock (_gate)
+        {
+            _rateTimer?.Dispose();
+            _rateTimer = null;
+        }
+
+        ConnectionsUsed = sender.Stats().Connections;
+        LogStatistics(sender);
         Report(outcome);
+    }
+
+    private FileStream OpenFile(int index) =>
+        new(_files[index].Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, FileOptions.SequentialScan);
+
+    /// <summary>The go frame came: the samples of the rate start, and a line per second at the debug level.</summary>
+    private void OnStarted(DirectSender sender)
+    {
+        ClientLog.Info($"Transfer {TransferId}: the agent checked the list and created the files; the data goes over up to {sender.PlannedConnections} connection(s).");
+        var timer = new Timer(
+            _ =>
+            {
+                if (sender.Meter.Sample() is { } rate && ClientLog.DebugEnabled)
+                {
+                    ClientLog.Debug(Invariant($"Transfer {TransferId}: {MegabytesPerSecond(rate)} MB/s in the last second through the direct connection, {sender.Meter.Bytes} bytes written, {sender.AcknowledgedBytes} acknowledged."));
+                }
+            },
+            null,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1));
+        lock (_gate)
+        {
+            _rateTimer = timer;
+        }
+    }
+
+    /// <summary>One line at the end: where the time went on this side.</summary>
+    private void LogStatistics(DirectSender sender)
+    {
+        if (sender.PlannedConnections == 0)
+        {
+            return;
+        }
+
+        var stats = sender.Stats();
+        var perConnection = string.Join(", ", stats.BytesPerConnection.Select((bytes, index) => (bytes, index)).Where(pair => pair.bytes >= 0).Select(pair => Invariant($"{pair.index}: {pair.bytes}")));
+        ClientLog.Info(Invariant(
+            $"Transfer {TransferId}: direct connection statistics: {stats.Connections} of {sender.PlannedConnections} planned connection(s), bytes per connection {perConnection}; {stats.Seconds:0.0} s from the go frame; the reader spent {stats.ReadSeconds:0.00} s opening and reading the files and waited {stats.QueueFullSeconds:0.00} s for room in the queue; the writers spent {stats.WriteSeconds:0.00} s in socket writes and waited {stats.QueueEmptySeconds:0.00} s for blocks, summed over the connections; average {MegabytesPerSecond(stats.Rates.Average)} MB/s, first 5 s {MegabytesPerSecond(stats.Rates.First)} MB/s, last 5 s {MegabytesPerSecond(stats.Rates.Last)} MB/s."));
     }
 
     /// <summary>Tells the owner how the transfer ended.</summary>
@@ -368,7 +483,7 @@ internal sealed class DirectUpload : IUploadView
     }
 
     /// <summary>Accepts the certificate of the agent only: its SHA-256 is the one of the dragAck. The chain and the name are not checked.</summary>
-    private bool ValidatePinned(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors errors)
+    private bool IsPinned(X509Certificate? certificate, string endpoint)
     {
         if (certificate is null)
         {
@@ -381,7 +496,7 @@ internal sealed class DirectUpload : IUploadView
             return true;
         }
 
-        ClientLog.Warn($"Transfer {TransferId}: the certificate of {Endpoint} has the SHA-256 {hash}, not the one the agent gave through the channel; the direct connection is refused.");
+        ClientLog.Warn($"Transfer {TransferId}: the certificate of {endpoint} has the SHA-256 {hash}, not the one the agent gave through the channel; the direct connection is refused.");
         return false;
     }
 
@@ -409,6 +524,4 @@ internal sealed class DirectUpload : IUploadView
             _stopped = true;
         }
     }
-
-    private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }
