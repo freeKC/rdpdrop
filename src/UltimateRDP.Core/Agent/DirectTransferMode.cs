@@ -126,6 +126,15 @@ public static class DirectTransferPolicy
     }
 
     /// <summary>
+    /// The limit on what the agent sends to the client, in millions of bytes per second, since
+    /// 0.9.2: the setting <c>sendMaxMegabytesPerSecond</c> when it is above 0, otherwise the
+    /// setting <c>directMaxMegabytesPerSecond</c>, which limited both directions in 0.9.0. 0
+    /// for no limit.
+    /// </summary>
+    public static int SendLimit(int directMaxMegabytesPerSecond, int sendMaxMegabytesPerSecond) =>
+        sendMaxMegabytesPerSecond > 0 ? sendMaxMegabytesPerSecond : Math.Max(0, directMaxMegabytesPerSecond);
+
+    /// <summary>
     /// The connections the client opens for a transfer of <paramref name="totalBytes"/>: the
     /// minimum of what the agent offers, of the setting of the client, and of one connection
     /// per started <see cref="BytesPerConnection"/> bytes; always at least one.

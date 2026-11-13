@@ -225,7 +225,7 @@ Settings in `%LOCALAPPDATA%\UltimateRDP\client.json`, only editable in the file:
 | `receiveFiles` | `auto`, `never` | `auto` | `never` refuses the files of the session. `directTransfer` at `never` refuses them too, since only the direct connection carries them. |
 | `receiveFolder` | a full path | your Downloads folder | Where the files go. Environment variables such as `%USERPROFILE%` are expanded; the folder is created when missing. |
 
-On the server, `sendToClient` in agent.json, `auto` by default, set to `never` turns the sending off for a user or, in the machine settings, for everybody. `directMaxMegabytesPerSecond` also limits what the agent sends, which protects the outbound link of the server.
+On the server, `sendToClient` in agent.json, `auto` by default, set to `never` turns the sending off for a user or, in the machine settings, for everybody. `directMaxMegabytesPerSecond` also limits what the agent sends, which protects the outbound link of the server. From version 0.9.2, `sendMaxMegabytesPerSecond` limits the sending alone, so that files from the clients keep the full rate: for example `"sendMaxMegabytesPerSecond": 85` in the machine settings when the outbound link of the server carries about 1 Gbit/s.
 
 ### Status bar messages
 
@@ -356,6 +356,7 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
   "directPortRange": "3400-3449",
   "directConnections": 8,
   "directMaxMegabytesPerSecond": 0,
+  "sendMaxMegabytesPerSecond": 0,
   "trayIcon": "auto",
   "channelRead": "wts",
   "mapClientDrives": "never",
@@ -372,6 +373,7 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
 | `directPortRange` | a range such as `3400-3449`, or one port | `3400-3449` | The TCP ports of the direct connection, see "Direct connection for large files". Only editable in the file. |
 | `directConnections` | 1 to 16 | `8` | How many TCP connections a direct transfer may use at most. Only editable in the file. |
 | `directMaxMegabytesPerSecond` | 0, or a number of MB/s | `0` | A limit on the rate of a direct transfer, all its connections together; 0 means no limit. Only editable in the file. |
+| `sendMaxMegabytesPerSecond` | 0, or a number of MB/s | `0` | From version 0.9.2, a limit on what the agent sends to the computer of the client, all the connections of a send together. 0 leaves `directMaxMegabytesPerSecond` as the limit of a send too. Only editable in the file. |
 | `logLevel` | `debug`, `info`, `warn`, `error` | `info` | The lowest level written to the log. Only editable in the file. |
 | `trayIcon` | `auto`, `always`, `never` | `auto` | `auto` shows the tray icon only while an UltimateRDP client is connected to the session. `always` shows it from the start of the agent. `never` never shows it: the agent is then controlled with `--uninstall` and its `Run` entry only. Only editable in the file. |
 | `mapClientDrives` | `never`, `auto` | `never` | The tray menu entry "Client drives on drive letters". |

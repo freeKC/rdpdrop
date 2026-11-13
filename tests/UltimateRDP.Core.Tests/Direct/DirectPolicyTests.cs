@@ -42,4 +42,15 @@ public class DirectPolicyTests
         Assert.Equal(expected, DirectTransferPolicy.ParseMaxMegabytesPerSecond(value, out var known));
         Assert.Equal(recognized, known);
     }
+
+    [Theory]
+    [InlineData(0, 0, 0)]
+    [InlineData(0, 85, 85)]
+    [InlineData(200, 0, 200)]
+    [InlineData(200, 85, 85)]
+    [InlineData(50, 85, 85)]
+    public void The_limit_of_a_send_is_its_own_setting_and_otherwise_the_limit_of_both_directions(int direct, int send, int expected)
+    {
+        Assert.Equal(expected, DirectTransferPolicy.SendLimit(direct, send));
+    }
 }

@@ -96,6 +96,17 @@ internal sealed class AgentSettings
     public int DirectMaxMegabytesPerSecond { get; }
 
     /// <summary>
+    /// A limit on what the agent sends to the client, all the connections of a send together,
+    /// in millions of bytes per second, since 0.9.2, to protect the outbound link of the
+    /// server; 0, the default, leaves <see cref="DirectMaxMegabytesPerSecond"/> as the limit
+    /// of a send too. Only editable in the file; read at startup.
+    /// </summary>
+    public int SendMaxMegabytesPerSecond { get; private init; }
+
+    /// <summary>The limit that a send to the client follows, see <see cref="DirectTransferPolicy.SendLimit"/>.</summary>
+    public int SendLimitMegabytesPerSecond => DirectTransferPolicy.SendLimit(DirectMaxMegabytesPerSecond, SendMaxMegabytesPerSecond);
+
+    /// <summary>
     /// "Client drives on drive letters": whether the redirected drives of the client get
     /// letters of the session while an UltimateRDP client is connected. Never by default.
     /// </summary>
@@ -161,6 +172,7 @@ internal sealed class AgentSettings
         (int First, int Last) directPortRange = (DirectTransferPolicy.DefaultFirstPort, DirectTransferPolicy.DefaultLastPort);
         var directConnections = DirectTransferPolicy.DefaultConnections;
         var directMaxMegabytesPerSecond = 0;
+        var sendMaxMegabytesPerSecond = 0;
         var sendToClient = true;
         try
         {
@@ -213,6 +225,12 @@ internal sealed class AgentSettings
                         logger.Warn($"The directMaxMegabytesPerSecond setting {data.DirectMaxMegabytesPerSecond} is not from 0 to {DirectTransferPolicy.MaxMegabytesPerSecond}; using 0, no limit.");
                     }
 
+                    sendMaxMegabytesPerSecond = DirectTransferPolicy.ParseMaxMegabytesPerSecond(data.SendMaxMegabytesPerSecond, out recognized);
+                    if (!recognized)
+                    {
+                        logger.Warn($"The sendMaxMegabytesPerSecond setting {data.SendMaxMegabytesPerSecond} is not from 0 to {DirectTransferPolicy.MaxMegabytesPerSecond}; using 0, the limit of directMaxMegabytesPerSecond.");
+                    }
+
                     mapClientDrives = ClientDriveLetters.Parse(data.MapClientDrives, out recognized);
                     if (!recognized)
                     {
@@ -244,7 +262,7 @@ internal sealed class AgentSettings
             logger.Warn($"Could not read the settings of {path}{(machine is null ? string.Empty : " and " + (machinePath ?? AgentInfo.MachineSettingsPath))}; using the defaults. {ex.Message}");
         }
 
-        return new AgentSettings(path, logger, user ?? new JsonObject(new JsonNodeOptions { PropertyNameCaseInsensitive = true }), machineKeys, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange, directConnections, directMaxMegabytesPerSecond, mapClientDrives, sendToClient);
+        return new AgentSettings(path, logger, user ?? new JsonObject(new JsonNodeOptions { PropertyNameCaseInsensitive = true }), machineKeys, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange, directConnections, directMaxMegabytesPerSecond, mapClientDrives, sendToClient) { SendMaxMegabytesPerSecond = sendMaxMegabytesPerSecond };
     }
 
     /// <summary>
@@ -352,7 +370,7 @@ internal sealed class AgentSettings
 
     /// <summary>Readable summary for the log.</summary>
     public override string ToString() =>
-        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)} with up to {DirectConnections} connection(s){(DirectMaxMegabytesPerSecond > 0 ? $" and at most {DirectMaxMegabytesPerSecond} MB/s" : string.Empty)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}, client drives on letters {ClientDriveLetters.ToSetting(MapClientDrives)}, send to the client {Core.Agent.SendToClient.ToSetting(SendToClient)}{(MachineKeys.Count == 0 ? string.Empty : ", from the machine settings: " + string.Join(", ", MachineKeys))}";
+        $"stage files {StageFiles}, fast transfer {FastTransferPolicy.ToSetting(FastTransfer)} from {FastTransferMinBytes} bytes, direct connection {DirectTransferPolicy.ToSetting(DirectTransfer)} on ports {DirectTransferPolicy.ToSetting(DirectPortRange)} with up to {DirectConnections} connection(s){(DirectMaxMegabytesPerSecond > 0 ? $" and at most {DirectMaxMegabytesPerSecond} MB/s" : string.Empty)}{(SendMaxMegabytesPerSecond > 0 ? $", sends to the client at most {SendMaxMegabytesPerSecond} MB/s" : string.Empty)}, log level {LogLevel}, tray icon {TrayIconModes.ToSetting(TrayIcon)}, channel read {ChannelReadModes.ToSetting(ChannelRead)}, client drives on letters {ClientDriveLetters.ToSetting(MapClientDrives)}, send to the client {Core.Agent.SendToClient.ToSetting(SendToClient)}{(MachineKeys.Count == 0 ? string.Empty : ", from the machine settings: " + string.Join(", ", MachineKeys))}";
 
     /// <summary>
     /// Writes <paramref name="key"/> into the file of the user, which keeps its other keys as
@@ -432,6 +450,9 @@ internal sealed class AgentSettings
 
         /// <summary>Limit of a direct transfer in millions of bytes per second; 0 or absent for no limit.</summary>
         public int? DirectMaxMegabytesPerSecond { get; set; }
+
+        /// <summary>Limit of a send to the client in millions of bytes per second; 0 or absent for the limit of <see cref="DirectMaxMegabytesPerSecond"/>.</summary>
+        public int? SendMaxMegabytesPerSecond { get; set; }
 
         /// <summary>"never" or "auto". Never when absent. Read as text, like <see cref="TrayIcon"/>.</summary>
         public string? MapClientDrives { get; set; }

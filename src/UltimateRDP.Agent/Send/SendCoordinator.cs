@@ -163,7 +163,7 @@ internal sealed class SendCoordinator
 
         var id = Guid.NewGuid().ToString("N");
         var bytes = files.Sum(file => file.File.Size);
-        var listener = DirectSendListener.TryStart(_logger, _settings.DirectPortRange, _settings.DirectConnections, _settings.DirectMaxMegabytesPerSecond, id, files);
+        var listener = DirectSendListener.TryStart(_logger, _settings.DirectPortRange, _settings.DirectConnections, _settings.SendLimitMegabytesPerSecond, id, files);
         if (listener is null)
         {
             return Refuse(LocalText.Of(nameof(Strings.SendNoPort)), "no direct connection can be offered");
