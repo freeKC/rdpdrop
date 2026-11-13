@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -17,6 +19,9 @@ namespace UltimateRDP.Agent.Settings;
 internal sealed class AgentSettings
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+    /// <summary>NT SERVICE\TrustedInstaller, the owner of files that Windows installs.</summary>
+    private const string TrustedInstallerSid = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
 
     private readonly string _path;
     private readonly FileLogger _logger;
@@ -132,7 +137,8 @@ internal sealed class AgentSettings
     public static AgentSettings Load(string path, FileLogger logger, string? machinePath = null)
     {
         var user = ReadObject(path, logger);
-        var machine = ReadObject(machinePath ?? AgentInfo.MachineSettingsPath, logger);
+        var machineFile = machinePath ?? AgentInfo.MachineSettingsPath;
+        var machine = IsOwnedByAdministrators(machineFile, logger) ? ReadObject(machineFile, logger) : null;
         var machineKeys = SettingsLayers.MachineKeysInForce(machine, user);
         var merged = SettingsLayers.Merge(machine, user);
         var mapClientDrives = MapClientDrivesMode.Never;
@@ -223,6 +229,41 @@ internal sealed class AgentSettings
         }
 
         return new AgentSettings(path, logger, user ?? new JsonObject(new JsonNodeOptions { PropertyNameCaseInsensitive = true }), machineKeys, logLevel, stageFiles, trayIcon, fastTransfer, fastTransferMinBytes, channelRead, directTransfer, directPortRange, directConnections, directMaxMegabytesPerSecond, mapClientDrives);
+    }
+
+    /// <summary>
+    /// The machine file applies to every user, and a user may create files in
+    /// %ProgramData%: it is only read when its owner is the Administrators group, SYSTEM or
+    /// TrustedInstaller, as for a file an administrator created from an elevated prompt. A
+    /// file of another owner gives a warning and is left out. A missing file gives false
+    /// without a word.
+    /// </summary>
+    private static bool IsOwnedByAdministrators(string path, FileLogger logger)
+    {
+        if (!FileExists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            var owner = new FileInfo(path).GetAccessControl(AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            if (owner is not null
+                && (owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid)
+                    || owner.IsWellKnown(WellKnownSidType.LocalSystemSid)
+                    || owner.Value == TrustedInstallerSid))
+            {
+                return true;
+            }
+
+            logger.Warn($"The machine settings file {path} is left out: its owner is {owner?.Value ?? "not known"}, not the Administrators group. An administrator can fix it with: icacls \"{path}\" /setowner *S-1-5-32-544");
+            return false;
+        }
+        catch (SystemException ex)
+        {
+            logger.Warn($"The machine settings file {path} is left out: its owner cannot be read. {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>
