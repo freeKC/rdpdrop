@@ -7,6 +7,7 @@ using UltimateRDP.Client.Rdp;
 using UltimateRDP.Client.Resources;
 using UltimateRDP.Client.Settings;
 using UltimateRDP.Core.RdpFiles;
+using UltimateRDP.Core.RemoteApp;
 
 namespace UltimateRDP.Client.Sessions;
 
@@ -33,6 +34,7 @@ internal sealed partial class SessionView : UserControl
     private bool _closeRequested;
     private bool _closeReported;
     private bool _reconnectRequested;
+    private bool _loggedOn;
     private System.Windows.Forms.Timer? _closeTimer;
     private LocalText _connectionText = LocalText.Of(nameof(Strings.ConnectionNotConnected));
     private LocalText _dropText = LocalText.Empty;
@@ -197,6 +199,9 @@ internal sealed partial class SessionView : UserControl
         catch (Exception ex) when (ex is COMException or ArgumentException or InvalidOperationException or AxHost.InvalidActiveXStateException)
         {
             ClientLog.Error($"Connect to {Host} failed", ex);
+            LastEndWasNormal = false;
+            LastEndWasAfterLogon = false;
+            ConnectFailed = true;
             SetConnection(SessionState.Disconnected, LocalText.Of(nameof(Strings.CannotConnect), ex.Message));
         }
     }
@@ -360,6 +365,7 @@ internal sealed partial class SessionView : UserControl
 
     private void OnRdpLoginComplete()
     {
+        _loggedOn = true;
         ClientLog.Info($"Event OnLoginComplete ({Host})");
         SetConnection(SessionState.Connected, LocalText.Of(nameof(Strings.LoggedOnTo), Host));
         _childTargets.Refresh("logged on");
@@ -376,14 +382,18 @@ internal sealed partial class SessionView : UserControl
     {
         var extended = SafeExtendedReason();
         var text = SafeErrorDescription(reason, extended);
-        ClientLog.Info(Invariant($"Event OnDisconnected ({Host}) reason={reason} extended={extended} text=\"{text}\""));
+        var normal = SessionEnd.IsNormal(reason, extended);
+        LastEndWasNormal = normal;
+        LastEndWasAfterLogon = _loggedOn;
+        _loggedOn = false;
+        ClientLog.Info(Invariant($"Event OnDisconnected ({Host}) reason={reason} extended={extended} ({SessionEnd.DescribeExtended(extended)}), {(normal ? "a normal end" : "not a normal end")}; text of the control \"{text}\""));
         OnReceiveDisconnected();
         _agent.Stop();
         _display.OnDisconnected();
         ResetDrops();
         EndLogOff();
         ShowFullScreenState(false);
-        SetConnection(SessionState.Disconnected, DescribeDisconnect(reason, text));
+        SetConnection(SessionState.Disconnected, DescribeDisconnect(reason, normal, text));
         if (IsRemoteApp)
         {
             OnRemoteAppDisconnected();
@@ -402,21 +412,36 @@ internal sealed partial class SessionView : UserControl
     }
 
     /// <summary>
-    /// Codes 1 to 3 are normal ends of a session; the control describes code 1 as an
-    /// internal error, so they get their own text.
+    /// Codes 1 to 3 with an extended reason of a normal end (<see cref="SessionEnd.IsNormal"/>)
+    /// get their own text: the control describes some of them as an internal error, such as
+    /// reason 2 with extended reason 11, which ends every RemoteApp session.
     /// </summary>
     /// <remarks>The description comes from the control, in the language of Windows.</remarks>
-    private static LocalText DescribeDisconnect(int reason, string description) => reason switch
+    private static LocalText DescribeDisconnect(int reason, bool normal, string description) => reason switch
     {
-        1 => LocalText.Of(nameof(Strings.Disconnected)),
-        2 => LocalText.Of(nameof(Strings.DisconnectedSessionClosed)),
-        3 => LocalText.Of(nameof(Strings.DisconnectedByRemote)),
+        SessionEnd.LocalNotError when normal => LocalText.Of(nameof(Strings.Disconnected)),
+        SessionEnd.RemoteByUser when normal => LocalText.Of(nameof(Strings.DisconnectedSessionClosed)),
+        SessionEnd.ByServer when normal => LocalText.Of(nameof(Strings.DisconnectedByRemote)),
         _ when string.IsNullOrWhiteSpace(description) => LocalText.Of(nameof(Strings.DisconnectedCode), reason),
         _ => LocalText.Of(nameof(Strings.DisconnectedReason), description.ReplaceLineEndings(" ").Replace("  ", " ", StringComparison.Ordinal).Trim()),
     };
 
+    /// <summary>True when the last disconnection was a normal end, see <see cref="SessionEnd.IsNormal"/>.</summary>
+    public bool LastEndWasNormal { get; private set; } = true;
+
+    /// <summary>True when the last call of <see cref="Connect"/> failed before the control could connect; the host reads it once.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool ConnectFailed { get; set; }
+
+    /// <summary>True when the session of the last disconnection had logged on.</summary>
+    public bool LastEndWasAfterLogon { get; private set; }
+
     private void OnRdpFatalError(int errorCode)
     {
+        LastEndWasNormal = false;
+        LastEndWasAfterLogon = _loggedOn;
+        _loggedOn = false;
         ClientLog.Error(Invariant($"Event OnFatalError ({Host}) code={errorCode}"));
         OnReceiveDisconnected();
         _agent.Stop();

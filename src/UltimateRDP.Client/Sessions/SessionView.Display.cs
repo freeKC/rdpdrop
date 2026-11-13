@@ -188,6 +188,14 @@ internal sealed partial class SessionView
     /// </summary>
     private void OnFullScreenChanged(bool fullScreen)
     {
+        if (IsRemoteApp)
+        {
+            // The container handles full screen in RemoteApp mode and never takes it: the
+            // windows of the control stay in the hidden client window.
+            ClientLog.Info($"Event {(fullScreen ? "OnEnterFullScreenMode" : "OnLeaveFullScreenMode")} ({Host}) in RemoteApp mode, ignored.");
+            return;
+        }
+
         var bounds = _sessionUsesAllMonitors ? SystemInformation.VirtualScreen : Screen.FromControl(this).Bounds;
         ClientLog.Info(fullScreen
             ? string.Create(CultureInfo.InvariantCulture, $"Event OnEnterFullScreenMode ({Host}), area {bounds.Width}x{bounds.Height} at ({bounds.X}, {bounds.Y})")

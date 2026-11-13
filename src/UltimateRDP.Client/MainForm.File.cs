@@ -20,7 +20,11 @@ internal sealed partial class MainForm
         _fileMenu.CloseTabClicked += (_, _) => CloseActiveTab();
         _fileMenu.LogOffClicked += (_, _) => LogOffActiveSession();
         _fileMenu.ForgetCredentialsClicked += (_, _) => ForgetSavedCredentials();
-        _fileMenu.QuitClicked += (_, _) => Close();
+        _fileMenu.QuitClicked += (_, _) =>
+        {
+            _exitRequested = true;
+            Close();
+        };
         _fileMenu.Root.DropDownOpening += (_, _) => OnFileMenuOpening();
         _recent.Changed += (_, _) => _fileMenu.ShowRecent(_recent.Paths);
         _fileMenu.ShowRecent(_recent.Paths);

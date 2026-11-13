@@ -81,6 +81,11 @@ Opgeslagen referenties: {0} slaat nooit een wachtwoord op. Windows slaat het op 
     <value>Kan het bestand {0} niet lezen.
 {1}</value>
   </data>
+  <data name="CommandLineError" xml:space="preserve">
+    <value>De opdrachtregel kan niet worden gebruikt: {0}
+
+UltimateRDP.exe [--show | --hidden] [--ask-credentials] [bestand.rdp]</value>
+  </data>
   <data name="ConnectedTo" xml:space="preserve">
     <value>Verbonden met {0}</value>
   </data>
@@ -436,6 +441,9 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
 
 Het tabblad toch sluiten?</value>
   </data>
+  <data name="RemoteAppDisconnect" xml:space="preserve">
+    <value>Verbinding verbreken</value>
+  </data>
   <data name="RemoteAppHint" xml:space="preserve">
     <value>{0} opent in eigen vensters, buiten dit venster. Zet bestanden neer op die vensters om ze naar de sessie te sturen.</value>
   </data>
@@ -449,6 +457,14 @@ Toch afsluiten?</value>
   </data>
   <data name="RemoteAppStartFailed" xml:space="preserve">
     <value>De server heeft {0} niet gestart ({1}).</value>
+  </data>
+  <data name="RemoteAppWindowCount" xml:space="preserve">
+    <value>{0} venster(s) van het programma geopend op deze computer.</value>
+  </data>
+  <data name="SessionEndedMessage" xml:space="preserve">
+    <value>De verbinding met {0} is beëindigd.
+
+{1}</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>De sessie ziet geen omgeleid station: neerzetten werkt niet. Schakel stations in onder Lokale bronnen.</value>
@@ -577,6 +593,21 @@ Nu opnieuw verbinden?</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
     <value>Neerzetten in de sessie</value>
+  </data>
+  <data name="TrayDisconnect" xml:space="preserve">
+    <value>Verbinding verbreken</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Afsluiten</value>
+  </data>
+  <data name="TrayNoSession" xml:space="preserve">
+    <value>Geen sessie</value>
+  </data>
+  <data name="TraySessionLine" xml:space="preserve">
+    <value>{0} op {1}</value>
+  </data>
+  <data name="TrayShowClient" xml:space="preserve">
+    <value>UltimateRDP weergeven</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Er is een onverwachte fout opgetreden.

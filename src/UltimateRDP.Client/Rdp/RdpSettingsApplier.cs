@@ -89,7 +89,14 @@ internal static class RdpSettingsApplier
         TrySet(log, $"smartSizing={options.SmartSizing}", () => advanced.SmartSizing = options.SmartSizing);
         TrySet(log, $"redirectClipboard={file.RedirectClipboard}", () => advanced.RedirectClipboard = file.RedirectClipboard);
         ApplyDevices(control, file, options, log);
-        ApplyFullScreen(control, options, log);
+        if (remoteApp is null)
+        {
+            ApplyFullScreen(control, options, log);
+        }
+        else
+        {
+            ApplyRemoteAppFullScreen(control, log);
+        }
 
         // The control leaves CredSSP (network level authentication) off unless asked;
         // mstsc turns it on unless the file says otherwise.
@@ -240,6 +247,22 @@ internal static class RdpSettingsApplier
         TrySet(log, "pinConnectionBar=False", () => advanced.PinConnectionBar = false);
         TrySet(log, "connectionBarShowPinButton=True", () => advanced.ConnectionBarShowPinButton = true);
         TrySet(log, $"fullScreenTitle={options.FullScreenTitle}", () => control.FullScreenTitle = options.FullScreenTitle);
+    }
+
+    /// <summary>
+    /// In RemoteApp mode the container handles full screen (ContainerHandledFullScreen 1), and
+    /// never takes it. The first real run of 0.8.0, with 0, logged OnEnterFullScreenMode just
+    /// before OnConnected, and the control showed its own UIMainClass window over a whole
+    /// monitor, visible and empty, beside the window of the program: with 0 the control makes
+    /// its own full screen window, and in RemoteApp mode it entered full screen by itself. With
+    /// 1 it asks the container with OnRequestGoFullScreen instead, which the client ignores in
+    /// RemoteApp mode, so that its windows stay children of the client window, which is hidden.
+    /// </summary>
+    private static void ApplyRemoteAppFullScreen(RdpControl control, List<string> log)
+    {
+        var advanced = control.AdvancedSettings9;
+        TrySet(log, "containerHandledFullScreen=1 (RemoteApp)", () => advanced.ContainerHandledFullScreen = 1);
+        TrySet(log, "fullScreen=False (RemoteApp)", () => control.FullScreen = false);
     }
 
     /// <summary>

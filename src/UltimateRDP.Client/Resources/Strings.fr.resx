@@ -81,6 +81,11 @@ Identifiants enregistrés : {0} n'enregistre jamais de mot de passe. Windows l'
     <value>Impossible de lire le fichier {0}.
 {1}</value>
   </data>
+  <data name="CommandLineError" xml:space="preserve">
+    <value>La ligne de commande ne peut pas être utilisée : {0}
+
+UltimateRDP.exe [--show | --hidden] [--ask-credentials] [fichier.rdp]</value>
+  </data>
   <data name="ConnectedTo" xml:space="preserve">
     <value>Connecté à {0}</value>
   </data>
@@ -436,6 +441,9 @@ La prochaine connexion les demandera de nouveau. La session ouverte n'est pas to
 
 Fermer l'onglet quand même ?</value>
   </data>
+  <data name="RemoteAppDisconnect" xml:space="preserve">
+    <value>Déconnecter</value>
+  </data>
   <data name="RemoteAppHint" xml:space="preserve">
     <value>{0} s'ouvre dans ses propres fenêtres, en dehors de celle-ci. Déposez les fichiers sur ces fenêtres pour les envoyer dans la session.</value>
   </data>
@@ -449,6 +457,14 @@ Quitter quand même ?</value>
   </data>
   <data name="RemoteAppStartFailed" xml:space="preserve">
     <value>Le serveur n'a pas démarré {0} ({1}).</value>
+  </data>
+  <data name="RemoteAppWindowCount" xml:space="preserve">
+    <value>{0} fenêtre(s) du programme ouverte(s) sur cet ordinateur.</value>
+  </data>
+  <data name="SessionEndedMessage" xml:space="preserve">
+    <value>La connexion à {0} est terminée.
+
+{1}</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>La session ne voit aucun lecteur redirigé : les dépôts ne fonctionneront pas. Activez les lecteurs dans Ressources locales.</value>
@@ -577,6 +593,21 @@ Se reconnecter maintenant ?</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
     <value>Dépôt dans la session</value>
+  </data>
+  <data name="TrayDisconnect" xml:space="preserve">
+    <value>Déconnecter</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Quitter</value>
+  </data>
+  <data name="TrayNoSession" xml:space="preserve">
+    <value>Aucune session</value>
+  </data>
+  <data name="TraySessionLine" xml:space="preserve">
+    <value>{0} sur {1}</value>
+  </data>
+  <data name="TrayShowClient" xml:space="preserve">
+    <value>Afficher UltimateRDP</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Une erreur inattendue s'est produite.

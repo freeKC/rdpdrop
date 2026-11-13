@@ -81,6 +81,11 @@ Credenziali salvate: {0} non salva mai una password. Windows la salva quando sel
     <value>Impossibile leggere il file {0}.
 {1}</value>
   </data>
+  <data name="CommandLineError" xml:space="preserve">
+    <value>Impossibile usare la riga di comando: {0}
+
+UltimateRDP.exe [--show | --hidden] [--ask-credentials] [file.rdp]</value>
+  </data>
   <data name="ConnectedTo" xml:space="preserve">
     <value>Connesso a {0}</value>
   </data>
@@ -436,6 +441,9 @@ La prossima connessione le richiederà di nuovo. La sessione aperta non viene mo
 
 Chiudere comunque la scheda?</value>
   </data>
+  <data name="RemoteAppDisconnect" xml:space="preserve">
+    <value>Disconnetti</value>
+  </data>
   <data name="RemoteAppHint" xml:space="preserve">
     <value>{0} si apre in finestre proprie, fuori da questa. Rilascia i file su quelle finestre per inviarli nella sessione.</value>
   </data>
@@ -449,6 +457,14 @@ Uscire comunque?</value>
   </data>
   <data name="RemoteAppStartFailed" xml:space="preserve">
     <value>Il server non ha avviato {0} ({1}).</value>
+  </data>
+  <data name="RemoteAppWindowCount" xml:space="preserve">
+    <value>{0} finestre del programma aperte su questo computer.</value>
+  </data>
+  <data name="SessionEndedMessage" xml:space="preserve">
+    <value>La connessione a {0} è terminata.
+
+{1}</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>La sessione non vede alcuna unità reindirizzata: il rilascio non funzionerà. Attiva le unità in Risorse locali.</value>
@@ -577,6 +593,21 @@ Riconnettere ora?</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
     <value>Rilascio nella sessione</value>
+  </data>
+  <data name="TrayDisconnect" xml:space="preserve">
+    <value>Disconnetti</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Esci</value>
+  </data>
+  <data name="TrayNoSession" xml:space="preserve">
+    <value>Nessuna sessione</value>
+  </data>
+  <data name="TraySessionLine" xml:space="preserve">
+    <value>{0} su {1}</value>
+  </data>
+  <data name="TrayShowClient" xml:space="preserve">
+    <value>Mostra UltimateRDP</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Si è verificato un errore imprevisto.

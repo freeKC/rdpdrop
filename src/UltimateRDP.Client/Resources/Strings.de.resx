@@ -81,6 +81,11 @@ Gespeicherte Anmeldedaten: {0} speichert nie ein Kennwort. Windows speichert es,
     <value>Die Datei {0} kann nicht gelesen werden.
 {1}</value>
   </data>
+  <data name="CommandLineError" xml:space="preserve">
+    <value>Die Befehlszeile kann nicht verwendet werden: {0}
+
+UltimateRDP.exe [--show | --hidden] [--ask-credentials] [Datei.rdp]</value>
+  </data>
   <data name="ConnectedTo" xml:space="preserve">
     <value>Verbunden mit {0}</value>
   </data>
@@ -436,6 +441,9 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
 
 Registerkarte trotzdem schließen?</value>
   </data>
+  <data name="RemoteAppDisconnect" xml:space="preserve">
+    <value>Trennen</value>
+  </data>
   <data name="RemoteAppHint" xml:space="preserve">
     <value>{0} öffnet sich in eigenen Fenstern, außerhalb dieses Fensters. Legen Sie Dateien auf diesen Fenstern ab, um sie in die Sitzung zu senden.</value>
   </data>
@@ -449,6 +457,14 @@ Trotzdem beenden?</value>
   </data>
   <data name="RemoteAppStartFailed" xml:space="preserve">
     <value>Der Server hat {0} nicht gestartet ({1}).</value>
+  </data>
+  <data name="RemoteAppWindowCount" xml:space="preserve">
+    <value>{0} Fenster des Programms sind auf diesem Computer geöffnet.</value>
+  </data>
+  <data name="SessionEndedMessage" xml:space="preserve">
+    <value>Die Verbindung mit {0} wurde beendet.
+
+{1}</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>Die Sitzung sieht kein umgeleitetes Laufwerk: Ablegen funktioniert nicht. Aktivieren Sie Laufwerke unter Lokale Ressourcen.</value>
@@ -577,6 +593,21 @@ Jetzt neu verbinden?</value>
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
     <value>Ablegen in der Sitzung</value>
+  </data>
+  <data name="TrayDisconnect" xml:space="preserve">
+    <value>Trennen</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Beenden</value>
+  </data>
+  <data name="TrayNoSession" xml:space="preserve">
+    <value>Keine Sitzung</value>
+  </data>
+  <data name="TraySessionLine" xml:space="preserve">
+    <value>{0} auf {1}</value>
+  </data>
+  <data name="TrayShowClient" xml:space="preserve">
+    <value>UltimateRDP anzeigen</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Ein unerwarteter Fehler ist aufgetreten.

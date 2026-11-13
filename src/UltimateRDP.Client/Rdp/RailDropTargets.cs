@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using UltimateRDP.Client.Logging;
+using UltimateRDP.Core.RemoteApp;
 
 namespace UltimateRDP.Client.Rdp;
 
@@ -42,6 +43,13 @@ internal interface IRailSession
 /// no owner, the drop is refused and the log says so.
 /// </para>
 /// <para>
+/// Since 0.9.0 only the windows of the program count (<see cref="RailWindowRule"/>): the
+/// RAIL_WINDOW windows that can be activated and are not the proxy of the agent. The first
+/// real run of 0.8.0 registered drop targets on the UIMainClass window of the control and on
+/// the proxy of 32 pixels; such a window now gets one log line that says what it is, and no
+/// drop target.
+/// </para>
+/// <para>
 /// Every window gets one log line when it is registered: its handle, class, owner thread
 /// compared with the UI thread, styles, rectangle, whether it had a drop target and the
 /// result of each call. Everything runs on the UI thread.
@@ -67,10 +75,21 @@ internal static class RailDropTargets
 
     private static readonly List<IRailSession> Sessions = [];
     private static readonly Dictionary<IntPtr, RailWindow> Windows = [];
+
+    /// <summary>Windows of the process that are not windows of a program, logged once each.</summary>
+    private static readonly HashSet<IntPtr> Excluded = [];
     private static NativeMethods.WinEventProc? _hookProc;
     private static IntPtr _hook;
     private static System.Windows.Forms.Timer? _scanTimer;
     private static uint _uiThread;
+
+    /// <summary>Raised on the UI thread when windows of a program came or went, or after each scan.</summary>
+    public static event Action? WindowsChanged;
+
+    /// <summary>True when <paramref name="hwnd"/> is a window of a program, see <see cref="RailWindowRule"/>.</summary>
+    public static bool IsProgramWindow(IntPtr hwnd) =>
+        Windows.ContainsKey(hwnd)
+        || (NativeMethods.IsWindow(hwnd) && RailWindowRule.IsProgramWindow(NativeMethods.ClassName(hwnd), NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlExStyle).ToInt64(), NativeMethods.WindowText(hwnd)));
 
     /// <summary>
     /// A RemoteApp session connected: its windows can now receive drops. The first session
@@ -201,6 +220,7 @@ internal static class RailDropTargets
             Forget(window, revoke: true);
         }
 
+        Excluded.Clear();
         ClientLog.Info("RemoteApp windows: no RemoteApp session left; hook and scan stopped.");
     }
 
@@ -261,6 +281,8 @@ internal static class RailDropTargets
         {
             ClientLog.Info(Invariant($"RemoteApp windows: scan{(reason is null ? string.Empty : " after " + reason)} found {found} new window(s); {Windows.Count} known."));
         }
+
+        WindowsChanged?.Invoke();
     }
 
     /// <summary>Removes the windows that no longer exist, without a revoke.</summary>
@@ -270,6 +292,8 @@ internal static class RailDropTargets
         {
             Windows.Remove(window.Hwnd);
         }
+
+        Excluded.RemoveWhere(hwnd => !NativeMethods.IsWindow(hwnd));
     }
 
     /// <summary>
@@ -303,6 +327,19 @@ internal static class RailDropTargets
             return false;
         }
 
+        var exStyleOfWindow = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlExStyle).ToInt64();
+        var title = NativeMethods.WindowText(hwnd);
+        var kind = RailWindowRule.Classify(className, exStyleOfWindow, title);
+        if (kind != RailWindowKind.Program)
+        {
+            if (Excluded.Add(hwnd))
+            {
+                ClientLog.Info(Invariant($"RemoteApp window 0x{hwnd.ToInt64():X} from {source}: class {className}, exstyle 0x{exStyleOfWindow:X8}, visible {visible}, rect {Describe(NativeMethods.WindowRectangle(hwnd))}: {kind}, not a window of the program; no drop target."));
+            }
+
+            return false;
+        }
+
         var window = new RailWindow(hwnd, className, source) { Session = session ?? OwnerSession(hwnd), Displayed = session is not null };
         Windows[hwnd] = window;
 
@@ -317,6 +354,7 @@ internal static class RailDropTargets
         var threadText = thread == _uiThread ? Invariant($"thread {thread}, the UI thread") : Invariant($"thread {thread}, not the UI thread {_uiThread}");
         ClientLog.Info(Invariant(
             $"RemoteApp window 0x{hwnd.ToInt64():X} from {source}: class {className}, {threadText}, style 0x{style:X8} exstyle 0x{exStyle:X8}, visible {visible}, rect {Describe(NativeMethods.WindowRectangle(hwnd))}, owner 0x{owner.ToInt64():X}, session {window.Session?.Description ?? "(not known yet)"}; hadTarget={hadTarget}{(hadTarget ? Invariant($" revoke=0x{revoke:X8}") : string.Empty)} register=0x{register:X8}."));
+        WindowsChanged?.Invoke();
         if (!window.Registered)
         {
             ClientLog.Warn(thread == _uiThread
@@ -369,6 +407,7 @@ internal static class RailDropTargets
     private static void Forget(RailWindow window, bool revoke)
     {
         Windows.Remove(window.Hwnd);
+        WindowsChanged?.Invoke();
         if (revoke && window.Registered && NativeMethods.IsWindow(window.Hwnd))
         {
             NativeMethods.RevokeDragDrop(window.Hwnd);

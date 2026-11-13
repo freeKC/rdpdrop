@@ -81,6 +81,11 @@ Credenciales guardadas: {0} nunca guarda una contraseña. Windows la guarda cuan
     <value>No se puede leer el archivo {0}.
 {1}</value>
   </data>
+  <data name="CommandLineError" xml:space="preserve">
+    <value>No se puede usar la línea de comandos: {0}
+
+UltimateRDP.exe [--show | --hidden] [--ask-credentials] [archivo.rdp]</value>
+  </data>
   <data name="ConnectedTo" xml:space="preserve">
     <value>Conectado a {0}</value>
   </data>
@@ -436,6 +441,9 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
 
 ¿Cerrar la pestaña de todos modos?</value>
   </data>
+  <data name="RemoteAppDisconnect" xml:space="preserve">
+    <value>Desconectar</value>
+  </data>
   <data name="RemoteAppHint" xml:space="preserve">
     <value>{0} se abre en sus propias ventanas, fuera de esta. Coloque los archivos en esas ventanas para enviarlos a la sesión.</value>
   </data>
@@ -449,6 +457,14 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
   </data>
   <data name="RemoteAppStartFailed" xml:space="preserve">
     <value>El servidor no inició {0} ({1}).</value>
+  </data>
+  <data name="RemoteAppWindowCount" xml:space="preserve">
+    <value>{0} ventana(s) del programa abierta(s) en este equipo.</value>
+  </data>
+  <data name="SessionEndedMessage" xml:space="preserve">
+    <value>La conexión con {0} terminó.
+
+{1}</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>La sesión no ve ninguna unidad redirigida: no se podrán colocar archivos. Active las unidades en Recursos locales.</value>
@@ -577,6 +593,21 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
   </data>
   <data name="TransferWindowTitle" xml:space="preserve">
     <value>Soltar en la sesión</value>
+  </data>
+  <data name="TrayDisconnect" xml:space="preserve">
+    <value>Desconectar</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Salir</value>
+  </data>
+  <data name="TrayNoSession" xml:space="preserve">
+    <value>Ninguna sesión</value>
+  </data>
+  <data name="TraySessionLine" xml:space="preserve">
+    <value>{0} en {1}</value>
+  </data>
+  <data name="TrayShowClient" xml:space="preserve">
+    <value>Mostrar UltimateRDP</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>Se produjo un error inesperado.

@@ -18,6 +18,7 @@ namespace UltimateRDP.Client;
 internal sealed partial class MainForm : Form
 {
     private readonly string? _initialPath;
+    private readonly bool _initialAskCredentials;
     private readonly ClientSettings _settings;
     private readonly RecentConnections _recent;
     private readonly FileMenu _fileMenu = new();
@@ -49,11 +50,14 @@ internal sealed partial class MainForm : Form
     /// <summary>
     /// Creates the window. <paramref name="initialPath"/> is opened in the first tab once
     /// the window is shown; without it the window starts empty. <paramref name="settings"/>
-    /// are the saved choices, already loaded to set the language.
+    /// are the saved choices, already loaded to set the language. With
+    /// <paramref name="startHidden"/> the window starts out of sight, with a notification
+    /// icon; <paramref name="askCredentials"/> asks for the password in the first tab.
     /// </summary>
-    public MainForm(string? initialPath, ClientSettings settings)
+    public MainForm(string? initialPath, ClientSettings settings, bool startHidden = false, bool askCredentials = false)
     {
         _initialPath = initialPath;
+        _initialAskCredentials = askCredentials;
         _settings = settings;
         _recent = new RecentConnections(_settings, ClientSettings.DefaultPath);
         InitializeFileMenu();
@@ -91,6 +95,11 @@ internal sealed partial class MainForm : Form
         StartPosition = FormStartPosition.Manual;
         _initialBounds = InitialBounds();
         Bounds = _initialBounds;
+        if (startHidden)
+        {
+            StartOutOfSight();
+        }
+
         _tabs.SelectedIndexChanged += (_, _) => OnActiveTabChanged();
 
         ClientLog.Info("Main form created.");
@@ -122,8 +131,14 @@ internal sealed partial class MainForm : Form
     {
         var open = Sessions.Count(session => session.State != SessionState.Disconnected);
         ClientLog.Info($"Form closing: reason {e.CloseReason}, {open} session(s) not disconnected, close requested {_closeRequested}.");
+        if (HideInsteadOfClosing(e))
+        {
+            return;
+        }
+
         if (!_closeRequested && open > 0 && e.CloseReason == CloseReason.UserClosing && !ConfirmQuitWithRemotePrograms())
         {
+            _exitRequested = false;
             e.Cancel = true;
             return;
         }
@@ -176,7 +191,7 @@ internal sealed partial class MainForm : Form
     /// </summary>
     protected override void OnLoad(EventArgs e)
     {
-        if (Bounds != _initialBounds)
+        if (!_offScreen && Bounds != _initialBounds)
         {
             ClientLog.Info(string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
@@ -190,6 +205,13 @@ internal sealed partial class MainForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         ClientLog.Info("Form closed.");
+        foreach (var session in _connecting.Keys.ToList())
+        {
+            CloseConnecting(session);
+        }
+
+        _tray?.Dispose();
+        _tray = null;
         base.OnFormClosed(e);
     }
 
@@ -232,15 +254,17 @@ internal sealed partial class MainForm : Form
     {
         if (_initialPath is not null)
         {
-            OpenSession(_initialPath);
+            OpenSession(_initialPath, _initialAskCredentials);
         }
+
+        ExitIfIdle();
     }
 
     /// <summary>
     /// Opens <paramref name="path"/> in a new tab and connects. A file that cannot be
     /// read is reported and taken out of the recent connections.
     /// </summary>
-    private void OpenSession(string path)
+    private void OpenSession(string path, bool askCredentials = false)
     {
         if (_closeRequested)
         {
@@ -250,12 +274,13 @@ internal sealed partial class MainForm : Form
         if (!RdpFileLoader.TryLoad(path, out var fullPath, out var file, out var error))
         {
             _recent.Remove(path);
-            MessageBox.Show(this, error.ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(DialogOwner, error.ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            ExitIfIdle();
             return;
         }
 
         _recent.Add(fullPath);
-        var session = new SessionView(fullPath, file, _settings);
+        var session = new SessionView(fullPath, file, _settings) { AskCredentialsFromCommandLine = askCredentials };
         var page = new TabPage(session.Title) { ToolTipText = fullPath, UseVisualStyleBackColor = true };
         page.Controls.Add(session);
         session.StateChanged += (_, _) => OnSessionStateChanged(session);
@@ -272,6 +297,9 @@ internal sealed partial class MainForm : Form
         OnActiveTabChanged();
         OnSessionStateChanged(session);
         ClientLog.Info($"Tab opened for {session.Host}, {_tabs.TabCount} tab(s).");
+
+        ShowConnecting(session);
+        _tray?.UpdateText();
 
         // Connect once the tab has its final size: the desktop size comes from it.
         BeginInvoke(session.Connect);
@@ -313,7 +341,7 @@ internal sealed partial class MainForm : Form
         }
 
         var answer = MessageBox.Show(
-            this,
+            DialogOwner,
             LocalText.Of(nameof(Strings.RemoteAppQuitQuestion), string.Join(", ", programs)).ToString(),
             AppInfo.Name,
             MessageBoxButtons.YesNo,
@@ -375,6 +403,8 @@ internal sealed partial class MainForm : Form
         }
 
         _tabs.TabPages.Remove(page);
+        CloseConnecting(session);
+        _wasConnected.Remove(session);
         page.Dispose();
         ClientLog.Info($"Tab closed for {session.Host}, {_tabs.TabCount} tab(s) left.");
         if (_tabs.TabCount == 0)
@@ -383,6 +413,8 @@ internal sealed partial class MainForm : Form
         }
 
         OnActiveTabChanged();
+        _tray?.UpdateText();
+        ExitIfIdle();
     }
 
     /// <summary>The tab control is hidden while no session is open, so the empty window shows a hint.</summary>
@@ -400,6 +432,7 @@ internal sealed partial class MainForm : Form
 
     private void OnSessionStateChanged(SessionView session)
     {
+        OnSessionStateForTray(session);
         if (session.Parent is TabPage page)
         {
             var text = session.State == SessionState.Disconnected

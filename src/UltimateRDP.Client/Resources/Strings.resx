@@ -88,6 +88,12 @@ Saved credentials: {0} never saves a password. Windows saves it when you tick "R
 {1}</value>
     <comment>{0} is a file path, {1} an error text from Windows.</comment>
   </data>
+  <data name="CommandLineError" xml:space="preserve">
+    <value>The command line cannot be used: {0}
+
+UltimateRDP.exe [--show | --hidden] [--ask-credentials] [file.rdp]</value>
+    <comment>{0} is the reason, in English. The options stay as they are.</comment>
+  </data>
   <data name="ConnectedTo" xml:space="preserve">
     <value>Connected to {0}</value>
     <comment>{0} is a computer name.</comment>
@@ -489,6 +495,9 @@ The next connection asks for them again. The open session is not affected.</valu
 Close the tab anyway?</value>
     <comment>{0} is the name of the RemoteApp program. "File, Log off the remote session" names the menu entry in the language of the menu.</comment>
   </data>
+  <data name="RemoteAppDisconnect" xml:space="preserve">
+    <value>Disconnect</value>
+  </data>
   <data name="RemoteAppHint" xml:space="preserve">
     <value>{0} opens in windows of its own, outside this one. Drop files on those windows to send them into the session.</value>
     <comment>{0} is the name of the RemoteApp program.</comment>
@@ -506,6 +515,16 @@ Quit anyway?</value>
   <data name="RemoteAppStartFailed" xml:space="preserve">
     <value>The server did not start {0} ({1}).</value>
     <comment>{0} is the name of the RemoteApp program, {1} a code name given by the Remote Desktop control, not translated.</comment>
+  </data>
+  <data name="RemoteAppWindowCount" xml:space="preserve">
+    <value>{0} window(s) of the program are open on this computer.</value>
+    <comment>{0} is a number of windows.</comment>
+  </data>
+  <data name="SessionEndedMessage" xml:space="preserve">
+    <value>The connection to {0} ended.
+
+{1}</value>
+    <comment>{0} is the program or the host, {1} the state of the connection, such as Disconnected: followed by the reason.</comment>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>The session sees no redirected drive: drops will not work. Turn on drives under Local Resources.</value>
@@ -666,6 +685,22 @@ Reconnect now?</value>
   <data name="TransferWindowTitle" xml:space="preserve">
     <value>Drop into the session</value>
     <comment>Title of the window shown at every drop into the session, with or without a transfer of large files.</comment>
+  </data>
+  <data name="TrayDisconnect" xml:space="preserve">
+    <value>Disconnect</value>
+  </data>
+  <data name="TrayExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="TrayNoSession" xml:space="preserve">
+    <value>No session</value>
+  </data>
+  <data name="TraySessionLine" xml:space="preserve">
+    <value>{0} on {1}</value>
+    <comment>{0} is the name of the program or the host, {1} the host of the session.</comment>
+  </data>
+  <data name="TrayShowClient" xml:space="preserve">
+    <value>Show UltimateRDP</value>
   </data>
   <data name="UnexpectedError" xml:space="preserve">
     <value>An unexpected error occurred.

@@ -164,4 +164,52 @@ internal static class NativeMethods
         }, IntPtr.Zero);
         return result;
     }
+
+    /// <summary>SW_HIDE.</summary>
+    public const int SwHide = 0;
+
+    /// <summary>SW_SHOWNOACTIVATE.</summary>
+    public const int SwShowNoActivate = 4;
+
+    /// <summary>SW_SHOW.</summary>
+    public const int SwShow = 5;
+
+    /// <summary>WS_EX_TOOLWINDOW: no taskbar button and no place in Alt+Tab.</summary>
+    public const long ExToolWindow = 0x00000080;
+
+    /// <summary>WS_EX_APPWINDOW: a taskbar button.</summary>
+    public const long ExAppWindow = 0x00040000;
+
+    /// <summary>DWMWA_CLOAKED.</summary>
+    private const int DwmwaCloaked = 14;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ShowWindow(IntPtr hwnd, int command);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+
+    /// <summary>The title of a window, at most 256 characters.</summary>
+    public static string WindowText(IntPtr hwnd)
+    {
+        var text = new StringBuilder(257);
+        return GetWindowText(hwnd, text, text.Capacity) > 0 ? text.ToString() : string.Empty;
+    }
+
+    /// <summary>True when the window is cloaked by DWM, so that it shows nothing although Windows calls it visible.</summary>
+    public static bool IsCloaked(IntPtr hwnd) => DwmGetWindowAttribute(hwnd, DwmwaCloaked, out var cloaked, sizeof(int)) == 0 && cloaked != 0;
+
+    /// <summary>Adds and removes bits of the extended style of a window.</summary>
+    public static void ChangeExStyle(IntPtr hwnd, long add, long remove)
+    {
+        var style = GetWindowLongPtr(hwnd, GwlExStyle).ToInt64();
+        SetWindowLongPtr(hwnd, GwlExStyle, new IntPtr((style | add) & ~remove));
+    }
 }

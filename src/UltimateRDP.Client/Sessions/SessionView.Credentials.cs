@@ -15,6 +15,11 @@ internal sealed partial class SessionView
 {
     private bool _savedCredentialsApplied;
 
+    /// <summary>True when the client was started with <c>--ask-credentials</c> for this tab; read from 0.9.0 on.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool AskCredentialsFromCommandLine { get; init; }
+
     /// <summary>Kinds of credentials Windows keeps for the host.</summary>
     public SavedCredentialKinds FindSavedCredentials() => SavedCredentials.Find(Host);
 

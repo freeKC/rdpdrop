@@ -10,6 +10,7 @@ using UltimateRDP.Core.Display;
 using UltimateRDP.Core.Paths;
 using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.RdpFiles;
+using UltimateRDP.Core.RemoteApp;
 using UltimateRDP.Core.Transfer;
 
 namespace UltimateRDP.Client.Sessions;
@@ -21,9 +22,12 @@ namespace UltimateRDP.Client.Sessions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The control gets RemoteProgramMode and the RemoteProgram2 values before Connect. When no
-/// window of the program appeared and the control did not report a start within ten seconds
-/// after the logon, the client asks once with ServerStartProgram.
+/// The control gets RemoteProgramMode and the RemoteProgram2 values before Connect, and the
+/// container handles full screen. Since 0.9.0 the client calls ServerStartProgram at the
+/// logon, unless the control already reported a result or a window of the program, and once
+/// more ten seconds later when nothing came (<see cref="RemoteProgramStart"/>). The window of
+/// the control is hidden, as mstsc keeps its own frame hidden in RemoteApp mode: only the
+/// windows of the program show.
 /// </para>
 /// <para>
 /// Drops come from the windows of the program, found by <see cref="RailDropTargets"/>. Each
@@ -38,19 +42,20 @@ namespace UltimateRDP.Client.Sessions;
 /// </remarks>
 internal sealed partial class SessionView : IRailSession
 {
-    private const int StartFallbackMilliseconds = 10_000;
+    /// <summary>The memory of the process is logged this long after the first window of the program.</summary>
+    private const int MemoryLogMilliseconds = 60_000;
 
     /// <summary>Longest time the local drop call stays open for the replay in the session.</summary>
     private const int DropCallMilliseconds = 6000;
 
     private const int PumpWaitMilliseconds = 50;
 
-    private readonly System.Windows.Forms.Timer _startTimer = new() { Interval = StartFallbackMilliseconds };
+    private readonly System.Windows.Forms.Timer _startTimer = new() { Interval = RemoteProgramStart.RetryMilliseconds };
+    private readonly System.Windows.Forms.Timer _memoryTimer = new() { Interval = MemoryLogMilliseconds };
+    private readonly RemoteProgramStart _start = new();
     private RemoteAppLaunch? _remoteApp;
     private RemoteAppPanel? _panel;
-    private bool _remoteProgramAnswered;
     private bool _remoteWindowShown;
-    private bool _startProgramCalled;
     private bool _remoteAppLoggedOn;
     private bool _railAttached;
     private string? _railDropId;
@@ -58,11 +63,20 @@ internal sealed partial class SessionView : IRailSession
     private IReadOnlyList<string>? _railHoverFiles;
     private LocalText? _railHoverProblem;
 
+    /// <summary>Raised once per connection, when the first window of the program appears.</summary>
+    public event EventHandler? RemoteProgramShown;
+
     /// <summary>True when the tab runs a RemoteApp program.</summary>
     public bool IsRemoteApp => _remoteApp is not null;
 
     /// <summary>The name of the RemoteApp program, or null for a desktop.</summary>
     public string? RemoteAppName => _remoteApp?.DisplayName;
+
+    /// <summary>The windows of the program open on this computer.</summary>
+    public int RemoteWindowCount => IsRemoteApp ? RailDropTargets.WindowCount(this) : 0;
+
+    /// <summary>True once a window of the program appeared in this connection.</summary>
+    public bool RemoteProgramHasShown => _remoteWindowShown;
 
     /// <summary>
     /// True when closing the tab leaves a RemoteApp program running on the server: the
@@ -93,12 +107,23 @@ internal sealed partial class SessionView : IRailSession
         _display.RemoteApp = true;
         _agent.RemoteApp = true;
         _panel = new RemoteAppPanel { Dock = DockStyle.Fill };
+        _panel.DisconnectRequested += (_, _) => Disconnect();
         Controls.Add(_panel);
         _panel.BringToFront();
         _rdp.OnRemoteProgramResult += (_, e) => OnRemoteProgramResult(e.bstrRemoteProgram, e.lError, e.vbIsExecutable);
         _rdp.OnRemoteProgramDisplayed += (_, e) => OnRemoteProgramDisplayed(e.vbDisplayed, e.uDisplayInformation);
         _rdp.OnRemoteWindowDisplayed += (_, e) => OnRemoteWindowDisplayed(e.vbDisplayed, e.hwnd, e.windowAttribute);
-        _startTimer.Tick += (_, _) => OnStartFallback();
+        _rdp.OnRequestGoFullScreen += (_, _) => ClientLog.Info($"Event OnRequestGoFullScreen ({Host}) in RemoteApp mode, ignored: the windows of the control stay in the hidden client window.");
+        _rdp.OnRequestLeaveFullScreen += (_, _) => ClientLog.Info($"Event OnRequestLeaveFullScreen ({Host}) in RemoteApp mode, ignored.");
+        _rdp.OnRequestContainerMinimize += (_, _) => ClientLog.Info($"Event OnRequestContainerMinimize ({Host}) in RemoteApp mode, ignored.");
+        _rdp.HandleCreated += (_, _) => HideControlWindow("its window was created");
+        RailDropTargets.WindowsChanged += OnRailWindowsChanged;
+        _startTimer.Tick += (_, _) => OnStartRetry();
+        _memoryTimer.Tick += (_, _) =>
+        {
+            _memoryTimer.Stop();
+            LogMemory(Invariant($"{MemoryLogMilliseconds / 1000} s after the first window"));
+        };
         ClientLog.Info($"RemoteApp tab for {Host}: {_remoteApp}.");
         UpdatePanel();
     }
@@ -106,21 +131,53 @@ internal sealed partial class SessionView : IRailSession
     private void DisposeRemoteApp()
     {
         _startTimer.Dispose();
+        _memoryTimer.Dispose();
+        RailDropTargets.WindowsChanged -= OnRailWindowsChanged;
         DetachRail();
     }
 
     /// <summary>A new connection starts: what the previous one saw is forgotten.</summary>
     private void OnRemoteAppConnecting()
     {
-        _remoteProgramAnswered = false;
+        _start.Reset();
         _remoteWindowShown = false;
-        _startProgramCalled = false;
         _remoteAppLoggedOn = false;
         _startTimer.Stop();
+        _memoryTimer.Stop();
+        HideControlWindow("a connection starts");
+    }
+
+    /// <summary>
+    /// Hides the window of the control, as mstsc keeps its frame hidden in RemoteApp mode: the
+    /// tab shows the panel, and the control never shows its empty picture with scroll bars. The
+    /// windows of the program are top level windows of their own and do not depend on it.
+    /// </summary>
+    private void HideControlWindow(string reason)
+    {
+        if (!IsRemoteApp || !_rdp.IsHandleCreated)
+        {
+            return;
+        }
+
+        var wasVisible = NativeMethods.IsWindowVisible(_rdp.Handle);
+        NativeMethods.ShowWindow(_rdp.Handle, NativeMethods.SwHide);
+        if (wasVisible)
+        {
+            ClientLog.Info($"RemoteApp ({Host}): the window of the control 0x{_rdp.Handle.ToInt64():X} is hidden, {reason}.");
+        }
+    }
+
+    private void OnRailWindowsChanged()
+    {
+        if (!IsDisposed)
+        {
+            UpdatePanel();
+        }
     }
 
     private void OnRemoteAppConnected()
     {
+        HideControlWindow("the session connected");
         if (!_railAttached)
         {
             _railAttached = true;
@@ -131,11 +188,19 @@ internal sealed partial class SessionView : IRailSession
     private void OnRemoteAppLoggedOn()
     {
         _remoteAppLoggedOn = true;
+        HideControlWindow("the session logged on");
         LogMonitorLayout("logged on");
-        if (!_remoteProgramAnswered && !_remoteWindowShown)
+        LogProcessWindows("logged on");
+        LogMemory("logged on");
+        if (_start.OnLoggedOn() == RemoteProgramStep.CallServerStartProgram)
         {
+            StartProgram("at the logon, since the RemoteProgram2 values alone do not start it on every server");
             _startTimer.Stop();
             _startTimer.Start();
+        }
+        else
+        {
+            ClientLog.Info($"RemoteApp ({Host}): ServerStartProgram is not called at the logon: the control already reported {(_start.Answered ? "the result of a start" : "a window of the program")}.");
         }
     }
 
@@ -147,6 +212,7 @@ internal sealed partial class SessionView : IRailSession
     private void OnRemoteAppDisconnected()
     {
         _startTimer.Stop();
+        _memoryTimer.Stop();
         DetachRail();
         var loggedOn = _remoteAppLoggedOn;
         _remoteAppLoggedOn = false;
@@ -168,7 +234,7 @@ internal sealed partial class SessionView : IRailSession
 
     private void OnRemoteProgramResult(string program, RemoteProgramResult result, bool isExecutable)
     {
-        _remoteProgramAnswered = true;
+        _start.OnResult();
         _startTimer.Stop();
         var text = Invariant($"Event OnRemoteProgramResult ({Host}): program \"{program}\", result {result} ({(int)result}), executable {isExecutable}");
         if (result == RemoteProgramResult.remoteAppResultOk)
@@ -201,19 +267,22 @@ internal sealed partial class SessionView : IRailSession
             return;
         }
 
-        if (displayed)
-        {
-            _startTimer.Stop();
-            if (!_remoteWindowShown)
-            {
-                _remoteWindowShown = true;
-                LogMonitorLayout("first window");
-            }
-        }
-
         if (hwnd != IntPtr.Zero)
         {
             RailDropTargets.OnWindowDisplayed(this, hwnd, displayed, attribute.ToString());
+        }
+
+        if (displayed && !_remoteWindowShown && hwnd != IntPtr.Zero && RailDropTargets.IsProgramWindow(hwnd))
+        {
+            _start.OnWindow();
+            _startTimer.Stop();
+            _remoteWindowShown = true;
+            LogMonitorLayout("first window");
+            LogProcessWindows("first window of the program");
+            LogMemory("first window");
+            _memoryTimer.Stop();
+            _memoryTimer.Start();
+            RemoteProgramShown?.Invoke(this, EventArgs.Empty);
         }
 
         UpdatePanel();
@@ -221,22 +290,35 @@ internal sealed partial class SessionView : IRailSession
     }
 
     /// <summary>
-    /// Ten seconds after the logon, the control neither reported the start of the program nor
-    /// showed a window of it: the client asks the server once.
+    /// Ten seconds after the first call, the control neither reported the result of a start
+    /// nor showed a window of the program: the client asks the server once more.
     /// </summary>
-    private void OnStartFallback()
+    private void OnStartRetry()
     {
         _startTimer.Stop();
-        if (_remoteApp is not { } launch || _remoteProgramAnswered || _remoteWindowShown || _startProgramCalled || State != SessionState.Connected)
+        if (State != SessionState.Connected)
         {
             return;
         }
 
-        _startProgramCalled = true;
+        if (_start.OnRetryTimer() == RemoteProgramStep.CallServerStartProgram)
+        {
+            StartProgram(Invariant($"again: no OnRemoteProgramResult and no window {RemoteProgramStart.RetryMilliseconds / 1000} s after the first call"));
+        }
+    }
+
+    /// <summary>Calls ServerStartProgram with the program, the file and the arguments of the .rdp file.</summary>
+    private void StartProgram(string why)
+    {
+        if (_remoteApp is not { } launch)
+        {
+            return;
+        }
+
         var program = launch.Program ?? string.Empty;
         var file = launch.File ?? string.Empty;
         var args = launch.Args ?? string.Empty;
-        ClientLog.Info(Invariant($"RemoteApp ({Host}): no OnRemoteProgramResult and no window {StartFallbackMilliseconds / 1000} s after the logon; calling ServerStartProgram(\"{program}\", \"{file}\", \"\", {launch.ExpandWorkingDir}, \"{args}\", {launch.ExpandArgs}) once."));
+        ClientLog.Info(Invariant($"RemoteApp ({Host}): calling ServerStartProgram(\"{program}\", \"{file}\", \"\", {launch.ExpandWorkingDir}, \"{args}\", {launch.ExpandArgs}), call {_start.Calls} of at most {RemoteProgramStart.MaxCalls}, {why}."));
         try
         {
             _rdp.RemoteProgram.ServerStartProgram(program, file, string.Empty, launch.ExpandWorkingDir, args, launch.ExpandArgs);
@@ -294,9 +376,43 @@ internal sealed partial class SessionView : IRailSession
         _panel.ShowState(
             _remoteApp.DisplayName,
             LocalText.Of(nameof(Strings.RemoteAppHint), _remoteApp.DisplayName).ToString(),
+            LocalText.Of(nameof(Strings.RemoteAppWindowCount), RemoteWindowCount).ToString(),
             ConnectionText,
             AgentText,
-            DropText);
+            DropText,
+            canDisconnect: State != SessionState.Disconnected && !_closeRequested);
+    }
+
+    /// <summary>
+    /// One line per top level window of the process: class, title, visible, cloaked, styles,
+    /// rectangle, owner and what <see cref="RailWindowRule"/> makes of it, so that a real run
+    /// shows which windows the user can see. The title is cut at 40 characters.
+    /// </summary>
+    private void LogProcessWindows(string reason)
+    {
+        var windows = NativeMethods.TopLevelWindowsOfThisProcess();
+        var form = FindForm();
+        ClientLog.Info(Invariant($"RemoteApp ({Host}): {windows.Count} top level window(s) of the process, {reason}; the control is 0x{(_rdp.IsHandleCreated ? _rdp.Handle.ToInt64() : 0):X}, visible {_rdp.IsHandleCreated && NativeMethods.IsWindowVisible(_rdp.Handle)}; the main window is 0x{(form is { IsHandleCreated: true } ? form.Handle.ToInt64() : 0):X}."));
+        foreach (var hwnd in windows)
+        {
+            var className = NativeMethods.ClassName(hwnd);
+            var title = NativeMethods.WindowText(hwnd);
+            if (title.Length > 40)
+            {
+                title = title[..40] + "...";
+            }
+
+            var exStyle = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlExStyle).ToInt64();
+            var style = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlStyle).ToInt64();
+            ClientLog.Info(Invariant($"RemoteApp ({Host}) window 0x{hwnd.ToInt64():X}: class {className}, title \"{title}\", visible {NativeMethods.IsWindowVisible(hwnd)}, cloaked {NativeMethods.IsCloaked(hwnd)}, style 0x{style:X8} exstyle 0x{exStyle:X8}, rect {DescribeRect(NativeMethods.WindowRectangle(hwnd))}, owner 0x{NativeMethods.GetWindow(hwnd, NativeMethods.GwOwner).ToInt64():X}, {RailWindowRule.Classify(className, exStyle, title)}."));
+        }
+    }
+
+    /// <summary>The memory of the process, to compare with the 98 MB at launch and 721 MB a minute after the first window that 0.8.0 showed.</summary>
+    private void LogMemory(string reason)
+    {
+        using var process = Process.GetCurrentProcess();
+        ClientLog.Info(Invariant($"RemoteApp ({Host}) memory, {reason}: working set {process.WorkingSet64 / 1_000_000} MB, private {process.PrivateMemorySize64 / 1_000_000} MB, managed heap {GC.GetTotalMemory(false) / 1_000_000} MB; desktop {_rdp.DesktopWidth}x{_rdp.DesktopHeight}."));
     }
 
     /// <summary>
