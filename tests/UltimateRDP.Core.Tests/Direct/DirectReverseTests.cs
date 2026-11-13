@@ -185,11 +185,17 @@ public class DirectReverseTests
         Assert.Equal(1, storage.Inner.DeleteAllCalls);
     }
 
-    [Fact]
-    public void A_path_outside_the_items_of_the_offer_is_refused_by_the_client()
+    [Theory]
+    [InlineData(@"..\evil.exe")]
+    [InlineData(@"Photos\..\..\evil.exe")]
+    [InlineData(@"Photos\NUL.txt")]
+    [InlineData(@"Photos\COM1")]
+    [InlineData(@"C:\Windows\evil.exe")]
+    [InlineData("other.exe")]
+    public void A_path_outside_the_items_of_the_offer_or_with_a_reserved_name_is_refused_by_the_client(string path)
     {
         var a = Data(10, 1);
-        using var run = new ReverseRun([new(@"..\evil.exe", a.Length)], [a], 1);
+        using var run = new ReverseRun([new(path, a.Length)], [a], 1);
         run.Start();
 
         Assert.Equal(DirectSendStatus.AgentFailed, run.Outcome.Status);

@@ -297,7 +297,9 @@ internal sealed partial class SessionView
         _receiveWindow = window;
         window.ShowPreparing(offer.FirstItem, offer.Items.Count);
         window.ShowDirect(true);
-        if (FindForm() is { Visible: true } form && !IsRemoteApp)
+        // Over the session when the main window is on a monitor; otherwise, as for a RemoteApp
+        // program or a window kept out of sight, on the monitor of the mouse, on top.
+        if (FindForm() is { Visible: true } form && !IsRemoteApp && Screen.AllScreens.Any(screen => screen.Bounds.IntersectsWith(form.Bounds)))
         {
             window.ShowOver(form, SessionScreenArea());
         }
