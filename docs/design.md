@@ -3817,3 +3817,146 @@ freshly built executable took 31.9 s once on this computer, then 0.1 s.
 The look on a real monitor, the rounding and the shadow of Windows 11 and 10, the position over the
 main window, the hiding while the certificate question or the credential prompt shows, and that the
 loader never takes the focus from them. The log lines above tell the steps and the dialogs met.
+
+## Version 0.10
+
+The connection on the command line, and a generator of launchers: the end users of an
+administrator get one .bat file per published program, and until 0.9.3 each needed a .rdp file
+written by hand beside it.
+
+### The command line
+
+`LaunchOptions.Parse` in Core reads `UltimateRDP.exe [options] [file.rdp]`. The options of a
+connection are `ConnectionOptions`, a record of nullable values, one per option:
+
+| Option | Keys of the .rdp text |
+| --- | --- |
+| `--server`, `--port` | `full address:s:<host>`, `server port:i:<port or 3389>` |
+| `--user`, `--domain` | `username`, `domain` |
+| `--remoteapp` | `remoteapplicationmode:i:1`, `remoteapplicationprogram` |
+| `--remoteapp-name`, `--remoteapp-args` | `remoteapplicationname`, `remoteapplicationcmdline` |
+| `--gateway` | `gatewayhostname`, `gatewayusagemethod:i:1`, `gatewayprofileusagemethod:i:1` |
+| `--multimon`, `--scale`, `--windows-keys` | `use multimon`, `desktopscalefactor`, `keyboardhook` |
+| `--clipboard`, `--drives`, `--printers`, `--audio` | `redirectclipboard`, `redirectdrives` with `drivestoredirect` (`*` or empty), `redirectprinters`, `audiomode` |
+
+One behaviour for a file and for options: `ConnectionOptions.ToRdpContent` returns the text of the
+file, when there is one, followed by the lines of the options, and `RdpFile.Parse` reads it as any
+file. The parser keeps the last line of a key, so the options win. The text stays in memory: no
+file is written, and nothing is left to clean up. `RdpFileLoader` reads a `SessionSource` (a path,
+options, or both) through that path, and the session keeps its source, so that Reopen reads it
+again. A source with options does not go to the recent connections, where the options would be
+lost.
+
+`--server` replaces the address of the file and the port is `--port` or 3389, since a `full address`
+with a port wins over `server port` in the client; `--port` alone writes the host of the file
+without its port. `--remoteapp`: a value that starts with `||` is an alias; otherwise a value with
+`\`, `/` or `:` is a path on the server, and anything else is an alias, written `||Name` in the
+.rdp text (`LaunchValues.IsProgramPath`, `RdpProgram`).
+
+Not offered: `screen mode id` and `desktopwidth`/`desktopheight` do not map to a behaviour of the
+client, which starts every session in its window and sizes the desktop to the window
+(`RdpSettingsApplier`), so there is no `--fullscreen` or `--size`.
+
+### Checks
+
+`ConnectionOptions.Check` and `LaunchValues`, the same for the command line, the open requests of a
+second start and the generator:
+
+- `--server`, `--gateway`: labels of letters, digits, `-` and `_` (not `-` at the ends of a label,
+  1 to 63 characters), 253 characters at most; or an IPv4 address in four parts; or an IPv6
+  address, bare or in brackets, of hexadecimal digits, `:` and `.`, without a zone. No port.
+- `--port` 1 to 65535, `--scale` 100 to 500, decimal digits only.
+- Texts: not empty, no white space at the ends, no control character (line breaks and tabs
+  included), no U+2028 or U+2029, no lone surrogate; 256 characters for a user, a domain or a name,
+  1024 for a program, 2048 for arguments. Quotes are refused except in the arguments, and so is a
+  value that starts with `--`, which would read as an option.
+- Without a file, options need `--server`; `--remoteapp-name` and `--remoteapp-args` need
+  `--remoteapp`.
+
+So no value can carry a line break into the .rdp text and add a key. A refused command line gives a
+`LaunchError` (kind, option, value, rule); the client shows it in the language of the user and
+connects to nothing. `--password`, `--pass` and `--pwd` are refused with their own message: a
+command line can be read by other processes of the user and stays in .bat files, shortcuts and
+logs, so a password only comes from the credential saved for the server or from the prompt.
+
+### Hand over
+
+`OpenRequest` gains `Connection`, null when there are no options, so that the JSON of 0.9.x
+requests still reads. `LocalMessages.DecodeOpen` refuses a request whose connection does not pass
+`Check`. `--help` and `/?` show the list in a message box before the single instance is looked
+for, and open nothing.
+
+### Launchers
+
+`LauncherBatch` in Core writes the .bat text from a `LauncherSpec` (where UltimateRDP.exe is, the
+`LaunchOptions`, the name of a .rdp file beside it or none, the comment lines):
+
+```bat
+@echo off
+chcp 65001 >nul
+rem <what it opens>
+rem <it holds no password>
+setlocal DisableDelayedExpansion
+start "" "<exe>" <options>
+```
+
+`chcp 65001` comes only when a character of the file is outside ASCII, right after `@echo off`, so
+that cmd.exe reads every following line as UTF-8. The file is UTF-8 without a byte order mark, CRLF.
+
+Escaping, for each value, in two layers:
+
+1. The Windows command line (CommandLineToArgvW and the .NET runtime): the value in double quotes,
+   a quote inside written `\"`, the backslashes before a quote or before the closing quote doubled.
+2. cmd.exe, which knows nothing of `\"` and toggles its quote state at every `"`. The writer follows
+   that state across the whole line and puts `^` before `& | < > ^ ( )` wherever cmd.exe is outside
+   quotes, which happens after a `\"`. Every `%` is doubled: cmd.exe expands `%` in a batch file
+   inside quotes too. `setlocal DisableDelayedExpansion` keeps `!` as it is when delayed expansion is
+   on in the registry.
+
+The path of the program is written raw in its two variable forms (`%~dp0UltimateRDP.exe`, or a typed
+path whose every `%` must open and close a variable name, or start `%~dp0`), with `%` doubled for a
+full path; it cannot hold a quote or end with `\`. The name of a .rdp file beside the launcher is a
+plain file name without `%`, written after a raw `%~dp0`. Comment lines have their control
+characters replaced by spaces, `%` doubled (cmd.exe expands it before it sees `rem`) and `^` left
+out (one at the end would join the next line to the remark). Option names are written bare,
+values quoted. A command line longer than 7600 characters is refused, which leaves room in the 8191
+characters of cmd.exe for the expansion of `%~dp0` and of variables.
+
+The tests run each launcher through a model of cmd.exe (`CmdModel`: percent expansion, then quotes
+and carets, failing on an unescaped `& | < >` outside quotes or a variable that would expand) and
+the argument split of Windows, then through `LaunchOptions.Parse`, and compare with the input, for
+every option, for a list of hostile values and for 3000 random values of a hostile alphabet with a
+fixed seed. `LauncherCmdTests` runs launchers through cmd.exe itself, without a window (no console
+window, output redirected): the `start` line becomes an `echo` of the same arguments, the hostile
+values carry `echo INJECTED` and redirections, and the output must be the arguments alone.
+
+### The generator
+
+File, Create a launcher (.bat)... opens `LauncherForm`. Its fields are `LauncherDraft` in Core:
+trimmed texts, the default name (the name of the program, its alias or file name, else the server),
+the file name (without `\ / : * ? " < > | %` or control characters), and `ToSpec`, which names the
+wrong field. The first view holds the name, the server, the port, the user, the kind and the
+program; Advanced options shows the rest. The dialog is filled from the active tab when there is
+one (`ConnectionOptions.FromRdpFile` of its merged settings, and `prompt for credentials`), and by
+Fill from a .rdp file. The preview is the text of `LauncherBatch.Build`, or the wrong field. Save
+as writes the .bat file in UTF-8 and, with the second output choice, the .rdp file beside it in
+UTF-16 LE with a byte order mark, as mstsc writes them, named after the .bat file; an existing .rdp
+file is replaced only after a question. Test starts the running UltimateRDP.exe with the arguments
+of the launcher, all on the command line, so the running client takes them as a second start.
+
+The panel is built for a scale with a font in pixels, and the dialog builds it again when it lands
+or moves on a monitor of another DPI, keeping the fields. The rows of fields have the height of a
+text box, and those of the advanced options are 0 high when hidden; each hint label has the exact
+width of its cell, since a table that measures a wrapped label narrower than it shows it leaves
+the difference in its last row.
+
+### Previews
+
+Development aid: `UltimateRDP.exe --render-launcher <folder> [100] [200]` draws the panel of the
+dialog in a window that is never shown (the handles of every control created, then
+`DrawToBitmap`), in French, short and advanced, and writes two sample launchers as text files. A
+drop-down list draws no text into a bitmap, so its text is drawn over it. Windows draws the boxes
+of check boxes and radio buttons at the DPI of the window, which is the DPI of the process: the
+100 % previews come from a process started with `__COMPAT_LAYER=DpiUnaware`, the 200 % ones from a
+process on a monitor at 200 %; `files.txt` notes a mismatch. Switching the DPI awareness of the
+thread was tried and gave labels and text boxes of different scales.

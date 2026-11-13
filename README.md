@@ -495,7 +495,7 @@ or a shortcut whose target is `"C:\Tools\UltimateRDP\UltimateRDP.exe" "C:\Users\
 - `--show` shows the UltimateRDP window anyway, and `--hidden` keeps it out of sight for a desktop file too. A desktop file shows the window by default.
 - `--ask-credentials` asks for the password, see "Saved credentials".
 
-The command line is `UltimateRDP.exe [--show | --hidden] [--ask-credentials] [file.rdp]`.
+The command line is `UltimateRDP.exe [options] [file.rdp]`. From version 0.10.0 the options can also give the whole connection, without a .rdp file: see "Launchers".
 
 ### On your computer
 
@@ -588,6 +588,71 @@ Before the task exists for everybody, with the test account only:
 
 If a session stays open after its program closed, remove the task first, see above, then report it with the agent log of that session.
 
+## Launchers
+
+From version 0.10.0, one .bat file is enough to give a connection to the people who use it: `UltimateRDP.exe` takes the connection on its command line, and File, **Create a launcher (.bat)...** writes the .bat file for you.
+
+### Options of the command line
+
+`UltimateRDP.exe [options] [file.rdp]`. Options come in any order and are compared without case. An option that takes a value takes the next argument. `UltimateRDP.exe --help` (or `/?`) shows this list in the language of the client.
+
+| Option | Value | .rdp keys it sets |
+| --- | --- | --- |
+| `--server` | host name, IPv4 address, or IPv6 address with or without brackets; no port | `full address` |
+| `--port` | 1 to 65535, 3389 when absent | `server port` |
+| `--user` | user name | `username` |
+| `--domain` | domain | `domain` |
+| `--remoteapp` | `\|\|Name` or `Name` for a published program, or a path on the server | `remoteapplicationmode`, `remoteapplicationprogram` |
+| `--remoteapp-name` | name shown to the user | `remoteapplicationname` |
+| `--remoteapp-args` | arguments of the program, quotes allowed | `remoteapplicationcmdline` |
+| `--gateway` | host of a Remote Desktop Gateway | `gatewayhostname`, `gatewayusagemethod:i:1`, `gatewayprofileusagemethod:i:1` |
+| `--multimon` | `on` or `off`: every monitor in full screen | `use multimon` |
+| `--scale` | 100 to 500, in percent | `desktopscalefactor` |
+| `--windows-keys` | `local`, `remote` or `fullscreen` | `keyboardhook` 0, 1 or 2 |
+| `--clipboard` | `on` or `off` | `redirectclipboard` |
+| `--drives` | `on` (every drive) or `off` | `redirectdrives`, `drivestoredirect` |
+| `--printers` | `on` or `off` | `redirectprinters` |
+| `--audio` | `local`, `remote` or `off` | `audiomode` 0, 1 or 2 |
+| `--ask-credentials` | | asks for the password, see "Saved credentials" |
+| `--show`, `--hidden` | | the main window, see "From a shortcut or a .bat file" |
+| `--help`, `/?` | | shows this list and opens nothing |
+
+The rules:
+
+- Without a .rdp file, `--server` is needed. With a .rdp file, the options go on top of it and win over its keys.
+- `--server` replaces the address of the file, and the port is then `--port` or 3389. `--port` alone keeps the host of the file.
+- `--remoteapp`: a value that starts with `||` is a published alias; otherwise a value with `\`, `/` or `:` is a path on the server, and anything else is a published alias, written `||Name` for the server. `--remoteapp Notepad` and `--remoteapp "||Notepad"` are the same.
+- Every value is checked before anything opens: a host name or an IP address for `--server` and `--gateway`, a number in range, at most 256 characters for names (1024 for a program, 2048 for arguments), no control characters, no quotes except in `--remoteapp-args`, and no value that starts with `--` except the arguments. A wrong option shows a message that says which and why, and nothing connects.
+- There is no option for a password, on purpose: a command line can be read by other programs of the computer, and it stays in the .bat file, in shortcuts and in logs. Windows uses the credential saved for the server (see "Saved credentials"), or asks for the password. `--password` is refused with a message that says so.
+- A second start hands its options to the UltimateRDP that already runs, as it does with a file.
+- A session opened with options does not go to File, Recent, since the options would be lost there; File, Reopen opens it again with the same options.
+- Full screen at the start and a fixed desktop size are not offered: the client starts every session in its window and sizes the desktop to the window, whatever the file says (`screen mode id`, `desktopwidth`, `desktopheight`).
+
+The client builds the text of a .rdp file in memory from the options, after the text of the file when there is one, and reads it with the same parser as any file: a connection from the command line and one from a file go through the same code. Nothing is written to the disk.
+
+Examples:
+
+```bat
+@echo off
+start "" "%LOCALAPPDATA%\UltimateRDP\client-0.10.0\UltimateRDP.exe" --server "server.example.com" --user "jdoe"
+```
+
+```bat
+@echo off
+start "" "%LOCALAPPDATA%\UltimateRDP\client-0.10.0\UltimateRDP.exe" --server "server.example.com" --remoteapp "||Notepad" --remoteapp-name "Notepad" --ask-credentials
+```
+
+### The launcher generator
+
+File, **Create a launcher (.bat)...** opens a dialog filled from the active tab, if any. The first view holds the name of the launcher, the server, the port (3389), the user, what it opens (the remote desktop or a RemoteApp program) and the program. **Advanced options** shows the name and the arguments of the program, the domain, the gateway, the main window, "Always ask for the password", the display and redirection choices of the table above ("Default" leaves the choice to the client and the .rdp file), where the launcher finds UltimateRDP.exe, and what to write:
+
+- UltimateRDP.exe: this program (the path of the running UltimateRDP.exe, the default), next to the launcher (`%~dp0UltimateRDP.exe`), or a path you type, where variables such as `%LOCALAPPDATA%` or `%ProgramFiles%` stay as written and take their value on the computer that runs the launcher.
+- One .bat file that carries every option (the default), or a .bat file and a .rdp file beside it, named after the .bat file; the .bat file then opens `%~dp0<name>.rdp`. The .rdp file is written in UTF-16, as the Microsoft client writes them.
+
+The dialog shows the text of the .bat file as you type, or which field is wrong. **Fill from the current session** and **Fill from a .rdp file...** fill the fields from the settings of the active tab or of a file. **Save as...** writes the file, **Copy** puts its text in the clipboard, and **Test** starts this UltimateRDP with the options of the launcher, which opens the connection in the running client. The launcher holds no password, and the dialog has no field for one.
+
+The .bat file starts with `@echo off`, `chcp 65001 >nul` when a character of the file is outside ASCII, a comment in the language of the client that says what it opens and that it holds no password, `setlocal DisableDelayedExpansion`, and `start "" "<UltimateRDP.exe>" <options>`. It is written in UTF-8 without a byte order mark, with CRLF line ends. Each value is quoted so that cmd.exe gives it to UltimateRDP exactly as typed and cannot run anything else: see "Security notes".
+
 ## How it works
 
 The client hosts the Microsoft Remote Desktop ActiveX control and registers itself as a drop target on its windows. The agent runs in your session and listens on a static virtual channel named `ULTRDP`. For small files the client sends the local paths and the cursor position, and the session reads the files from the redirected drives. Large files are sent through the channel, as described after the steps below.
@@ -658,11 +723,12 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 - Messages carry file paths, coordinates, modifier key flags and window names. File contents go through the channel only for a transfer of large files, inside the encrypted Remote Desktop connection.
 - From version 0.6.0, the files of a transfer of large files may go through a direct TLS connection instead. The agent listens only while a transfer is offered, and accepts a connection only with a proof of the single use token it gave through the encrypted Remote Desktop connection, each connection of the offer once, 16 at most. The client accepts only the certificate whose SHA-256 the agent gave there. The files go to the same staging folder, with the same checks. Open the ports only to the client addresses allowed for RDP.
 - From version 0.9.0, the session can send files to your computer. Only the user of the session can start it, through the agent of that session: `--send` reaches that agent through a pipe that only accepts processes of the same user in the same session. The client takes files only after it answered an offer that came through the encrypted Remote Desktop connection of its own session, only through the direct connection whose certificate and token that offer gave, and only into its folder for received files. It never replaces a file, never runs one, and marks each one as a download.
+- From version 0.10.0, the command line can give a connection, and the client can write launchers. No option takes a password. Every value of the command line is checked before anything opens, and cannot add a key to the .rdp settings it becomes. In a launcher, every value is in double quotes with the quoting rules of the Windows command line, every `%` is doubled, a `^` goes before `& | < > ^ ( )` wherever cmd.exe reads outside quotes, and delayed expansion is off, so that no value can add a command or expand a variable. The tests check this with a model of cmd.exe and with cmd.exe itself.
 - The client never writes credentials and never logs them. It reads the generic credential `TERMSRV/<host>` when one exists, and hands it to the Microsoft control. Other credential prompts come from the Microsoft control.
 
 ## Status
 
-Version 0.9.0 is a test release. The files sent from the session to your computer, the launch of a RemoteApp program from a shortcut, its window fixes and the password option were not tested against a real server at the time of the release; the drive letters of 0.8.0 were not either.
+Version 0.10.0 adds the options of a connection on the command line and the launcher generator; its launchers were checked with cmd.exe on the computer of the tests, and not against a real server at the time of the release. Version 0.9.0 is a test release. The files sent from the session to your computer, the launch of a RemoteApp program from a shortcut, its window fixes and the password option were not tested against a real server at the time of the release; the drive letters of 0.8.0 were not either.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
