@@ -356,6 +356,78 @@ A próxima conexão vai solicitá-las novamente. A sessão aberta não é afetad
   <data name="PathRelative" xml:space="preserve">
     <value>"{0}" é um caminho relativo. Só é possível enviar caminhos completos que começam com uma letra de unidade, como C:\.</value>
   </data>
+  <data name="ReceiveBadName" xml:space="preserve">
+    <value>A sessão enviou um nome que este computador recusa: {0}. Nada foi mantido.</value>
+  </data>
+  <data name="ReceiveCancelledBySession" xml:space="preserve">
+    <value>A sessão cancelou a transferência: {0}</value>
+  </data>
+  <data name="ReceiveChecksum" xml:space="preserve">
+    <value>{0} chegou danificado. Nada foi mantido; envie os arquivos novamente.</value>
+  </data>
+  <data name="ReceiveDoneStatus" xml:space="preserve">
+    <value>{0} arquivo(s) da sessão recebido(s) em {1}.</value>
+  </data>
+  <data name="ReceiveFailed" xml:space="preserve">
+    <value>Os arquivos da sessão não foram recebidos: {0}</value>
+  </data>
+  <data name="ReceiveLost" xml:space="preserve">
+    <value>A conexão direta foi perdida. Nada foi mantido; envie os arquivos novamente.</value>
+  </data>
+  <data name="ReceiveMoveFailed" xml:space="preserve">
+    <value>Os arquivos chegaram mas não podem ser movidos para {0}: {1} Eles estão na pasta oculta {2}.</value>
+  </data>
+  <data name="ReceiveNotAvailable" xml:space="preserve">
+    <value>Os arquivos não podem vir pela conexão direta: {0}. Um gateway de Área de Trabalho Remota ou um firewall no caminho pode bloquear suas portas. Copie-os na sessão para uma unidade deste computador, em \\tsclient.</value>
+  </data>
+  <data name="ReceivePreparing" xml:space="preserve">
+    <value>Recebendo {0} item(ns) da sessão...</value>
+  </data>
+  <data name="ReceiveProgress" xml:space="preserve">
+    <value>Recebendo {0} arquivo(s) da sessão: {1} %</value>
+  </data>
+  <data name="ReceiveProgressRate" xml:space="preserve">
+    <value>Recebendo {0} arquivo(s) da sessão: {1} % ({2:0.0} MB/s, {3})</value>
+  </data>
+  <data name="ReceiveRefused" xml:space="preserve">
+    <value>Arquivos da sessão recusados: {0}</value>
+  </data>
+  <data name="ReceiveRefusedBusy" xml:space="preserve">
+    <value>Já há arquivos da sessão sendo recebidos. Envie estes quando terminar.</value>
+  </data>
+  <data name="ReceiveRefusedNoFolder" xml:space="preserve">
+    <value>Não é possível usar a pasta de arquivos recebidos {0}. {1}</value>
+  </data>
+  <data name="ReceiveRefusedNoSpace" xml:space="preserve">
+    <value>Não há espaço livre suficiente em {0}: são necessários {1:N0} MB e há {2:N0} MB livres.</value>
+  </data>
+  <data name="ReceiveRefusedNotDirect" xml:space="preserve">
+    <value>O agente oferece uma conexão direta de outra versão que este cliente. Instale a mesma versão nos dois lados.</value>
+  </data>
+  <data name="ReceiveRefusedOff" xml:space="preserve">
+    <value>Este cliente não recebe arquivos da sessão (receiveFiles ou directTransfer é never em client.json).</value>
+  </data>
+  <data name="ReceiveWhereMany" xml:space="preserve">
+    <value>{0} itens estão em {1}.</value>
+  </data>
+  <data name="ReceiveWhereOne" xml:space="preserve">
+    <value>{0} está em {1}.</value>
+  </data>
+  <data name="ReceiveWindowDestination" xml:space="preserve">
+    <value>Para {0}</value>
+  </data>
+  <data name="ReceiveWindowDone" xml:space="preserve">
+    <value>{0} arquivo(s) recebido(s) em {1} a {2:0.0} MB/s.</value>
+  </data>
+  <data name="ReceiveWindowOpenFolder" xml:space="preserve">
+    <value>Abrir pasta</value>
+  </data>
+  <data name="ReceiveWindowTitle" xml:space="preserve">
+    <value>Arquivos da sessão</value>
+  </data>
+  <data name="ReceiveWriteFailed" xml:space="preserve">
+    <value>Não é possível gravar {0}. {1}</value>
+  </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Reconectando a {0} (tentativa {1})...</value>
   </data>

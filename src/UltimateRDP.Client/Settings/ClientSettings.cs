@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Core.Agent;
+using UltimateRDP.Core.Credentials;
 using UltimateRDP.Core.Localization;
 using UltimateRDP.Core.Protocol;
 using UltimateRDP.Core.Recent;
@@ -82,6 +83,41 @@ internal sealed class ClientSettings
     /// </summary>
     public int DirectConnections { get; set; } = DirectTransferPolicy.DefaultConnections;
 
+    /// <summary>
+    /// Since 0.9.0: <c>auto</c> by default, the client receives the files that the session
+    /// sends and says so in its hello; <c>never</c> refuses them. Only editable in the file.
+    /// </summary>
+    public string ReceiveFiles { get; set; } = SendToClient.ToSetting(true);
+
+    /// <summary>
+    /// Since 0.9.0: the folder for the files that the session sends, the Downloads folder of
+    /// the user when absent. Only editable in the file.
+    /// </summary>
+    public string? ReceiveFolder { get; set; }
+
+    /// <summary>
+    /// Since 0.9.0: <c>saved</c> by default, a saved generic credential TERMSRV/host is used
+    /// when Windows keeps one; <c>ask</c> always asks for the password. The File menu entry
+    /// "Always ask for the password" changes it.
+    /// </summary>
+    public string Credentials { get; set; } = CredentialPrompt.Saved;
+
+    /// <summary>True when the client receives files of the session: <see cref="ReceiveFiles"/> at auto, and the direct connection not off.</summary>
+    [JsonIgnore]
+    public bool ReceivesFiles => SendToClient.ParseAutoNever(ReceiveFiles, out _) && DirectTransferMode == DirectTransferMode.Auto;
+
+    /// <summary>True when <see cref="Credentials"/> is <c>ask</c>.</summary>
+    [JsonIgnore]
+    public bool AlwaysAskPassword
+    {
+        get => CredentialPrompt.ParseSetting(Credentials, out _);
+        set => Credentials = CredentialPrompt.ToSetting(value);
+    }
+
+    /// <summary>The folder for received files: <see cref="ReceiveFolder"/> when set, the Downloads folder of the user otherwise.</summary>
+    [JsonIgnore]
+    public string ReceiveFolderPath => string.IsNullOrWhiteSpace(ReceiveFolder) ? KnownFolders.Downloads() : Environment.ExpandEnvironmentVariables(ReceiveFolder.Trim());
+
     /// <summary>The mode of <see cref="DirectTransfer"/>.</summary>
     [JsonIgnore]
     public DirectTransferMode DirectTransferMode => DirectTransferPolicy.Parse(DirectTransfer, out _);
@@ -137,7 +173,7 @@ internal sealed class ClientSettings
     }
 
     public override string ToString() =>
-        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, direct connection {DirectTransfer} with up to {DirectConnections} connection(s), log level {LogLevel}";
+        $"display mode {DisplayMode}, scale factor {ScaleFactor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto"}, keyboard hook mode {KeyboardHookMode}, all monitors {UseAllMonitors}, language {Language}, transfer chunk {TransferChunkBytes} bytes, transfer window {TransferWindowBytes} bytes, channel call up to {TransferBatchCharacters} characters, direct connection {DirectTransfer} with up to {DirectConnections} connection(s), receive files {ReceiveFiles} into {ReceiveFolderPath}, credentials {Credentials}, log level {LogLevel}";
 
     private ClientSettings Normalized()
     {
@@ -175,6 +211,25 @@ internal sealed class ClientSettings
         }
 
         DirectConnections = directConnections;
+        var receiveFiles = SendToClient.ParseAutoNever(ReceiveFiles, out recognized);
+        if (!recognized)
+        {
+            ClientLog.Warn($"The receiveFiles setting \"{ReceiveFiles}\" is unknown; using \"auto\". Use \"auto\" or \"never\".");
+        }
+
+        ReceiveFiles = SendToClient.ToSetting(receiveFiles);
+        var ask = CredentialPrompt.ParseSetting(Credentials, out recognized);
+        if (!recognized)
+        {
+            ClientLog.Warn($"The credentials setting \"{Credentials}\" is unknown; using \"saved\". Use \"saved\" or \"ask\".");
+        }
+
+        Credentials = CredentialPrompt.ToSetting(ask);
+        if (ReceiveFolder is { } folder && (folder.Trim().Length == 0 || !Path.IsPathFullyQualified(Environment.ExpandEnvironmentVariables(folder.Trim()))))
+        {
+            ClientLog.Warn($"The receiveFolder setting \"{folder}\" is not a full path; using the Downloads folder.");
+            ReceiveFolder = null;
+        }
         RecentFiles = [.. RecentList.Normalize(RecentFiles)];
         return this;
     }

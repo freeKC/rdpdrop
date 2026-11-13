@@ -356,6 +356,78 @@ La prossima connessione le richiederà di nuovo. La sessione aperta non viene mo
   <data name="PathRelative" xml:space="preserve">
     <value>"{0}" è un percorso relativo. Si possono rilasciare solo percorsi completi che iniziano con una lettera di unità, come C:\.</value>
   </data>
+  <data name="ReceiveBadName" xml:space="preserve">
+    <value>La sessione ha inviato un nome che questo computer rifiuta: {0}. Non è stato conservato nulla.</value>
+  </data>
+  <data name="ReceiveCancelledBySession" xml:space="preserve">
+    <value>La sessione ha annullato il trasferimento: {0}</value>
+  </data>
+  <data name="ReceiveChecksum" xml:space="preserve">
+    <value>{0} è arrivato danneggiato. Non è stato conservato nulla; inviare di nuovo i file.</value>
+  </data>
+  <data name="ReceiveDoneStatus" xml:space="preserve">
+    <value>{0} file della sessione ricevuti in {1}.</value>
+  </data>
+  <data name="ReceiveFailed" xml:space="preserve">
+    <value>I file della sessione non sono stati ricevuti: {0}</value>
+  </data>
+  <data name="ReceiveLost" xml:space="preserve">
+    <value>La connessione diretta è stata persa. Non è stato conservato nulla; inviare di nuovo i file.</value>
+  </data>
+  <data name="ReceiveMoveFailed" xml:space="preserve">
+    <value>I file sono arrivati ma non possono essere spostati in {0}: {1} Si trovano nella cartella nascosta {2}.</value>
+  </data>
+  <data name="ReceiveNotAvailable" xml:space="preserve">
+    <value>I file non possono arrivare tramite la connessione diretta: {0}. Un gateway Desktop remoto o un firewall intermedio può bloccarne le porte. Copiarli invece nella sessione su un'unità di questo computer, in \\tsclient.</value>
+  </data>
+  <data name="ReceivePreparing" xml:space="preserve">
+    <value>Ricezione di {0} elementi dalla sessione...</value>
+  </data>
+  <data name="ReceiveProgress" xml:space="preserve">
+    <value>Ricezione di {0} file dalla sessione: {1} %</value>
+  </data>
+  <data name="ReceiveProgressRate" xml:space="preserve">
+    <value>Ricezione di {0} file dalla sessione: {1} % ({2:0.0} MB/s, {3})</value>
+  </data>
+  <data name="ReceiveRefused" xml:space="preserve">
+    <value>File dalla sessione rifiutati: {0}</value>
+  </data>
+  <data name="ReceiveRefusedBusy" xml:space="preserve">
+    <value>Si stanno già ricevendo file della sessione. Inviare questi al termine.</value>
+  </data>
+  <data name="ReceiveRefusedNoFolder" xml:space="preserve">
+    <value>Impossibile usare la cartella dei file ricevuti {0}. {1}</value>
+  </data>
+  <data name="ReceiveRefusedNoSpace" xml:space="preserve">
+    <value>Spazio libero insufficiente in {0}: servono {1:N0} MB, liberi {2:N0} MB.</value>
+  </data>
+  <data name="ReceiveRefusedNotDirect" xml:space="preserve">
+    <value>L'agente offre una connessione diretta di una versione diversa da questo client. Installare la stessa versione su entrambi i lati.</value>
+  </data>
+  <data name="ReceiveRefusedOff" xml:space="preserve">
+    <value>Questo client non riceve file della sessione (receiveFiles o directTransfer è never in client.json).</value>
+  </data>
+  <data name="ReceiveWhereMany" xml:space="preserve">
+    <value>{0} elementi si trovano in {1}.</value>
+  </data>
+  <data name="ReceiveWhereOne" xml:space="preserve">
+    <value>{0} si trova in {1}.</value>
+  </data>
+  <data name="ReceiveWindowDestination" xml:space="preserve">
+    <value>In {0}</value>
+  </data>
+  <data name="ReceiveWindowDone" xml:space="preserve">
+    <value>{0} file ricevuti in {1} a {2:0.0} MB/s.</value>
+  </data>
+  <data name="ReceiveWindowOpenFolder" xml:space="preserve">
+    <value>Apri cartella</value>
+  </data>
+  <data name="ReceiveWindowTitle" xml:space="preserve">
+    <value>File dalla sessione</value>
+  </data>
+  <data name="ReceiveWriteFailed" xml:space="preserve">
+    <value>Impossibile scrivere {0}. {1}</value>
+  </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Riconnessione a {0} (tentativo {1})...</value>
   </data>

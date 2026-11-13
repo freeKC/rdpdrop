@@ -356,6 +356,78 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
   <data name="PathRelative" xml:space="preserve">
     <value>„{0}“ ist ein relativer Pfad. Nur vollständige Pfade, die mit einem Laufwerksbuchstaben wie C:\ beginnen, können abgelegt werden.</value>
   </data>
+  <data name="ReceiveBadName" xml:space="preserve">
+    <value>Die Sitzung hat einen Namen gesendet, den dieser Computer ablehnt: {0}. Nichts wurde behalten.</value>
+  </data>
+  <data name="ReceiveCancelledBySession" xml:space="preserve">
+    <value>Die Sitzung hat die Übertragung abgebrochen: {0}</value>
+  </data>
+  <data name="ReceiveChecksum" xml:space="preserve">
+    <value>{0} ist beschädigt angekommen. Nichts wurde behalten; senden Sie die Dateien erneut.</value>
+  </data>
+  <data name="ReceiveDoneStatus" xml:space="preserve">
+    <value>{0} Datei(en) aus der Sitzung in {1} empfangen.</value>
+  </data>
+  <data name="ReceiveFailed" xml:space="preserve">
+    <value>Die Dateien der Sitzung wurden nicht empfangen: {0}</value>
+  </data>
+  <data name="ReceiveLost" xml:space="preserve">
+    <value>Die direkte Verbindung ist abgebrochen. Nichts wurde behalten; senden Sie die Dateien erneut.</value>
+  </data>
+  <data name="ReceiveMoveFailed" xml:space="preserve">
+    <value>Die Dateien sind angekommen, können aber nicht nach {0} verschoben werden: {1} Sie liegen im versteckten Ordner {2}.</value>
+  </data>
+  <data name="ReceiveNotAvailable" xml:space="preserve">
+    <value>Die Dateien können nicht über die direkte Verbindung kommen: {0}. Ein Remotedesktopgateway oder eine Firewall dazwischen kann ihre Ports sperren. Kopieren Sie sie stattdessen in der Sitzung auf ein Laufwerk dieses Computers, unter \\tsclient.</value>
+  </data>
+  <data name="ReceivePreparing" xml:space="preserve">
+    <value>{0} Element(e) aus der Sitzung werden empfangen...</value>
+  </data>
+  <data name="ReceiveProgress" xml:space="preserve">
+    <value>Empfang von {0} Datei(en) aus der Sitzung: {1} %</value>
+  </data>
+  <data name="ReceiveProgressRate" xml:space="preserve">
+    <value>Empfang von {0} Datei(en) aus der Sitzung: {1} % ({2:0.0} MB/s, {3})</value>
+  </data>
+  <data name="ReceiveRefused" xml:space="preserve">
+    <value>Dateien aus der Sitzung abgelehnt: {0}</value>
+  </data>
+  <data name="ReceiveRefusedBusy" xml:space="preserve">
+    <value>Es werden bereits Dateien der Sitzung empfangen. Senden Sie diese, wenn das beendet ist.</value>
+  </data>
+  <data name="ReceiveRefusedNoFolder" xml:space="preserve">
+    <value>Der Ordner für empfangene Dateien {0} kann nicht verwendet werden. {1}</value>
+  </data>
+  <data name="ReceiveRefusedNoSpace" xml:space="preserve">
+    <value>In {0} ist nicht genug Speicherplatz frei: {1:N0} MB benötigt, {2:N0} MB frei.</value>
+  </data>
+  <data name="ReceiveRefusedNotDirect" xml:space="preserve">
+    <value>Der Agent bietet eine direkte Verbindung einer anderen Version als dieser Client an. Installieren Sie auf beiden Seiten dieselbe Version.</value>
+  </data>
+  <data name="ReceiveRefusedOff" xml:space="preserve">
+    <value>Dieser Client empfängt keine Dateien der Sitzung (receiveFiles oder directTransfer ist never in client.json).</value>
+  </data>
+  <data name="ReceiveWhereMany" xml:space="preserve">
+    <value>{0} Elemente liegen in {1}.</value>
+  </data>
+  <data name="ReceiveWhereOne" xml:space="preserve">
+    <value>{0} liegt in {1}.</value>
+  </data>
+  <data name="ReceiveWindowDestination" xml:space="preserve">
+    <value>Nach {0}</value>
+  </data>
+  <data name="ReceiveWindowDone" xml:space="preserve">
+    <value>{0} Datei(en) in {1} mit {2:0.0} MB/s empfangen.</value>
+  </data>
+  <data name="ReceiveWindowOpenFolder" xml:space="preserve">
+    <value>Ordner öffnen</value>
+  </data>
+  <data name="ReceiveWindowTitle" xml:space="preserve">
+    <value>Dateien aus der Sitzung</value>
+  </data>
+  <data name="ReceiveWriteFailed" xml:space="preserve">
+    <value>{0} kann nicht geschrieben werden. {1}</value>
+  </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Erneute Verbindung mit {0} (Versuch {1})...</value>
   </data>

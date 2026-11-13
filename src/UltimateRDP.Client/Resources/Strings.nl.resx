@@ -356,6 +356,78 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   <data name="PathRelative" xml:space="preserve">
     <value>"{0}" is een relatief pad. Alleen volledige paden die met een stationsletter beginnen, zoals C:\, kunnen worden neergezet.</value>
   </data>
+  <data name="ReceiveBadName" xml:space="preserve">
+    <value>De sessie heeft een naam gestuurd die deze computer weigert: {0}. Er is niets bewaard.</value>
+  </data>
+  <data name="ReceiveCancelledBySession" xml:space="preserve">
+    <value>De sessie heeft de overdracht geannuleerd: {0}</value>
+  </data>
+  <data name="ReceiveChecksum" xml:space="preserve">
+    <value>{0} is beschadigd aangekomen. Er is niets bewaard; verstuur de bestanden opnieuw.</value>
+  </data>
+  <data name="ReceiveDoneStatus" xml:space="preserve">
+    <value>{0} bestand(en) uit de sessie ontvangen in {1}.</value>
+  </data>
+  <data name="ReceiveFailed" xml:space="preserve">
+    <value>De bestanden uit de sessie zijn niet ontvangen: {0}</value>
+  </data>
+  <data name="ReceiveLost" xml:space="preserve">
+    <value>De directe verbinding is verbroken. Er is niets bewaard; verstuur de bestanden opnieuw.</value>
+  </data>
+  <data name="ReceiveMoveFailed" xml:space="preserve">
+    <value>De bestanden zijn aangekomen maar kunnen niet naar {0} worden verplaatst: {1} Ze staan in de verborgen map {2}.</value>
+  </data>
+  <data name="ReceiveNotAvailable" xml:space="preserve">
+    <value>De bestanden kunnen niet via de directe verbinding komen: {0}. Een Extern bureaublad-gateway of een firewall ertussen kan de poorten blokkeren. Kopieer ze in plaats daarvan in de sessie naar een station van deze computer, onder \\tsclient.</value>
+  </data>
+  <data name="ReceivePreparing" xml:space="preserve">
+    <value>{0} item(s) uit de sessie ontvangen...</value>
+  </data>
+  <data name="ReceiveProgress" xml:space="preserve">
+    <value>{0} bestand(en) uit de sessie ontvangen: {1} %</value>
+  </data>
+  <data name="ReceiveProgressRate" xml:space="preserve">
+    <value>{0} bestand(en) uit de sessie ontvangen: {1} % ({2:0.0} MB/s, {3})</value>
+  </data>
+  <data name="ReceiveRefused" xml:space="preserve">
+    <value>Bestanden uit de sessie geweigerd: {0}</value>
+  </data>
+  <data name="ReceiveRefusedBusy" xml:space="preserve">
+    <value>Er worden al bestanden uit de sessie ontvangen. Verstuur deze wanneer dat klaar is.</value>
+  </data>
+  <data name="ReceiveRefusedNoFolder" xml:space="preserve">
+    <value>De map voor ontvangen bestanden {0} kan niet worden gebruikt. {1}</value>
+  </data>
+  <data name="ReceiveRefusedNoSpace" xml:space="preserve">
+    <value>Er is niet genoeg vrije ruimte in {0}: {1:N0} MB nodig, {2:N0} MB vrij.</value>
+  </data>
+  <data name="ReceiveRefusedNotDirect" xml:space="preserve">
+    <value>De agent biedt een directe verbinding van een andere versie dan deze client. Installeer aan beide kanten dezelfde versie.</value>
+  </data>
+  <data name="ReceiveRefusedOff" xml:space="preserve">
+    <value>Deze client ontvangt geen bestanden uit de sessie (receiveFiles of directTransfer is never in client.json).</value>
+  </data>
+  <data name="ReceiveWhereMany" xml:space="preserve">
+    <value>{0} items staan in {1}.</value>
+  </data>
+  <data name="ReceiveWhereOne" xml:space="preserve">
+    <value>{0} staat in {1}.</value>
+  </data>
+  <data name="ReceiveWindowDestination" xml:space="preserve">
+    <value>Naar {0}</value>
+  </data>
+  <data name="ReceiveWindowDone" xml:space="preserve">
+    <value>{0} bestand(en) ontvangen in {1} met {2:0.0} MB/s.</value>
+  </data>
+  <data name="ReceiveWindowOpenFolder" xml:space="preserve">
+    <value>Map openen</value>
+  </data>
+  <data name="ReceiveWindowTitle" xml:space="preserve">
+    <value>Bestanden uit de sessie</value>
+  </data>
+  <data name="ReceiveWriteFailed" xml:space="preserve">
+    <value>{0} kan niet worden geschreven. {1}</value>
+  </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Opnieuw verbinden met {0} (poging {1})...</value>
   </data>

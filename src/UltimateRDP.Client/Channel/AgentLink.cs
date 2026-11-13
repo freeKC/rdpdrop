@@ -120,6 +120,12 @@ internal sealed class AgentLink : IDisposable
     /// <summary>Raised for every transferResend message: the agent asks for lines of a transfer again.</summary>
     public event EventHandler<TransferResendMessage>? TransferResendReceived;
 
+    /// <summary>Raised when the session offers to send files, since 0.9.0.</summary>
+    public event EventHandler<SendOfferMessage>? SendOfferReceived;
+
+    /// <summary>Raised when the agent gives up a send, since 0.9.0.</summary>
+    public event EventHandler<SendCancelMessage>? SendCancelReceived;
+
     /// <summary>
     /// Raised when the control refused a call: the lines of that call and every line still
     /// waiting are lost, in their order.
@@ -161,6 +167,9 @@ internal sealed class AgentLink : IDisposable
     /// replays each drag at the drop with a small proxy window.
     /// </summary>
     public bool RemoteApp { get; set; }
+
+    /// <summary>True when the client receives files of the session: the hello says so, since 0.9.0.</summary>
+    public bool AcceptsFiles { get; set; }
 
     /// <summary>
     /// Finds out, once, how strings are handed to the control, and logs it. Called before
@@ -258,6 +267,20 @@ internal sealed class AgentLink : IDisposable
         }
 
         return Send(message, message.Id, $"logoff {message.Id}");
+    }
+
+    /// <summary>
+    /// Sends the answer to a sendOffer, or a sendCancel, since 0.9.0. Returns false when the
+    /// agent is not ready or the message cannot be encoded.
+    /// </summary>
+    public bool SendReceiveAnswer(Message message, string sendId)
+    {
+        if (State != AgentState.Ready || Model == ChannelByteModel.Unknown)
+        {
+            return false;
+        }
+
+        return Send(message, sendId, $"{message.Type} {sendId}");
     }
 
     /// <summary>
@@ -416,7 +439,7 @@ internal sealed class AgentLink : IDisposable
     {
         _hellosSent++;
         var what = Invariant($"hello #{_hellosSent}");
-        Send(HelloMessage.FromClient(AppInfo.Version, UiLanguage.CurrentCode, RemoteApp), what, RemoteApp ? what + " (RemoteApp)" : what);
+        Send(HelloMessage.FromClient(AppInfo.Version, UiLanguage.CurrentCode, RemoteApp, AcceptsFiles), what, what + (RemoteApp ? " (RemoteApp)" : string.Empty) + (AcceptsFiles ? " (receives files)" : string.Empty));
     }
 
     /// <summary>Encodes the message and queues its line. False when it cannot be encoded.</summary>
@@ -669,6 +692,16 @@ internal sealed class AgentLink : IDisposable
 
             case TransferResendMessage resend:
                 TransferResendReceived?.Invoke(this, resend);
+                break;
+
+            case SendOfferMessage offer:
+                ClientLog.Info(Invariant($"Send offer {offer.Id}: {offer.Items.Count} item(s), {offer.Files} file(s), {offer.Bytes} bytes, first {offer.FirstItem}{(offer.Direct.IsWellFormed() ? $", direct connection on port {offer.Direct.Port} with up to {offer.Direct.Connections} connection(s)" : ", direct connection offer not of this version")}."));
+                SendOfferReceived?.Invoke(this, offer);
+                break;
+
+            case SendCancelMessage cancel:
+                ClientLog.Info($"Send cancel {cancel.Id} from the agent: {cancel.Reason ?? "(no reason given)"}");
+                SendCancelReceived?.Invoke(this, cancel);
                 break;
 
             case null:

@@ -356,6 +356,78 @@ La prochaine connexion les demandera de nouveau. La session ouverte n'est pas to
   <data name="PathRelative" xml:space="preserve">
     <value>« {0} » est un chemin relatif. Seuls les chemins complets commençant par une lettre de lecteur, comme C:\, peuvent être déposés.</value>
   </data>
+  <data name="ReceiveBadName" xml:space="preserve">
+    <value>La session a envoyé un nom que cet ordinateur refuse : {0}. Rien n'a été gardé.</value>
+  </data>
+  <data name="ReceiveCancelledBySession" xml:space="preserve">
+    <value>La session a annulé le transfert : {0}</value>
+  </data>
+  <data name="ReceiveChecksum" xml:space="preserve">
+    <value>{0} est arrivé endommagé. Rien n'a été gardé ; envoyez de nouveau les fichiers.</value>
+  </data>
+  <data name="ReceiveDoneStatus" xml:space="preserve">
+    <value>{0} fichier(s) de la session reçu(s) dans {1}.</value>
+  </data>
+  <data name="ReceiveFailed" xml:space="preserve">
+    <value>Les fichiers de la session n'ont pas été reçus : {0}</value>
+  </data>
+  <data name="ReceiveLost" xml:space="preserve">
+    <value>La connexion directe a été perdue. Rien n'a été gardé ; envoyez de nouveau les fichiers.</value>
+  </data>
+  <data name="ReceiveMoveFailed" xml:space="preserve">
+    <value>Les fichiers sont arrivés mais ne peuvent pas être déplacés dans {0} : {1} Ils sont dans le dossier caché {2}.</value>
+  </data>
+  <data name="ReceiveNotAvailable" xml:space="preserve">
+    <value>Les fichiers ne peuvent pas passer par la connexion directe : {0}. Une passerelle Bureau à distance ou un pare-feu sur le chemin peut bloquer ses ports. Copiez-les plutôt dans la session vers un lecteur de cet ordinateur, sous \\tsclient.</value>
+  </data>
+  <data name="ReceivePreparing" xml:space="preserve">
+    <value>Réception de {0} élément(s) de la session...</value>
+  </data>
+  <data name="ReceiveProgress" xml:space="preserve">
+    <value>Réception de {0} fichier(s) de la session : {1} %</value>
+  </data>
+  <data name="ReceiveProgressRate" xml:space="preserve">
+    <value>Réception de {0} fichier(s) de la session : {1} % ({2:0.0} Mo/s, {3})</value>
+  </data>
+  <data name="ReceiveRefused" xml:space="preserve">
+    <value>Fichiers de la session refusés : {0}</value>
+  </data>
+  <data name="ReceiveRefusedBusy" xml:space="preserve">
+    <value>Des fichiers de la session sont déjà en cours de réception. Envoyez ceux-ci quand ce sera terminé.</value>
+  </data>
+  <data name="ReceiveRefusedNoFolder" xml:space="preserve">
+    <value>Le dossier des fichiers reçus {0} ne peut pas être utilisé. {1}</value>
+  </data>
+  <data name="ReceiveRefusedNoSpace" xml:space="preserve">
+    <value>Il n'y a pas assez d'espace libre dans {0} : {1:N0} Mo nécessaires, {2:N0} Mo libres.</value>
+  </data>
+  <data name="ReceiveRefusedNotDirect" xml:space="preserve">
+    <value>L'agent propose une connexion directe d'une autre version que ce client. Installez la même version des deux côtés.</value>
+  </data>
+  <data name="ReceiveRefusedOff" xml:space="preserve">
+    <value>Ce client ne reçoit pas les fichiers de la session (receiveFiles ou directTransfer vaut never dans client.json).</value>
+  </data>
+  <data name="ReceiveWhereMany" xml:space="preserve">
+    <value>{0} éléments sont dans {1}.</value>
+  </data>
+  <data name="ReceiveWhereOne" xml:space="preserve">
+    <value>{0} est dans {1}.</value>
+  </data>
+  <data name="ReceiveWindowDestination" xml:space="preserve">
+    <value>Vers {0}</value>
+  </data>
+  <data name="ReceiveWindowDone" xml:space="preserve">
+    <value>{0} fichier(s) reçu(s) en {1} à {2:0.0} Mo/s.</value>
+  </data>
+  <data name="ReceiveWindowOpenFolder" xml:space="preserve">
+    <value>Ouvrir le dossier</value>
+  </data>
+  <data name="ReceiveWindowTitle" xml:space="preserve">
+    <value>Fichiers de la session</value>
+  </data>
+  <data name="ReceiveWriteFailed" xml:space="preserve">
+    <value>Impossible d'écrire {0}. {1}</value>
+  </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Reconnexion à {0} (tentative {1})...</value>
   </data>

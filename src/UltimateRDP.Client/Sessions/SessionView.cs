@@ -87,6 +87,7 @@ internal sealed partial class SessionView : UserControl
         InitializeTransfer();
         InitializeLogOff();
         InitializeRemoteApp();
+        InitializeReceive(settings);
 
         ClientLog.Info($"Session view created for {Host} from {rdpPath}");
         if (!file.RequestsDriveRedirection)
@@ -235,6 +236,7 @@ internal sealed partial class SessionView : UserControl
 
         // Before the disconnection, so that the agent can still be told.
         CancelTransferForClose();
+        CancelReceiveForClose();
 
         if (State == SessionState.Disconnected)
         {
@@ -281,6 +283,7 @@ internal sealed partial class SessionView : UserControl
             DisposeLogOff();
             _childTargets.RevokeAll();
             DisposeRemoteApp();
+            DisposeReceive();
             DisposeDrops();
             _agent.Dispose();
             _display.Dispose();
@@ -374,6 +377,7 @@ internal sealed partial class SessionView : UserControl
         var extended = SafeExtendedReason();
         var text = SafeErrorDescription(reason, extended);
         ClientLog.Info(Invariant($"Event OnDisconnected ({Host}) reason={reason} extended={extended} text=\"{text}\""));
+        OnReceiveDisconnected();
         _agent.Stop();
         _display.OnDisconnected();
         ResetDrops();
@@ -414,6 +418,7 @@ internal sealed partial class SessionView : UserControl
     private void OnRdpFatalError(int errorCode)
     {
         ClientLog.Error(Invariant($"Event OnFatalError ({Host}) code={errorCode}"));
+        OnReceiveDisconnected();
         _agent.Stop();
         _display.OnDisconnected();
         ResetDrops();

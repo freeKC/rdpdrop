@@ -396,6 +396,89 @@ The next connection asks for them again. The open session is not affected.</valu
     <value>"{0}" is a relative path. Only full paths that start with a drive letter, such as C:\, can be dropped.</value>
     <comment>{0} is a path.</comment>
   </data>
+  <data name="ReceiveBadName" xml:space="preserve">
+    <value>The session sent a name that this computer refuses: {0}. Nothing was kept.</value>
+  </data>
+  <data name="ReceiveCancelledBySession" xml:space="preserve">
+    <value>The session cancelled the transfer: {0}</value>
+    <comment>{0} is the reason, in English.</comment>
+  </data>
+  <data name="ReceiveChecksum" xml:space="preserve">
+    <value>{0} arrived damaged. Nothing was kept; send the files again.</value>
+  </data>
+  <data name="ReceiveDoneStatus" xml:space="preserve">
+    <value>Received {0} file(s) from the session in {1}.</value>
+    <comment>{0} is a number of files, {1} the folder.</comment>
+  </data>
+  <data name="ReceiveFailed" xml:space="preserve">
+    <value>The files of the session were not received: {0}</value>
+  </data>
+  <data name="ReceiveLost" xml:space="preserve">
+    <value>The direct connection was lost. Nothing was kept; send the files again.</value>
+  </data>
+  <data name="ReceiveMoveFailed" xml:space="preserve">
+    <value>The files arrived but cannot be moved into {0}: {1} They are in the hidden folder {2}.</value>
+    <comment>{0} is the folder for received files, {1} the reason given by Windows, {2} the hidden part folder.</comment>
+  </data>
+  <data name="ReceiveNotAvailable" xml:space="preserve">
+    <value>The files cannot come through the direct connection: {0}. A Remote Desktop Gateway or a firewall in between may block its ports. Copy them in the session to a drive of this computer instead, under \\tsclient.</value>
+    <comment>{0} is the reason, in English. \\tsclient is the path of the drives of the client in the session.</comment>
+  </data>
+  <data name="ReceivePreparing" xml:space="preserve">
+    <value>Receiving {0} item(s) from the session...</value>
+  </data>
+  <data name="ReceiveProgress" xml:space="preserve">
+    <value>Receiving {0} file(s) from the session: {1} %</value>
+  </data>
+  <data name="ReceiveProgressRate" xml:space="preserve">
+    <value>Receiving {0} file(s) from the session: {1} % ({2:0.0} MB/s, {3})</value>
+    <comment>{3} is the time left, as in TransferProgressRate.</comment>
+  </data>
+  <data name="ReceiveRefused" xml:space="preserve">
+    <value>Files from the session refused: {0}</value>
+  </data>
+  <data name="ReceiveRefusedBusy" xml:space="preserve">
+    <value>Files of the session are already being received. Send these once that is done.</value>
+  </data>
+  <data name="ReceiveRefusedNoFolder" xml:space="preserve">
+    <value>The folder for received files {0} cannot be used. {1}</value>
+    <comment>{1} is the reason given by Windows.</comment>
+  </data>
+  <data name="ReceiveRefusedNoSpace" xml:space="preserve">
+    <value>There is not enough free space in {0}: {1:N0} MB needed, {2:N0} MB free.</value>
+    <comment>{0} is the folder for received files, {1} and {2} millions of bytes.</comment>
+  </data>
+  <data name="ReceiveRefusedNotDirect" xml:space="preserve">
+    <value>The agent offers a direct connection of another version than this client. Install the same version on both sides.</value>
+  </data>
+  <data name="ReceiveRefusedOff" xml:space="preserve">
+    <value>This client does not receive files of the session (receiveFiles or directTransfer is never in client.json).</value>
+  </data>
+  <data name="ReceiveWhereMany" xml:space="preserve">
+    <value>{0} items are in {1}.</value>
+    <comment>{0} is a number of items, {1} the folder.</comment>
+  </data>
+  <data name="ReceiveWhereOne" xml:space="preserve">
+    <value>{0} is in {1}.</value>
+    <comment>{0} is the name the item got, {1} the folder.</comment>
+  </data>
+  <data name="ReceiveWindowDestination" xml:space="preserve">
+    <value>To {0}</value>
+    <comment>{0} is the folder for received files.</comment>
+  </data>
+  <data name="ReceiveWindowDone" xml:space="preserve">
+    <value>Received {0} file(s) in {1} at {2:0.0} MB/s.</value>
+    <comment>{0} is a number of files, {1} a duration, {2} a rate in millions of bytes per second.</comment>
+  </data>
+  <data name="ReceiveWindowOpenFolder" xml:space="preserve">
+    <value>Open folder</value>
+  </data>
+  <data name="ReceiveWindowTitle" xml:space="preserve">
+    <value>Files from the session</value>
+  </data>
+  <data name="ReceiveWriteFailed" xml:space="preserve">
+    <value>Cannot write {0}. {1}</value>
+  </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Reconnecting to {0} (attempt {1})...</value>
     <comment>{0} is a computer name, {1} a number.</comment>

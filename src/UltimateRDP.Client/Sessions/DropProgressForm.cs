@@ -46,9 +46,12 @@ internal sealed class DropProgressForm : Form
     private readonly Label _destinationLabel = new() { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly Label _noticeLabel = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = NoticeColor };
     private readonly Button _button = new() { Anchor = AnchorStyles.Right, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowOnly, Size = new Size(88, 27) };
+    private readonly Button _openButton = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowOnly, Size = new Size(88, 27), Visible = false };
     private readonly ToolTip _toolTip = new();
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = TickMilliseconds };
     private readonly LocalText _destination;
+    private readonly LocalText _title;
+    private Action? _openFolder;
 
     private Stage _stage = Stage.Preparing;
     private Func<string> _fileText = () => string.Empty;
@@ -69,9 +72,18 @@ internal sealed class DropProgressForm : Form
     /// <param name="dragId">The drag whose files are dropped.</param>
     /// <param name="host">The host name of the session, shown as the destination.</param>
     public DropProgressForm(string dragId, string host)
+        : this(dragId, LocalText.Of(nameof(Strings.TransferWindowTitle)), LocalText.Of(nameof(Strings.TransferWindowDestination), host))
     {
-        DragId = dragId;
-        _destination = LocalText.Of(nameof(Strings.TransferWindowDestination), host);
+    }
+
+    /// <param name="id">The drag whose files are dropped, or the send whose files are received.</param>
+    /// <param name="title">The title of the window.</param>
+    /// <param name="destination">Where the files go.</param>
+    private DropProgressForm(string id, LocalText title, LocalText destination)
+    {
+        DragId = id;
+        _title = title;
+        _destination = destination;
 
         var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 5 };
         table.SuspendLayout();
@@ -94,7 +106,18 @@ internal sealed class DropProgressForm : Form
         table.Controls.Add(_destinationLabel, 0, 3);
         table.SetColumnSpan(_destinationLabel, 2);
         table.Controls.Add(_noticeLabel, 0, 4);
-        table.Controls.Add(_button, 1, 4);
+        var buttons = new FlowLayoutPanel
+        {
+            Anchor = AnchorStyles.Right,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            Margin = Padding.Empty,
+        };
+        buttons.Controls.Add(_button);
+        buttons.Controls.Add(_openButton);
+        table.Controls.Add(buttons, 1, 4);
 
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -116,6 +139,7 @@ internal sealed class DropProgressForm : Form
         PerformLayout();
 
         _button.Click += (_, _) => OnButtonClick();
+        _openButton.Click += (_, _) => _openFolder?.Invoke();
         _timer.Tick += (_, _) => OnTick();
         _timer.Start();
         Render();
@@ -152,6 +176,16 @@ internal sealed class DropProgressForm : Form
     public bool IsWaitingForDrop => _stage == Stage.Dropping;
 
     protected override bool ShowWithoutActivation => true;
+
+    /// <summary>
+    /// The window of the files that the session sends, since 0.9.0: the same stages as for a
+    /// drop, with its own title, the folder for received files as the destination, and at the
+    /// end a button that opens the folder.
+    /// </summary>
+    /// <param name="sendId">The id of the send.</param>
+    /// <param name="folder">The folder for received files.</param>
+    public static DropProgressForm ForReceive(string sendId, string folder) =>
+        new(sendId, LocalText.Of(nameof(Strings.ReceiveWindowTitle)), LocalText.Of(nameof(Strings.ReceiveWindowDestination), folder));
 
     /// <summary>The templates of the progress texts in the current user interface language.</summary>
     public static TransferTextFormats CurrentFormats() => new()
@@ -283,6 +317,27 @@ internal sealed class DropProgressForm : Form
         var done = _doneText;
         _statusText = done is null ? result.ToString : () => done() + Environment.NewLine + result;
         _closeAt = Environment.TickCount64 + AutoCloseMilliseconds;
+        SetBar(marquee: false, BarMaximum);
+        Render();
+    }
+
+    /// <summary>
+    /// Every file that the session sent is in the folder: "Received 3 file(s) in ... at ... MB/s.",
+    /// then <paramref name="where"/>, and a button that runs <paramref name="openFolder"/>. The
+    /// window stays until the user closes it.
+    /// </summary>
+    public void ShowReceived(int fileCount, TimeSpan elapsed, double megabytesPerSecond, LocalText where, Action openFolder)
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        _stage = Stage.Done;
+        _countText = () => LocalText.Of(nameof(Strings.TransferWindowFileOf), fileCount, fileCount).ToString();
+        _statusText = () => Summary(Strings.ReceiveWindowDone, fileCount, elapsed, megabytesPerSecond) + Environment.NewLine + where;
+        _openFolder = openFolder;
+        _openButton.Visible = true;
         SetBar(marquee: false, BarMaximum);
         Render();
     }
@@ -444,7 +499,7 @@ internal sealed class DropProgressForm : Form
 
     private void Render()
     {
-        SetText(this, Strings.TransferWindowTitle);
+        SetText(this, _title.ToString());
         SetText(_fileLabel, _fileText());
         SetTip(_fileLabel, _fileTip());
         SetText(_countLabel, _countText());
@@ -470,6 +525,7 @@ internal sealed class DropProgressForm : Form
         _noticeLabel.Visible = notice.Length > 0;
 
         SetText(_button, IsRunning ? Strings.TransferWindowCancel : Strings.TransferWindowClose);
+        SetText(_openButton, Strings.ReceiveWindowOpenFolder);
         if (_bar.AccessibleName != Text)
         {
             _bar.AccessibleName = Text;
