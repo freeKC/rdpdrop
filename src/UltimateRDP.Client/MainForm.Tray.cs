@@ -3,6 +3,7 @@ using UltimateRDP.Client.Logging;
 using UltimateRDP.Client.Rdp;
 using UltimateRDP.Client.Resources;
 using UltimateRDP.Client.Sessions;
+using UltimateRDP.Core.Launchers;
 using UltimateRDP.Core.Local;
 using UltimateRDP.Core.RdpFiles;
 using UltimateRDP.Core.RemoteApp;
@@ -62,20 +63,16 @@ internal sealed partial class MainForm
     /// <summary>True while the window takes the files of a second start: not once it closes.</summary>
     public bool AcceptsRequests => !_closeRequested && !_exitRequested && !IsDisposed;
 
-    /// <summary>The host and the RemoteApp program of a .rdp file, for the loader; null when the file cannot be read.</summary>
-    public static (string Server, string? Program)? DescribeFile(string path) =>
-        RdpFileLoader.TryLoad(path, out _, out var file, out _)
+    /// <summary>The host and the RemoteApp program of a source, for the loader; null when it cannot be read.</summary>
+    public static (string Server, string? Program)? Describe(SessionSource source) =>
+        RdpFileLoader.TryLoad(source, out _, out var file, out _)
             ? (RdpAddress.Split(file.FullAddress ?? string.Empty).Host, RemoteAppLaunch.FromFile(file, out _)?.DisplayName)
             : null;
 
-    /// <summary>True when <paramref name="path"/> is a .rdp file that runs a RemoteApp program.</summary>
-    public static bool IsRemoteAppFile(string path) =>
-        RdpFileLoader.TryLoad(path, out _, out var file, out _) && RemoteAppLaunch.FromFile(file, out _) is not null;
-
     /// <summary>
-    /// A second start of the client handed its file: a RemoteApp program opens without the
-    /// main window unless <c>--show</c> asks for it, a desktop shows it unless <c>--hidden</c>
-    /// asks otherwise. A visible main window stays visible. UI thread.
+    /// A second start of the client handed its file or its connection: a RemoteApp program
+    /// opens without the main window unless <c>--show</c> asks for it, a desktop shows it
+    /// unless <c>--hidden</c> asks otherwise. A visible main window stays visible. UI thread.
     /// </summary>
     public void OpenFromRequest(OpenRequest request)
     {
@@ -84,15 +81,17 @@ internal sealed partial class MainForm
             return;
         }
 
-        if (request.Path is not { } path)
+        var connection = request.Connection ?? ConnectionOptions.None;
+        if (request.Path is null && connection.Server is null)
         {
-            ClientLog.Info("A second start without a file: the main window shows.");
+            ClientLog.Info("A second start without a file or a server: the main window shows.");
             ShowMainWindow("a second start without a file");
             return;
         }
 
-        var hidden = new LaunchOptions(path, request.Window, request.AskCredentials, null).StartsHidden(IsRemoteAppFile(path));
-        ClientLog.Info($"A second start hands {path} to this one, {(hidden ? "without the main window" : "with the main window")}, ask for the password {request.AskCredentials}.");
+        var source = new SessionSource(request.Path, connection);
+        var hidden = new LaunchOptions(request.Path, request.Window, request.AskCredentials, null).StartsHidden(Describe(source)?.Program is not null);
+        ClientLog.Info($"A second start hands {source} to this one, {(hidden ? "without the main window" : "with the main window")}, ask for the password {request.AskCredentials}.");
         if (hidden)
         {
             EnterTrayMode();
@@ -102,7 +101,7 @@ internal sealed partial class MainForm
             ShowMainWindow("a second start for a desktop");
         }
 
-        OpenSession(path, request.AskCredentials);
+        OpenSession(source, request.AskCredentials);
     }
 
     /// <summary>Starts out of sight with the notification icon. Called by the constructor, before the window exists.</summary>

@@ -87,7 +87,33 @@ Gespeicherte Anmeldedaten: {0} speichert nie ein Kennwort. Windows speichert es,
   <data name="CommandLineError" xml:space="preserve">
     <value>Die Befehlszeile kann nicht verwendet werden: {0}
 
-UltimateRDP.exe [--show | --hidden] [--ask-credentials] [Datei.rdp]</value>
+UltimateRDP.exe --help zeigt die Optionen.</value>
+  </data>
+  <data name="CommandLineHelp" xml:space="preserve">
+    <value>UltimateRDP.exe [Optionen] [Datei.rdp]
+
+Verbindung. Ohne .rdp-Datei ist --server nötig; mit einer Datei haben diese Optionen Vorrang vor ihren Schlüsseln.
+--server &lt;Host&gt;: der Computer, ein Hostname oder eine IP-Adresse
+--port &lt;n&gt;: der Port, standardmäßig 3389
+--user &lt;Name&gt;, --domain &lt;Name&gt;: das Konto
+--remoteapp &lt;Programm&gt;: ein RemoteApp-Programm, ||Name oder Name für einen veröffentlichten Alias, ein Pfad mit \, / oder : auf dem Server
+--remoteapp-name &lt;Name&gt;, --remoteapp-args &lt;Text&gt;: sein Name und seine Argumente
+--gateway &lt;Host&gt;: ein Remotedesktopgateway
+
+Anzeige und Geräte.
+--multimon on|off: alle Bildschirme im Vollbild
+--scale &lt;100 bis 500&gt;: der Skalierungsfaktor in Prozent
+--windows-keys local|remote|fullscreen: wohin die Windows-Tastenkombinationen gehen
+--clipboard on|off, --drives on|off, --printers on|off: was die Sitzung teilt
+--audio local|remote|off: wo der Ton abgespielt wird
+
+Start.
+--ask-credentials: bei jeder Verbindung nach dem Kennwort fragen
+--show: das Hauptfenster zeigen, auch für ein RemoteApp-Programm
+--hidden: das Hauptfenster verborgen lassen, auch für einen Desktop
+--help, /?: diese Liste
+
+Es gibt keine Option für ein Kennwort: Windows verwendet die für den Server gespeicherten Anmeldeinformationen oder fragt nach dem Kennwort.</value>
   </data>
   <data name="ConnectedTo" xml:space="preserve">
     <value>Verbunden mit {0}</value>
@@ -210,6 +236,60 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
   </data>
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>Vollbild ist verfügbar, sobald eine Verbindung besteht.</value>
+  </data>
+  <data name="LaunchErrorInvalidValue" xml:space="preserve">
+    <value>der Wert {1} von {0} ist ungültig: {2}.</value>
+  </data>
+  <data name="LaunchErrorMissingValue" xml:space="preserve">
+    <value>auf die Option {0} muss ein Wert folgen.</value>
+  </data>
+  <data name="LaunchErrorNoProgram" xml:space="preserve">
+    <value>{0} braucht --remoteapp oder eine .rdp-Datei.</value>
+  </data>
+  <data name="LaunchErrorNoServer" xml:space="preserve">
+    <value>die Optionen einer Verbindung brauchen --server oder eine .rdp-Datei.</value>
+  </data>
+  <data name="LaunchErrorPassword" xml:space="preserve">
+    <value>ein Kennwort wird auf der Befehlszeile nie angenommen: andere Programme können sie lesen, und es bliebe in Verknüpfungen und Startdateien. Windows verwendet die für den Server gespeicherten Anmeldeinformationen oder fragt nach dem Kennwort.</value>
+  </data>
+  <data name="LaunchErrorRepeated" xml:space="preserve">
+    <value>die Option {0} ist mehrfach angegeben.</value>
+  </data>
+  <data name="LaunchErrorShowAndHidden" xml:space="preserve">
+    <value>--show und --hidden können nicht zusammen verwendet werden.</value>
+  </data>
+  <data name="LaunchErrorTwoFiles" xml:space="preserve">
+    <value>es kann nur eine .rdp-Datei angegeben werden.</value>
+  </data>
+  <data name="LaunchErrorUnknownOption" xml:space="preserve">
+    <value>die Option {0} ist unbekannt.</value>
+  </data>
+  <data name="LaunchRuleArguments" xml:space="preserve">
+    <value>erwartet wird ein Text mit höchstens {0} Zeichen, ohne Steuerzeichen</value>
+  </data>
+  <data name="LaunchRuleAudio" xml:space="preserve">
+    <value>erwartet wird local, remote oder off</value>
+  </data>
+  <data name="LaunchRuleHost" xml:space="preserve">
+    <value>erwartet wird ein Hostname, eine IPv4-Adresse oder eine IPv6-Adresse, ohne Port</value>
+  </data>
+  <data name="LaunchRuleName" xml:space="preserve">
+    <value>erwartet wird ein Text mit höchstens {0} Zeichen, ohne Anführungszeichen oder Steuerzeichen, der nicht mit -- beginnt</value>
+  </data>
+  <data name="LaunchRuleOnOff" xml:space="preserve">
+    <value>erwartet wird on oder off</value>
+  </data>
+  <data name="LaunchRulePort" xml:space="preserve">
+    <value>erwartet wird eine Zahl von 1 bis 65535</value>
+  </data>
+  <data name="LaunchRuleProgram" xml:space="preserve">
+    <value>erwartet wird ein veröffentlichter Alias (||Name oder Name) oder ein Pfad auf dem Server (mit \, / oder :), mit höchstens {0} Zeichen, ohne Anführungszeichen oder Steuerzeichen</value>
+  </data>
+  <data name="LaunchRuleScale" xml:space="preserve">
+    <value>erwartet wird ein Prozentwert von 100 bis 500</value>
+  </data>
+  <data name="LaunchRuleWindowsKeys" xml:space="preserve">
+    <value>erwartet wird local, remote oder fullscreen</value>
   </data>
   <data name="LoaderCancel" xml:space="preserve">
     <value>Abbrechen</value>

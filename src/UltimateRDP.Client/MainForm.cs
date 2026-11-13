@@ -17,7 +17,7 @@ namespace UltimateRDP.Client;
 /// </remarks>
 internal sealed partial class MainForm : Form
 {
-    private readonly string? _initialPath;
+    private readonly SessionSource? _initialSource;
     private readonly bool _initialAskCredentials;
     private readonly ClientSettings _settings;
     private readonly RecentConnections _recent;
@@ -49,16 +49,16 @@ internal sealed partial class MainForm : Form
     private bool _closeScheduled;
 
     /// <summary>
-    /// Creates the window. <paramref name="initialPath"/> is opened in the first tab once
+    /// Creates the window. <paramref name="initialSource"/> is opened in the first tab once
     /// the window is shown; without it the window starts empty. <paramref name="settings"/>
     /// are the saved choices, already loaded to set the language. With
     /// <paramref name="startHidden"/> the window starts out of sight, with a notification
     /// icon; <paramref name="askCredentials"/> asks for the password in the first tab.
     /// </summary>
-    public MainForm(string? initialPath, ClientSettings settings, bool startHidden = false, bool askCredentials = false, Loader.LoaderForm? startupLoader = null)
+    public MainForm(SessionSource? initialSource, ClientSettings settings, bool startHidden = false, bool askCredentials = false, Loader.LoaderForm? startupLoader = null)
     {
         _startupLoader = startupLoader;
-        _initialPath = initialPath;
+        _initialSource = initialSource;
         _initialAskCredentials = askCredentials;
         _settings = settings;
         _recent = new RecentConnections(_settings, ClientSettings.DefaultPath);
@@ -254,28 +254,33 @@ internal sealed partial class MainForm : Form
     private void OnShown()
     {
         PlaceLoaders();
-        if (_initialPath is not null)
+        if (_initialSource is not null)
         {
-            OpenSession(_initialPath, _initialAskCredentials);
+            OpenSession(_initialSource, _initialAskCredentials);
         }
 
         ExitIfIdle();
     }
 
     /// <summary>
-    /// Opens <paramref name="path"/> in a new tab and connects. A file that cannot be
-    /// read is reported and taken out of the recent connections.
+    /// Opens <paramref name="source"/> in a new tab and connects. A file that cannot be
+    /// read is reported and taken out of the recent connections. Only a file without options
+    /// of the command line goes to the recent connections: the options would be lost there.
     /// </summary>
-    private void OpenSession(string path, bool askCredentials = false)
+    private void OpenSession(SessionSource source, bool askCredentials = false)
     {
         if (_closeRequested)
         {
             return;
         }
 
-        if (!RdpFileLoader.TryLoad(path, out var fullPath, out var file, out var error))
+        if (!RdpFileLoader.TryLoad(source, out var fullPath, out var file, out var error))
         {
-            _recent.Remove(path);
+            if (source.Path is { } path)
+            {
+                _recent.Remove(path);
+            }
+
             _startupLoader?.Finish("the .rdp file cannot be read");
             _startupLoader = null;
             MessageBox.Show(DialogOwner, error.ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -283,8 +288,13 @@ internal sealed partial class MainForm : Form
             return;
         }
 
-        _recent.Add(fullPath);
-        var session = new SessionView(fullPath, file, _settings) { AskCredentialsFromCommandLine = askCredentials };
+        var opened = source with { Path = source.Path is null ? null : fullPath };
+        if (opened.IsPlainFile)
+        {
+            _recent.Add(fullPath);
+        }
+
+        var session = new SessionView(opened, file, _settings) { AskCredentialsFromCommandLine = askCredentials };
         var page = new TabPage(session.Title) { ToolTipText = fullPath, UseVisualStyleBackColor = true };
         page.Controls.Add(session);
         session.StateChanged += (_, _) => OnSessionStateChanged(session);
@@ -314,21 +324,21 @@ internal sealed partial class MainForm : Form
         var path = AskForRdpFile(this);
         if (path is not null)
         {
-            OpenSession(path);
+            OpenSession(SessionSource.FromFile(path));
         }
     }
 
     private void OpenRecent(string path)
     {
         ClientLog.Info($"Opening recent connection {path}");
-        OpenSession(path);
+        OpenSession(SessionSource.FromFile(path));
     }
 
     private void ReopenActive()
     {
         if (ActiveSession is { } session)
         {
-            OpenSession(session.RdpPath);
+            OpenSession(session.Source);
         }
     }
 

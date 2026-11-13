@@ -44,13 +44,13 @@ internal sealed partial class SessionView : UserControl
     private LocalText? _scaleNotice;
 
     /// <summary>
-    /// Creates the view for <paramref name="file"/>, read from <paramref name="rdpPath"/>.
+    /// Creates the view for <paramref name="file"/>, read from <paramref name="source"/>.
     /// The display choices start from <paramref name="settings"/>; the keys of the .rdp
     /// file win over them when present.
     /// </summary>
-    public SessionView(string rdpPath, RdpFile file, ClientSettings settings)
+    public SessionView(SessionSource source, RdpFile file, ClientSettings settings)
     {
-        RdpPath = rdpPath;
+        Source = source;
         RdpFile = file;
         _settings = settings;
         Host = RdpAddress.Split(file.FullAddress ?? string.Empty).Host;
@@ -93,7 +93,7 @@ internal sealed partial class SessionView : UserControl
         InitializeRemoteApp();
         InitializeReceive(settings);
 
-        ClientLog.Info($"Session view created for {Host} from {rdpPath}");
+        ClientLog.Info($"Session view created for {Host} from {source}");
         if (!file.RequestsDriveRedirection)
         {
             ShowDropStatus(LocalText.Of(nameof(Strings.FileDoesNotRedirectDrives)));
@@ -124,8 +124,8 @@ internal sealed partial class SessionView : UserControl
     /// </summary>
     public event EventHandler? CloseCompleted;
 
-    /// <summary>Full path of the .rdp file.</summary>
-    public string RdpPath { get; }
+    /// <summary>What the session was opened from: a .rdp file, options of the command line, or both.</summary>
+    public SessionSource Source { get; }
 
     public RdpFile RdpFile { get; }
 
@@ -200,7 +200,7 @@ internal sealed partial class SessionView : UserControl
             _sessionUsesAllMonitors = _useAllMonitors;
             _channelCreated = true;
             SetConnection(SessionState.Connecting, LocalText.Of(nameof(Strings.ConnectingTo), Host));
-            ClientLog.Info($"Connecting to {Host} with {RdpPath}, control version {SafeControlVersion()}");
+            ClientLog.Info($"Connecting to {Host} with {Source}, control version {SafeControlVersion()}");
             _agent.PrepareChannel();
             _rdp.Connect();
         }

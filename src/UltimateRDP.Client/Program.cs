@@ -41,7 +41,14 @@ internal static class Program
         var early = ReadEarlySettings();
         UiLanguage.Apply(early.Language, log: false);
         var options = LaunchOptions.Parse(args);
+        if (options.Help)
+        {
+            MessageBox.Show(LaunchTexts.Help().ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return 0;
+        }
+
         var path = options.Error is null && options.Path is { } given ? FullPath(given) : null;
+        var source = options.Error is null && options.HasConnection ? new SessionSource(path, options.Connection) : null;
 
         // One client per user and session: a second start hands its file to the first one,
         // which shows the loader of the new session itself.
@@ -50,14 +57,14 @@ internal static class Program
         var pipe = args is [DropProgressDemo.Switch] || options.Error is not null
             ? null
             : SameUserPipe.TryStart(PipePurpose, request => OnOpenRequest(request, () => form, formReady), line => ClientLog.Info(line));
-        if (pipe is null && options.Error is null && args is not [DropProgressDemo.Switch] && HandOff(path, options))
+        if (pipe is null && options.Error is null && args is not [DropProgressDemo.Switch] && HandOff(source, options))
         {
             return 0;
         }
 
         LoaderForm? loader = null;
         long? loaderMilliseconds = null;
-        if (early.Loader && path is not null)
+        if (early.Loader && source is not null)
         {
             loader = new LoaderForm("the start");
             loader.ShowNow();
@@ -88,28 +95,28 @@ internal static class Program
         if (options.Error is { } error)
         {
             ClientLog.Warn($"Command line refused: {error}");
-            MessageBox.Show(LocalText.Of(nameof(Strings.CommandLineError), error).ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(LocalText.Of(nameof(Strings.CommandLineError), LaunchTexts.Error(error)).ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 2;
         }
 
         using (pipe)
         {
-            // Without an argument the open dialog comes first. When it is
+            // Without a file or a server the open dialog comes first. When it is
             // cancelled the window opens empty, so that File, Recent is still at hand.
-            path ??= MainForm.AskForRdpFile(null);
-            if (path is null)
+            source ??= MainForm.AskForRdpFile(null) is { } chosen ? SessionSource.FromFile(chosen) : null;
+            if (source is null)
             {
                 ClientLog.Info("No .rdp file chosen, the window opens empty.");
             }
 
-            var described = path is null ? null : MainForm.DescribeFile(path);
+            var described = source is null ? null : MainForm.Describe(source);
             if (described is { } what)
             {
                 loader?.FileRead(what.Server, what.Program);
             }
 
-            var hidden = path is not null && options.StartsHidden(described?.Program is not null);
-            form = new MainForm(path, settings, hidden, options.AskCredentials, loader);
+            var hidden = source is not null && options.StartsHidden(described?.Program is not null);
+            form = new MainForm(source, settings, hidden, options.AskCredentials, loader);
             form.HandleCreated += (_, _) => formReady.Set();
             Application.Run(form);
             formReady.Reset();
@@ -150,15 +157,16 @@ internal static class Program
         }
     }
 
-    /// <summary>Hands the file to the client already running for this user and session. True when it took it.</summary>
-    private static bool HandOff(string? path, LaunchOptions options)
+    /// <summary>Hands the file or the connection to the client already running for this user and session. True when it took it.</summary>
+    private static bool HandOff(SessionSource? source, LaunchOptions options)
     {
         try
         {
-            var answer = LocalMessages.DecodeAnswer(SameUserPipe.Call(PipePurpose, LocalMessages.Encode(new OpenRequest(path, options.Window, options.AskCredentials)), HandOffTimeout));
+            var request = new OpenRequest(source?.Path, options.Window, options.AskCredentials, source is null || source.Connection.IsEmpty ? null : source.Connection);
+            var answer = LocalMessages.DecodeAnswer(SameUserPipe.Call(PipePurpose, LocalMessages.Encode(request), HandOffTimeout));
             if (answer is { Ok: true })
             {
-                ClientLog.Info($"The client already running took {path ?? "the request to show its window"}; this start exits.");
+                ClientLog.Info($"The client already running took {source?.ToString() ?? "the request to show its window"}; this start exits.");
                 return true;
             }
 

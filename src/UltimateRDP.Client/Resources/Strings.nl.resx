@@ -87,7 +87,33 @@ Opgeslagen referenties: {0} slaat nooit een wachtwoord op. Windows slaat het op 
   <data name="CommandLineError" xml:space="preserve">
     <value>De opdrachtregel kan niet worden gebruikt: {0}
 
-UltimateRDP.exe [--show | --hidden] [--ask-credentials] [bestand.rdp]</value>
+UltimateRDP.exe --help toont de opties.</value>
+  </data>
+  <data name="CommandLineHelp" xml:space="preserve">
+    <value>UltimateRDP.exe [opties] [bestand.rdp]
+
+Verbinding. Zonder .rdp-bestand is --server nodig; met een bestand gaan deze opties voor op de sleutels ervan.
+--server &lt;host&gt;: de computer, een hostnaam of een IP-adres
+--port &lt;n&gt;: de poort, standaard 3389
+--user &lt;naam&gt;, --domain &lt;naam&gt;: het account
+--remoteapp &lt;programma&gt;: een RemoteApp-programma, ||Naam of Naam voor een gepubliceerde alias, een pad met \, / of : op de server
+--remoteapp-name &lt;naam&gt;, --remoteapp-args &lt;tekst&gt;: de naam en de argumenten ervan
+--gateway &lt;host&gt;: een Extern bureaublad-gateway
+
+Weergave en apparaten.
+--multimon on|off: alle beeldschermen in volledig scherm
+--scale &lt;100 tot 500&gt;: de schaalfactor, in procent
+--windows-keys local|remote|fullscreen: waar de Windows-toetscombinaties heen gaan
+--clipboard on|off, --drives on|off, --printers on|off: wat de sessie deelt
+--audio local|remote|off: waar het geluid wordt afgespeeld
+
+Start.
+--ask-credentials: bij elke verbinding om het wachtwoord vragen
+--show: het hoofdvenster tonen, ook voor een RemoteApp-programma
+--hidden: het hoofdvenster verborgen houden, ook voor een bureaublad
+--help, /?: deze lijst
+
+Er is geen optie voor een wachtwoord: Windows gebruikt de opgeslagen referentie voor de server of vraagt om het wachtwoord.</value>
   </data>
   <data name="ConnectedTo" xml:space="preserve">
     <value>Verbonden met {0}</value>
@@ -210,6 +236,60 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   </data>
   <data name="FullScreenNeedsConnection" xml:space="preserve">
     <value>Volledig scherm is beschikbaar zodra er verbinding is.</value>
+  </data>
+  <data name="LaunchErrorInvalidValue" xml:space="preserve">
+    <value>de waarde {1} van {0} is ongeldig: {2}.</value>
+  </data>
+  <data name="LaunchErrorMissingValue" xml:space="preserve">
+    <value>na de optie {0} moet een waarde volgen.</value>
+  </data>
+  <data name="LaunchErrorNoProgram" xml:space="preserve">
+    <value>{0} heeft --remoteapp of een .rdp-bestand nodig.</value>
+  </data>
+  <data name="LaunchErrorNoServer" xml:space="preserve">
+    <value>de opties van een verbinding hebben --server of een .rdp-bestand nodig.</value>
+  </data>
+  <data name="LaunchErrorPassword" xml:space="preserve">
+    <value>een wachtwoord wordt nooit op de opdrachtregel aangenomen: andere programma's kunnen die lezen en het zou in snelkoppelingen en startbestanden blijven staan. Windows gebruikt de opgeslagen referentie voor de server of vraagt om het wachtwoord.</value>
+  </data>
+  <data name="LaunchErrorRepeated" xml:space="preserve">
+    <value>de optie {0} staat er meer dan eens.</value>
+  </data>
+  <data name="LaunchErrorShowAndHidden" xml:space="preserve">
+    <value>--show en --hidden kunnen niet samen worden gebruikt.</value>
+  </data>
+  <data name="LaunchErrorTwoFiles" xml:space="preserve">
+    <value>er kan maar één .rdp-bestand worden opgegeven.</value>
+  </data>
+  <data name="LaunchErrorUnknownOption" xml:space="preserve">
+    <value>de optie {0} bestaat niet.</value>
+  </data>
+  <data name="LaunchRuleArguments" xml:space="preserve">
+    <value>verwacht wordt een tekst van hoogstens {0} tekens, zonder stuurtekens</value>
+  </data>
+  <data name="LaunchRuleAudio" xml:space="preserve">
+    <value>verwacht wordt local, remote of off</value>
+  </data>
+  <data name="LaunchRuleHost" xml:space="preserve">
+    <value>verwacht wordt een hostnaam, een IPv4-adres of een IPv6-adres, zonder poort</value>
+  </data>
+  <data name="LaunchRuleName" xml:space="preserve">
+    <value>verwacht wordt een tekst van hoogstens {0} tekens, zonder aanhalingstekens of stuurtekens, die niet met -- begint</value>
+  </data>
+  <data name="LaunchRuleOnOff" xml:space="preserve">
+    <value>verwacht wordt on of off</value>
+  </data>
+  <data name="LaunchRulePort" xml:space="preserve">
+    <value>verwacht wordt een getal van 1 tot 65535</value>
+  </data>
+  <data name="LaunchRuleProgram" xml:space="preserve">
+    <value>verwacht wordt een gepubliceerde alias (||Naam of Naam) of een pad op de server (met \, / of :), van hoogstens {0} tekens, zonder aanhalingstekens of stuurtekens</value>
+  </data>
+  <data name="LaunchRuleScale" xml:space="preserve">
+    <value>verwacht wordt een percentage van 100 tot 500</value>
+  </data>
+  <data name="LaunchRuleWindowsKeys" xml:space="preserve">
+    <value>verwacht wordt local, remote of fullscreen</value>
   </data>
   <data name="LoaderCancel" xml:space="preserve">
     <value>Annuleren</value>
