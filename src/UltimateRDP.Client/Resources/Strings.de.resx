@@ -71,6 +71,9 @@ Gespeicherte Anmeldedaten: {0} speichert nie ein Kennwort. Windows speichert es,
   <data name="AgentWaiting" xml:space="preserve">
     <value>Agent: Warten auf Antwort</value>
   </data>
+  <data name="AlwaysAskPasswordTip" xml:space="preserve">
+    <value>Nie gespeicherte Anmeldeinformationen verwenden: Jede Verbindung fragt nach dem Kennwort. Gilt ab der nächsten Verbindung.</value>
+  </data>
   <data name="CancelledReason" xml:space="preserve">
     <value>Abgebrochen: {0}</value>
   </data>
@@ -234,6 +237,9 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
   </data>
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Alle &amp;Monitore verwenden</value>
+  </data>
+  <data name="MenuAlwaysAskPassword" xml:space="preserve">
+    <value>Immer nach dem Kennwort fragen</value>
   </data>
   <data name="MenuCancelTransfer" xml:space="preserve">
     <value>Übertragung a&amp;bbrechen</value>

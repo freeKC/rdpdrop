@@ -71,6 +71,9 @@ Credenciales guardadas: {0} nunca guarda una contraseña. Windows la guarda cuan
   <data name="AgentWaiting" xml:space="preserve">
     <value>Agente: en espera</value>
   </data>
+  <data name="AlwaysAskPasswordTip" xml:space="preserve">
+    <value>No usar nunca credenciales guardadas: cada conexión pide la contraseña. Se aplica a partir de la próxima conexión.</value>
+  </data>
   <data name="CancelledReason" xml:space="preserve">
     <value>Cancelado: {0}</value>
   </data>
@@ -234,6 +237,9 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
   </data>
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Usar todos los &amp;monitores</value>
+  </data>
+  <data name="MenuAlwaysAskPassword" xml:space="preserve">
+    <value>Pedir siempre la contraseña</value>
   </data>
   <data name="MenuCancelTransfer" xml:space="preserve">
     <value>Cancelar la &amp;transferencia</value>

@@ -71,6 +71,9 @@ Credenziali salvate: {0} non salva mai una password. Windows la salva quando sel
   <data name="AgentWaiting" xml:space="preserve">
     <value>Agente: in attesa</value>
   </data>
+  <data name="AlwaysAskPasswordTip" xml:space="preserve">
+    <value>Non usare mai credenziali salvate: ogni connessione chiede la password. Vale dalla prossima connessione.</value>
+  </data>
   <data name="CancelledReason" xml:space="preserve">
     <value>Annullato: {0}</value>
   </data>
@@ -234,6 +237,9 @@ La prossima connessione le richiederà di nuovo. La sessione aperta non viene mo
   </data>
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Usa tutti i &amp;monitor</value>
+  </data>
+  <data name="MenuAlwaysAskPassword" xml:space="preserve">
+    <value>Chiedi sempre la password</value>
   </data>
   <data name="MenuCancelTransfer" xml:space="preserve">
     <value>Annulla il &amp;trasferimento</value>

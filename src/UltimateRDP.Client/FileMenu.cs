@@ -22,6 +22,7 @@ internal sealed class FileMenu
     private readonly ToolStripMenuItem _closeTabItem = new() { ShortcutKeyDisplayString = "Ctrl+W" };
     private readonly ToolStripMenuItem _logOffItem = new();
     private readonly ToolStripMenuItem _forgetItem = new();
+    private readonly ToolStripMenuItem _askPasswordItem = new();
     private readonly ToolStripMenuItem _quitItem = new();
     private IReadOnlyList<string> _recentPaths = [];
     private string? _credentialsHost;
@@ -34,6 +35,7 @@ internal sealed class FileMenu
         _closeTabItem.Click += (_, _) => CloseTabClicked?.Invoke(this, EventArgs.Empty);
         _logOffItem.Click += (_, _) => LogOffClicked?.Invoke(this, EventArgs.Empty);
         _forgetItem.Click += (_, _) => ForgetCredentialsClicked?.Invoke(this, EventArgs.Empty);
+        _askPasswordItem.Click += (_, _) => AlwaysAskPasswordClicked?.Invoke(this, EventArgs.Empty);
         _quitItem.Click += (_, _) => QuitClicked?.Invoke(this, EventArgs.Empty);
 
         Root.DropDownItems.AddRange(
@@ -47,6 +49,7 @@ internal sealed class FileMenu
             _logOffItem,
             new ToolStripSeparator(),
             _forgetItem,
+            _askPasswordItem,
             new ToolStripSeparator(),
             _quitItem,
         ]);
@@ -68,6 +71,9 @@ internal sealed class FileMenu
 
     public event EventHandler? ForgetCredentialsClicked;
 
+    /// <summary>Raised when the user chooses "Always ask for the password", since 0.9.0.</summary>
+    public event EventHandler? AlwaysAskPasswordClicked;
+
     public event EventHandler? QuitClicked;
 
     public ToolStripMenuItem Root { get; } = new();
@@ -84,6 +90,8 @@ internal sealed class FileMenu
         _logOffItem.Text = Strings.MenuLogOff;
         _quitItem.Text = Strings.MenuQuit;
         _forgetItem.ToolTipText = Strings.ForgetCredentialsTip;
+        _askPasswordItem.Text = Strings.MenuAlwaysAskPassword;
+        _askPasswordItem.ToolTipText = Strings.AlwaysAskPasswordTip;
         ShowRecent(_recentPaths);
         ShowSavedCredentials(_credentialsHost, _forgetItem.Enabled);
     }
@@ -134,6 +142,9 @@ internal sealed class FileMenu
             : LocalText.Of(nameof(Strings.MenuForgetCredentialsFor), host.Replace("&", "&&", StringComparison.Ordinal)).ToString();
         _forgetItem.Enabled = host is not null && saved;
     }
+
+    /// <summary>Checks "Always ask for the password" when the setting credentials is ask.</summary>
+    public void ShowAlwaysAskPassword(bool ask) => _askPasswordItem.Checked = ask;
 
     /// <summary>
     /// Enables the entries that need an active tab, and the log off entry when the

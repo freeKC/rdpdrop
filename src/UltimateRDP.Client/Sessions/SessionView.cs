@@ -29,6 +29,7 @@ internal sealed partial class SessionView : UserControl
     private readonly ChildDropTargets _childTargets;
     private readonly AgentLink _agent;
     private readonly DisplayController _display;
+    private readonly ClientSettings _settings;
 
     private bool _channelCreated;
     private bool _closeRequested;
@@ -51,6 +52,7 @@ internal sealed partial class SessionView : UserControl
     {
         RdpPath = rdpPath;
         RdpFile = file;
+        _settings = settings;
         Host = RdpAddress.Split(file.FullAddress ?? string.Empty).Host;
         _childTargets = new ChildDropTargets(_rdp);
         _agent = new AgentLink(_rdp, settings.TransferBatchCharacters, settings.TransferWindowBytes);

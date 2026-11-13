@@ -71,6 +71,9 @@ Opgeslagen referenties: {0} slaat nooit een wachtwoord op. Windows slaat het op 
   <data name="AgentWaiting" xml:space="preserve">
     <value>Agent: wachten</value>
   </data>
+  <data name="AlwaysAskPasswordTip" xml:space="preserve">
+    <value>Nooit opgeslagen referenties gebruiken: elke verbinding vraagt om het wachtwoord. Geldt vanaf de volgende verbinding.</value>
+  </data>
   <data name="CancelledReason" xml:space="preserve">
     <value>Geannuleerd: {0}</value>
   </data>
@@ -234,6 +237,9 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   </data>
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Alle &amp;monitoren gebruiken</value>
+  </data>
+  <data name="MenuAlwaysAskPassword" xml:space="preserve">
+    <value>Altijd om het wachtwoord vragen</value>
   </data>
   <data name="MenuCancelTransfer" xml:space="preserve">
     <value>&amp;Overdracht annuleren</value>

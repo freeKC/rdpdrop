@@ -71,6 +71,9 @@ Identifiants enregistrés : {0} n'enregistre jamais de mot de passe. Windows l'
   <data name="AgentWaiting" xml:space="preserve">
     <value>Agent : en attente</value>
   </data>
+  <data name="AlwaysAskPasswordTip" xml:space="preserve">
+    <value>Ne jamais utiliser d'identifiants enregistrés : chaque connexion demande le mot de passe. S'applique à partir de la prochaine connexion.</value>
+  </data>
   <data name="CancelledReason" xml:space="preserve">
     <value>Annulé : {0}</value>
   </data>
@@ -234,6 +237,9 @@ La prochaine connexion les demandera de nouveau. La session ouverte n'est pas to
   </data>
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Utiliser &amp;tous les écrans</value>
+  </data>
+  <data name="MenuAlwaysAskPassword" xml:space="preserve">
+    <value>Toujours demander le mot de passe</value>
   </data>
   <data name="MenuCancelTransfer" xml:space="preserve">
     <value>Annuler le &amp;transfert</value>

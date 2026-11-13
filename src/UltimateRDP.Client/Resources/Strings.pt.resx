@@ -71,6 +71,9 @@ Credenciais salvas: o {0} nunca salva uma senha. O Windows a salva quando você 
   <data name="AgentWaiting" xml:space="preserve">
     <value>Agente: aguardando</value>
   </data>
+  <data name="AlwaysAskPasswordTip" xml:space="preserve">
+    <value>Nunca usar credenciais salvas: cada conexão pede a senha. Vale a partir da próxima conexão.</value>
+  </data>
   <data name="CancelledReason" xml:space="preserve">
     <value>Cancelado: {0}</value>
   </data>
@@ -234,6 +237,9 @@ A próxima conexão vai solicitá-las novamente. A sessão aberta não é afetad
   </data>
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Usar todos os &amp;monitores</value>
+  </data>
+  <data name="MenuAlwaysAskPassword" xml:space="preserve">
+    <value>Sempre pedir a senha</value>
   </data>
   <data name="MenuCancelTransfer" xml:space="preserve">
     <value>Cancelar a &amp;transferência</value>

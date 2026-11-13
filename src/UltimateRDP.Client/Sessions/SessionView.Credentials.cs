@@ -3,19 +3,22 @@ using MSTSCLib;
 using UltimateRDP.Client.Localization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Client.Resources;
+using UltimateRDP.Core.Credentials;
 
 namespace UltimateRDP.Client.Sessions;
 
 /// <summary>
 /// Saved Windows credentials of the session host: applied before each connection when
 /// Windows keeps a generic credential <c>TERMSRV/&lt;host&gt;</c>, otherwise the control
-/// asks as before.
+/// asks as before. Since 0.9.0 the client asks instead, without reading the credential, when
+/// the command line, the setting <c>credentials</c> or the .rdp file says so
+/// (<see cref="CredentialPrompt"/>).
 /// </summary>
 internal sealed partial class SessionView
 {
     private bool _savedCredentialsApplied;
 
-    /// <summary>True when the client was started with <c>--ask-credentials</c> for this tab; read from 0.9.0 on.</summary>
+    /// <summary>True when the client was started with <c>--ask-credentials</c> for this tab.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool AskCredentialsFromCommandLine { get; init; }
@@ -49,6 +52,16 @@ internal sealed partial class SessionView
             ClientLog.Warn($"Saved credentials for {Host} not looked up: IMsRdpClientNonScriptable5 is not available.");
             return;
         }
+
+        var decision = CredentialPrompt.Decide(AskCredentialsFromCommandLine, _settings.AlwaysAskPassword, RdpFile.PromptForCredentials);
+        if (decision.Ask)
+        {
+            AskForPassword(nonScriptable, decision);
+            return;
+        }
+
+        SetCredentialSaving(nonScriptable, true);
+        ClientLog.Info($"Credentials for {Host}: {decision.Describe()}.");
 
         using var credential = SavedCredentials.Read(Host);
         if (credential is null)
@@ -93,6 +106,41 @@ internal sealed partial class SessionView
             // The message of a COM error never holds the values that were set.
             ClientLog.Warn($"Saved credentials for {Host} refused by the control (0x{ex.HResult:X8}); the control asks instead.");
             ForgetAppliedCredentials(nonScriptable);
+        }
+    }
+
+    /// <summary>
+    /// The control asks for the password: the saved credential is not read, the user name of
+    /// the .rdp file stays filled in, and the control does not offer to save the password.
+    /// </summary>
+    private void AskForPassword(IMsRdpClientNonScriptable5 nonScriptable, CredentialPromptDecision decision)
+    {
+        ForgetAppliedCredentials(nonScriptable);
+        try
+        {
+            nonScriptable.PromptForCredentials = true;
+        }
+        catch (Exception ex) when (ex is COMException or ArgumentException or AxHost.InvalidActiveXStateException)
+        {
+            ClientLog.Warn($"Credentials for {Host}: the control refused PromptForCredentials (0x{ex.HResult:X8}).");
+        }
+
+        var saving = SetCredentialSaving(nonScriptable, false);
+        ClientLog.Info($"Credentials for {Host}: {decision.Describe()}; the saved credential is not read, the user name of the .rdp file {(string.IsNullOrEmpty(RdpFile.UserName) ? "is empty" : "stays filled in")}, saving the password is {(saving ? "off" : "left as the control has it")}.");
+    }
+
+    /// <summary>AllowCredentialSaving of the control: the box that saves the password in its prompt. False when the control refused it.</summary>
+    private bool SetCredentialSaving(IMsRdpClientNonScriptable5 nonScriptable, bool allow)
+    {
+        try
+        {
+            nonScriptable.AllowCredentialSaving = allow;
+            return true;
+        }
+        catch (Exception ex) when (ex is COMException or ArgumentException or AxHost.InvalidActiveXStateException)
+        {
+            ClientLog.Warn($"Credentials for {Host}: the control refused AllowCredentialSaving={allow} (0x{ex.HResult:X8}).");
+            return false;
         }
     }
 

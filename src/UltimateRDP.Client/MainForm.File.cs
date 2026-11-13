@@ -2,6 +2,7 @@ using UltimateRDP.Client.Localization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Client.Resources;
 using UltimateRDP.Client.Sessions;
+using UltimateRDP.Client.Settings;
 
 namespace UltimateRDP.Client;
 
@@ -20,6 +21,8 @@ internal sealed partial class MainForm
         _fileMenu.CloseTabClicked += (_, _) => CloseActiveTab();
         _fileMenu.LogOffClicked += (_, _) => LogOffActiveSession();
         _fileMenu.ForgetCredentialsClicked += (_, _) => ForgetSavedCredentials();
+        _fileMenu.AlwaysAskPasswordClicked += (_, _) => ToggleAlwaysAskPassword();
+        _fileMenu.ShowAlwaysAskPassword(_settings.AlwaysAskPassword);
         _fileMenu.QuitClicked += (_, _) =>
         {
             _exitRequested = true;
@@ -35,6 +38,18 @@ internal sealed partial class MainForm
         UpdateMenu();
         var session = ActiveSession;
         _fileMenu.ShowSavedCredentials(session?.Host, session?.FindSavedCredentials() is { } kinds && kinds != SavedCredentialKinds.None);
+    }
+
+    /// <summary>
+    /// "Always ask for the password": the setting credentials goes from saved to ask or back,
+    /// and is saved. It applies from the next connection of each tab.
+    /// </summary>
+    private void ToggleAlwaysAskPassword()
+    {
+        _settings.AlwaysAskPassword = !_settings.AlwaysAskPassword;
+        _settings.Save(ClientSettings.DefaultPath);
+        _fileMenu.ShowAlwaysAskPassword(_settings.AlwaysAskPassword);
+        ClientLog.Info($"Always ask for the password: {_settings.AlwaysAskPassword}, setting credentials {_settings.Credentials}; it applies from the next connection.");
     }
 
     private void ForgetSavedCredentials()

@@ -75,6 +75,9 @@ Saved credentials: {0} never saves a password. Windows saves it when you tick "R
   <data name="AgentWaiting" xml:space="preserve">
     <value>Agent: waiting</value>
   </data>
+  <data name="AlwaysAskPasswordTip" xml:space="preserve">
+    <value>Never use a saved credential: every connection asks for the password. Applies from the next connection.</value>
+  </data>
   <data name="CancelledReason" xml:space="preserve">
     <value>Cancelled: {0}</value>
     <comment>{0} is a text from the agent, already in this language.</comment>
@@ -265,6 +268,9 @@ The next connection asks for them again. The open session is not affected.</valu
   </data>
   <data name="MenuAllMonitors" xml:space="preserve">
     <value>Use all &amp;monitors</value>
+  </data>
+  <data name="MenuAlwaysAskPassword" xml:space="preserve">
+    <value>Always ask for the password</value>
   </data>
   <data name="MenuCancelTransfer" xml:space="preserve">
     <value>Cancel the &amp;transfer</value>
