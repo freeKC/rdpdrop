@@ -39,6 +39,15 @@ internal static class RdpFileLoader
             return false;
         }
 
+        RemoteAppLaunch.FromFile(file, out var rejection);
+        if (rejection == RemoteAppRejection.NoProgram)
+        {
+            ClientLog.Error($"{fullPath} asks for RemoteApp (remoteapplicationmode:i:1) without remoteapplicationprogram or remoteapplicationfile.");
+            error = LocalText.Of(nameof(Strings.FileHasNoRemoteProgram), fullPath);
+            file = null;
+            return false;
+        }
+
         ClientLog.Info($"Using {fullPath}");
         error = LocalText.Empty;
 

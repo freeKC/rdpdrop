@@ -584,7 +584,14 @@ internal sealed partial class SessionView
         };
         _progressWindow = window;
         ShowStage(window, firstItem, items.Count, transfer);
-        window.ShowOver(FindForm(), SessionScreenArea());
+        if (IsRemoteApp)
+        {
+            window.ShowOver(null, RemoteAppDropArea(), topMost: true);
+        }
+        else
+        {
+            window.ShowOver(FindForm(), SessionScreenArea());
+        }
     }
 
     private static void ShowStage(DropProgressForm window, string firstItem, int itemCount, bool transfer)

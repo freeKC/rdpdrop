@@ -19,9 +19,13 @@ internal sealed class FileDragEventArgs : EventArgs
 
     /// <summary>
     /// Cursor position relative to the area that shows the session: the client area of the
-    /// control, or the full screen area while the control runs full screen.
+    /// control, the full screen area while the control runs full screen, or the virtual
+    /// screen in RemoteApp mode.
     /// </summary>
     public Point ClientPoint { get; }
+
+    /// <summary>Cursor position on the local screen.</summary>
+    public Point ScreenPoint { get; init; }
 
     /// <summary>Modifier keys held during the drag, as <see cref="KeyStates"/> flags.</summary>
     public int KeyState { get; }

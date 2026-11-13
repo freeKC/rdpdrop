@@ -161,6 +161,12 @@ internal sealed partial class SessionView
 
     private void OnFileDragOver(object? sender, FileDragEventArgs e)
     {
+        if (IsRemoteApp)
+        {
+            OnRemoteAppDragOver(e);
+            return;
+        }
+
         _leaveTimer.Stop();
         _dropTextBeforeDrag ??= _dropText;
         var reason = DropRefusalReason();
@@ -194,6 +200,12 @@ internal sealed partial class SessionView
 
     private void OnFileDragLeft()
     {
+        if (IsRemoteApp)
+        {
+            OnRemoteAppDragLeft();
+            return;
+        }
+
         // Confirmed by OnLeaveConfirmed unless a drag over follows at once.
         _leaveTimer.Stop();
         _leaveTimer.Start();
@@ -218,6 +230,12 @@ internal sealed partial class SessionView
 
     private void OnFileDropped(object? sender, FileDragEventArgs e)
     {
+        if (IsRemoteApp)
+        {
+            OnRemoteAppDropped(e);
+            return;
+        }
+
         _leaveTimer.Stop();
         HideBanner();
         _dropTextBeforeDrag = null;
@@ -384,20 +402,22 @@ internal sealed partial class SessionView
 
     /// <summary>
     /// The drop happened before the dragAck arrived: it waits for it, for at most
-    /// <see cref="DropDecision.MaxWait"/>, with the window in its preparing stage. The live
-    /// drag of the agent is kept alive by the moves meanwhile, now at the drop point.
+    /// <see cref="DropDecision.MaxWait"/> or <paramref name="wait"/>, with the window in its
+    /// preparing stage. The live drag of the agent is kept alive by the moves meanwhile, now
+    /// at the drop point.
     /// </summary>
-    private DragDropEffects HoldDrop(LiveDrag live, FileDragEventArgs e, Point remote)
+    private DragDropEffects HoldDrop(LiveDrag live, FileDragEventArgs e, Point remote, TimeSpan? wait = null)
     {
         LogDrag(Invariant($"Drop after {live.Moves} move(s), held until the agent {(live.AwaitsFinalAck ? "gives its final answer to" : "answers")} the drag"), live.Id, e, remote);
         _ackTimer.Stop();
         _leaveTimer.Stop();
         _live = null;
-        _held = new HeldDrop(live, remote, e.KeyState, new DropDecision(live.Id, Environment.TickCount64, provisionalAnswer: live.AwaitsFinalAck));
+        var decision = new DropDecision(live.Id, Environment.TickCount64, provisionalAnswer: live.AwaitsFinalAck, wait: wait);
+        _held = new HeldDrop(live, remote, e.KeyState, decision);
         live.Queued = (remote, live.LastKeys);
         FlushMove(keepAlive: false);
         _moveTimer.Start();
-        _holdTimer.Interval = (int)DropDecision.MaxWait.TotalMilliseconds;
+        _holdTimer.Interval = (int)decision.Wait.TotalMilliseconds;
         _holdTimer.Stop();
         _holdTimer.Start();
         ShowDropStatus(LocalText.Of(nameof(Strings.Dragging), live.Items.Count));
@@ -669,8 +689,9 @@ internal sealed partial class SessionView
         }
     }
 
+    /// <remarks>In RemoteApp mode the point is already counted from the top left corner of the virtual screen, which the session copies.</remarks>
     private Point ToRemote(Point clientPoint) =>
-        DropCoordinateMapper.ToRemote(clientPoint, _rdp.ViewSize, _display.RemoteDesktopSize);
+        IsRemoteApp ? clientPoint : DropCoordinateMapper.ToRemote(clientPoint, _rdp.ViewSize, _display.RemoteDesktopSize);
 
     private void LogDrag(string what, string id, FileDragEventArgs e, Point remote)
     {
@@ -702,6 +723,11 @@ internal sealed partial class SessionView
 
     private void OnDropResult(DropResultMessage result)
     {
+        if (IsRemoteApp)
+        {
+            LogRemoteAppTarget(result);
+        }
+
         if (_upload is { } upload && upload.DragId == result.Id)
         {
             // The agent ended the drag before it had the files, so the transfer cannot go on;

@@ -189,6 +189,9 @@ Credenziali salvate: {0} non salva mai una password. Windows la salva quando sel
   <data name="FileHasNoAddress" xml:space="preserve">
     <value>Il file {0} non indica un computer a cui connettersi (manca la riga "full address").</value>
   </data>
+  <data name="FileHasNoRemoteProgram" xml:space="preserve">
+    <value>{0} richiede un programma RemoteApp ma non ne indica nessuno: manca remoteapplicationprogram.</value>
+  </data>
   <data name="ForgetCredentialsQuestion" xml:space="preserve">
     <value>Dimenticare le credenziali salvate da Windows per {0}?
 
@@ -355,6 +358,25 @@ La prossima connessione le richiederà di nuovo. La sessione aperta non viene mo
   </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Riconnessione a {0} (tentativo {1})...</value>
+  </data>
+  <data name="RemoteAppCloseQuestion" xml:space="preserve">
+    <value>{0} resta in esecuzione sul server dopo la chiusura di questa scheda, e torna alla prossima connessione con questo file. Per terminarlo, chiudilo nella sua finestra, oppure usa File, Chiudi la sessione remota.
+
+Chiudere comunque la scheda?</value>
+  </data>
+  <data name="RemoteAppHint" xml:space="preserve">
+    <value>{0} si apre in finestre proprie, fuori da questa. Rilascia i file su quelle finestre per inviarli nella sessione.</value>
+  </data>
+  <data name="RemoteAppNotPublished" xml:space="preserve">
+    <value>{0} non è pubblicato sul server, oppure questo account non può aprirlo.</value>
+  </data>
+  <data name="RemoteAppQuitQuestion" xml:space="preserve">
+    <value>Questi programmi restano in esecuzione sul server dopo la chiusura di UltimateRDP, e tornano alla prossima connessione con i loro file: {0}.
+
+Uscire comunque?</value>
+  </data>
+  <data name="RemoteAppStartFailed" xml:space="preserve">
+    <value>Il server non ha avviato {0} ({1}).</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>La sessione non vede alcuna unità reindirizzata: il rilascio non funzionerà. Attiva le unità in Risorse locali.</value>

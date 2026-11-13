@@ -189,6 +189,9 @@ Identifiants enregistrés : {0} n'enregistre jamais de mot de passe. Windows l'
   <data name="FileHasNoAddress" xml:space="preserve">
     <value>Le fichier {0} n'indique aucun ordinateur auquel se connecter (pas de ligne « full address »).</value>
   </data>
+  <data name="FileHasNoRemoteProgram" xml:space="preserve">
+    <value>{0} demande un programme RemoteApp sans en nommer aucun : remoteapplicationprogram est absent.</value>
+  </data>
   <data name="ForgetCredentialsQuestion" xml:space="preserve">
     <value>Oublier les identifiants que Windows a enregistrés pour {0} ?
 
@@ -355,6 +358,25 @@ La prochaine connexion les demandera de nouveau. La session ouverte n'est pas to
   </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Reconnexion à {0} (tentative {1})...</value>
+  </data>
+  <data name="RemoteAppCloseQuestion" xml:space="preserve">
+    <value>{0} reste ouvert sur le serveur après la fermeture de cet onglet, et revient à la prochaine connexion avec ce fichier. Pour le terminer, fermez-le dans sa propre fenêtre, ou utilisez Fichier, Fermer la session distante.
+
+Fermer l'onglet quand même ?</value>
+  </data>
+  <data name="RemoteAppHint" xml:space="preserve">
+    <value>{0} s'ouvre dans ses propres fenêtres, en dehors de celle-ci. Déposez les fichiers sur ces fenêtres pour les envoyer dans la session.</value>
+  </data>
+  <data name="RemoteAppNotPublished" xml:space="preserve">
+    <value>{0} n'est pas publié sur le serveur, ou ce compte n'a pas le droit de l'ouvrir.</value>
+  </data>
+  <data name="RemoteAppQuitQuestion" xml:space="preserve">
+    <value>Ces programmes restent ouverts sur le serveur après la fermeture d'UltimateRDP, et reviennent à la prochaine connexion avec leurs fichiers : {0}.
+
+Quitter quand même ?</value>
+  </data>
+  <data name="RemoteAppStartFailed" xml:space="preserve">
+    <value>Le serveur n'a pas démarré {0} ({1}).</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>La session ne voit aucun lecteur redirigé : les dépôts ne fonctionneront pas. Activez les lecteurs dans Ressources locales.</value>

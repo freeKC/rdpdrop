@@ -189,6 +189,9 @@ Credenciais salvas: o {0} nunca salva uma senha. O Windows a salva quando você 
   <data name="FileHasNoAddress" xml:space="preserve">
     <value>O arquivo {0} não indica um computador para conectar (falta a linha "full address").</value>
   </data>
+  <data name="FileHasNoRemoteProgram" xml:space="preserve">
+    <value>{0} pede um programa RemoteApp, mas não indica nenhum: falta remoteapplicationprogram.</value>
+  </data>
   <data name="ForgetCredentialsQuestion" xml:space="preserve">
     <value>Esquecer as credenciais que o Windows salvou para {0}?
 
@@ -355,6 +358,25 @@ A próxima conexão vai solicitá-las novamente. A sessão aberta não é afetad
   </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Reconectando a {0} (tentativa {1})...</value>
+  </data>
+  <data name="RemoteAppCloseQuestion" xml:space="preserve">
+    <value>{0} continua em execução no servidor depois que esta guia for fechada, e volta na próxima conexão com este arquivo. Para encerrá-lo, feche-o na própria janela ou use Arquivo, Encerrar a sessão remota.
+
+Fechar a guia mesmo assim?</value>
+  </data>
+  <data name="RemoteAppHint" xml:space="preserve">
+    <value>{0} abre em janelas próprias, fora desta. Solte os arquivos nessas janelas para enviá-los para a sessão.</value>
+  </data>
+  <data name="RemoteAppNotPublished" xml:space="preserve">
+    <value>{0} não está publicado no servidor, ou esta conta não pode abri-lo.</value>
+  </data>
+  <data name="RemoteAppQuitQuestion" xml:space="preserve">
+    <value>Estes programas continuam em execução no servidor depois que o UltimateRDP for fechado, e voltam na próxima conexão com seus arquivos: {0}.
+
+Sair mesmo assim?</value>
+  </data>
+  <data name="RemoteAppStartFailed" xml:space="preserve">
+    <value>O servidor não iniciou {0} ({1}).</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>A sessão não vê nenhuma unidade redirecionada: o envio de arquivos não vai funcionar. Ative as unidades em Recursos Locais.</value>

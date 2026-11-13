@@ -189,6 +189,9 @@ Gespeicherte Anmeldedaten: {0} speichert nie ein Kennwort. Windows speichert es,
   <data name="FileHasNoAddress" xml:space="preserve">
     <value>Die Datei {0} nennt keinen Computer für die Verbindung (keine Zeile „full address“).</value>
   </data>
+  <data name="FileHasNoRemoteProgram" xml:space="preserve">
+    <value>{0} verlangt ein RemoteApp-Programm, nennt aber keines: remoteapplicationprogram fehlt.</value>
+  </data>
   <data name="ForgetCredentialsQuestion" xml:space="preserve">
     <value>Die von Windows für {0} gespeicherten Anmeldedaten entfernen?
 
@@ -355,6 +358,25 @@ Bei der nächsten Verbindung werden sie erneut abgefragt. Die geöffnete Sitzung
   </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Erneute Verbindung mit {0} (Versuch {1})...</value>
+  </data>
+  <data name="RemoteAppCloseQuestion" xml:space="preserve">
+    <value>{0} läuft nach dem Schließen dieser Registerkarte auf dem Server weiter und erscheint bei der nächsten Verbindung mit dieser Datei wieder. Um es zu beenden, schließen Sie es in seinem eigenen Fenster oder verwenden Sie Datei, Remotesitzung abmelden.
+
+Registerkarte trotzdem schließen?</value>
+  </data>
+  <data name="RemoteAppHint" xml:space="preserve">
+    <value>{0} öffnet sich in eigenen Fenstern, außerhalb dieses Fensters. Legen Sie Dateien auf diesen Fenstern ab, um sie in die Sitzung zu senden.</value>
+  </data>
+  <data name="RemoteAppNotPublished" xml:space="preserve">
+    <value>{0} ist auf dem Server nicht veröffentlicht, oder dieses Konto darf es nicht öffnen.</value>
+  </data>
+  <data name="RemoteAppQuitQuestion" xml:space="preserve">
+    <value>Diese Programme laufen nach dem Schließen von UltimateRDP auf dem Server weiter und erscheinen bei der nächsten Verbindung mit ihren Dateien wieder: {0}.
+
+Trotzdem beenden?</value>
+  </data>
+  <data name="RemoteAppStartFailed" xml:space="preserve">
+    <value>Der Server hat {0} nicht gestartet ({1}).</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>Die Sitzung sieht kein umgeleitetes Laufwerk: Ablegen funktioniert nicht. Aktivieren Sie Laufwerke unter Lokale Ressourcen.</value>

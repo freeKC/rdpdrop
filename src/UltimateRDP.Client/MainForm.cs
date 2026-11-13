@@ -122,6 +122,12 @@ internal sealed partial class MainForm : Form
     {
         var open = Sessions.Count(session => session.State != SessionState.Disconnected);
         ClientLog.Info($"Form closing: reason {e.CloseReason}, {open} session(s) not disconnected, close requested {_closeRequested}.");
+        if (!_closeRequested && open > 0 && e.CloseReason == CloseReason.UserClosing && !ConfirmQuitWithRemotePrograms())
+        {
+            e.Cancel = true;
+            return;
+        }
+
         if (!_closeRequested && open > 0)
         {
             // Disconnect every session cleanly first; each one reports when it is closed.
@@ -294,11 +300,50 @@ internal sealed partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Asks before Quit when RemoteApp programs have windows open: they keep running on the
+    /// server. Returns true to go on.
+    /// </summary>
+    private bool ConfirmQuitWithRemotePrograms()
+    {
+        var programs = Sessions.Where(session => session.KeepsProgramOpenOnClose).Select(session => session.RemoteAppName).Distinct().ToList();
+        if (programs.Count == 0)
+        {
+            return true;
+        }
+
+        var answer = MessageBox.Show(
+            this,
+            LocalText.Of(nameof(Strings.RemoteAppQuitQuestion), string.Join(", ", programs)).ToString(),
+            AppInfo.Name,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2);
+        ClientLog.Info($"Quit with RemoteApp programs open ({string.Join(", ", programs)}): {(answer == DialogResult.Yes ? "confirmed" : "not confirmed")}.");
+        return answer == DialogResult.Yes;
+    }
+
     /// <summary>Closes the active tab; its session is disconnected first.</summary>
     private void CloseActiveTab()
     {
         if (ActiveSession is { } session)
         {
+            if (session.KeepsProgramOpenOnClose)
+            {
+                var answer = MessageBox.Show(
+                    this,
+                    LocalText.Of(nameof(Strings.RemoteAppCloseQuestion), session.RemoteAppName ?? session.Host).ToString(),
+                    AppInfo.Name,
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question,
+                    MessageBoxDefaultButton.Button2);
+                ClientLog.Info($"Close tab of the RemoteApp program {session.RemoteAppName} with windows open: {(answer == DialogResult.Yes ? "confirmed" : "not confirmed")}.");
+                if (answer != DialogResult.Yes)
+                {
+                    return;
+                }
+            }
+
             ClientLog.Info($"Close tab requested for {session.Host}.");
             session.BeginClose();
             UpdateMenu();

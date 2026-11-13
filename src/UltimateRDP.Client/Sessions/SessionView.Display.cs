@@ -34,11 +34,22 @@ internal sealed partial class SessionView
     /// <summary>True while the control runs full screen.</summary>
     public bool IsFullScreen => _rdp.FullScreenBounds is not null;
 
-    /// <summary>Full screen can only be toggled while connected.</summary>
-    public bool CanToggleFullScreen => IsConnected;
+    /// <summary>Full screen can only be toggled while connected, and never for a RemoteApp program.</summary>
+    public bool CanToggleFullScreen => IsConnected && !IsRemoteApp;
+
+    /// <summary>
+    /// False for a RemoteApp tab: the display mode, the scale factor, full screen and the
+    /// monitors do not apply to the windows of a program.
+    /// </summary>
+    public bool HasDisplayChoices => !IsRemoteApp;
 
     public void SetDisplayMode(DisplayMode mode)
     {
+        if (IsRemoteApp)
+        {
+            return;
+        }
+
         _display.SetMode(mode, connected: State != SessionState.Disconnected);
         RaiseStateChanged();
     }
@@ -46,7 +57,7 @@ internal sealed partial class SessionView
     /// <summary>Sets the scale factor in percent, or null for Auto, and offers to reconnect.</summary>
     public void SetScaleFactor(int? factor)
     {
-        if (factor == _scaleChoice)
+        if (factor == _scaleChoice || IsRemoteApp)
         {
             return;
         }
@@ -58,7 +69,7 @@ internal sealed partial class SessionView
 
     public void SetUseAllMonitors(bool useAllMonitors)
     {
-        if (useAllMonitors == _useAllMonitors)
+        if (useAllMonitors == _useAllMonitors || IsRemoteApp)
         {
             return;
         }
@@ -86,6 +97,12 @@ internal sealed partial class SessionView
 
     public void ToggleFullScreen(string source)
     {
+        if (IsRemoteApp)
+        {
+            ClientLog.Info($"Full screen requested from {source} for the RemoteApp tab of {Host}, ignored");
+            return;
+        }
+
         if (State != SessionState.Connected)
         {
             ClientLog.Info($"Full screen requested from {source} while {State}, ignored");

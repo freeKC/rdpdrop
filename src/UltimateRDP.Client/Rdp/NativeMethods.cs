@@ -11,11 +11,59 @@ internal static class NativeMethods
 {
     public const string OleDropTargetProperty = "OleDropTargetInterface";
 
+    /// <summary>GA_ROOT of GetAncestor: the top level window.</summary>
+    public const uint GaRoot = 2;
+
+    /// <summary>GW_OWNER of GetWindow.</summary>
+    public const uint GwOwner = 4;
+
+    /// <summary>GWL_STYLE of GetWindowLongPtr.</summary>
+    public const int GwlStyle = -16;
+
+    /// <summary>GWL_EXSTYLE of GetWindowLongPtr.</summary>
+    public const int GwlExStyle = -20;
+
+    /// <summary>EVENT_OBJECT_CREATE of SetWinEventHook.</summary>
+    public const uint EventObjectCreate = 0x8000;
+
+    /// <summary>EVENT_OBJECT_DESTROY of SetWinEventHook.</summary>
+    public const uint EventObjectDestroy = 0x8001;
+
+    /// <summary>EVENT_OBJECT_SHOW of SetWinEventHook.</summary>
+    public const uint EventObjectShow = 0x8002;
+
+    /// <summary>WINEVENT_OUTOFCONTEXT: the callback runs in this process, on the thread that set the hook, through its messages.</summary>
+    public const uint WinEventOutOfContext = 0;
+
+    /// <summary>OBJID_WINDOW: the event is about the window itself.</summary>
+    public const int ObjIdWindow = 0;
+
+    /// <summary>QS_ALLINPUT of MsgWaitForMultipleObjectsEx.</summary>
+    public const uint QsAllInput = 0x04FF;
+
+    /// <summary>MWMO_INPUTAVAILABLE of MsgWaitForMultipleObjectsEx.</summary>
+    public const uint MwmoInputAvailable = 0x0004;
+
     public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+    public delegate void WinEventProc(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint eventThread, uint eventTime);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool EnumChildWindows(IntPtr hwndParent, EnumWindowsProc callback, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetClassName(IntPtr hwnd, StringBuilder className, int maxCount);
@@ -26,6 +74,42 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindowVisible(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(Point point);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module, WinEventProc callback, uint processId, uint threadId, uint flags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool UnhookWinEvent(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    public static extern uint MsgWaitForMultipleObjectsEx(uint count, IntPtr handles, uint milliseconds, uint wakeMask, uint flags);
 
     [DllImport("ole32.dll")]
     public static extern int RegisterDragDrop(IntPtr hwnd, IOleDropTarget dropTarget);
@@ -41,12 +125,41 @@ internal static class NativeMethods
 
     public static bool HasDropTarget(IntPtr hwnd) => GetProp(hwnd, OleDropTargetProperty) != IntPtr.Zero;
 
+    /// <summary>The rectangle of the window on the screen, or an empty one when it cannot be read.</summary>
+    public static Rectangle WindowRectangle(IntPtr hwnd) =>
+        GetWindowRect(hwnd, out var rect) ? Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom) : Rectangle.Empty;
+
+    /// <summary>The top level window under the screen point, or IntPtr.Zero.</summary>
+    public static IntPtr TopLevelWindowAt(Point screenPoint)
+    {
+        var hwnd = WindowFromPoint(screenPoint);
+        return hwnd == IntPtr.Zero ? IntPtr.Zero : GetAncestor(hwnd, GaRoot);
+    }
+
     public static List<IntPtr> ChildWindows(IntPtr parent)
     {
         var result = new List<IntPtr>();
         EnumChildWindows(parent, (hwnd, _) =>
         {
             result.Add(hwnd);
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+
+    /// <summary>The top level windows of this process, visible or not.</summary>
+    public static List<IntPtr> TopLevelWindowsOfThisProcess()
+    {
+        var processId = (uint)Environment.ProcessId;
+        var result = new List<IntPtr>();
+        EnumWindows((hwnd, _) =>
+        {
+            GetWindowThreadProcessId(hwnd, out var owner);
+            if (owner == processId)
+            {
+                result.Add(hwnd);
+            }
+
             return true;
         }, IntPtr.Zero);
         return result;

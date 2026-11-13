@@ -149,6 +149,18 @@ internal sealed class ViewMenu
 
     public void ShowAllMonitors(bool useAllMonitors) => _allMonitorsItem.Checked = useAllMonitors;
 
+    /// <summary>
+    /// Enables the display mode, the scale factor and the monitors, or disables them for a
+    /// RemoteApp tab, whose program has no picture to resize or scale.
+    /// </summary>
+    public void EnableDisplayChoices(bool enabled)
+    {
+        _resizeItem.Enabled = enabled;
+        _scaleItem.Enabled = enabled;
+        _scaleFactorItem.Enabled = enabled;
+        _allMonitorsItem.Enabled = enabled;
+    }
+
     public void ShowKeyboardHookMode(int mode)
     {
         for (var i = 0; i < _keyboardItems.Length; i++)

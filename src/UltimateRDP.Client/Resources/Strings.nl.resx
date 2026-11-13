@@ -189,6 +189,9 @@ Opgeslagen referenties: {0} slaat nooit een wachtwoord op. Windows slaat het op 
   <data name="FileHasNoAddress" xml:space="preserve">
     <value>Het bestand {0} noemt geen computer om verbinding mee te maken (geen regel "full address").</value>
   </data>
+  <data name="FileHasNoRemoteProgram" xml:space="preserve">
+    <value>{0} vraagt om een RemoteApp-programma maar noemt er geen: remoteapplicationprogram ontbreekt.</value>
+  </data>
   <data name="ForgetCredentialsQuestion" xml:space="preserve">
     <value>De referenties vergeten die Windows voor {0} heeft opgeslagen?
 
@@ -355,6 +358,25 @@ Bij de volgende verbinding worden ze opnieuw gevraagd. De geopende sessie blijft
   </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Opnieuw verbinden met {0} (poging {1})...</value>
+  </data>
+  <data name="RemoteAppCloseQuestion" xml:space="preserve">
+    <value>{0} blijft op de server actief nadat dit tabblad is gesloten, en komt terug bij de volgende verbinding met dit bestand. Om het te beëindigen, sluit u het in zijn eigen venster, of gebruikt u Bestand, Afmelden bij de externe sessie.
+
+Het tabblad toch sluiten?</value>
+  </data>
+  <data name="RemoteAppHint" xml:space="preserve">
+    <value>{0} opent in eigen vensters, buiten dit venster. Zet bestanden neer op die vensters om ze naar de sessie te sturen.</value>
+  </data>
+  <data name="RemoteAppNotPublished" xml:space="preserve">
+    <value>{0} is niet gepubliceerd op de server, of dit account mag het niet openen.</value>
+  </data>
+  <data name="RemoteAppQuitQuestion" xml:space="preserve">
+    <value>Deze programma's blijven op de server actief nadat UltimateRDP is gesloten, en komen terug bij de volgende verbinding met hun bestanden: {0}.
+
+Toch afsluiten?</value>
+  </data>
+  <data name="RemoteAppStartFailed" xml:space="preserve">
+    <value>De server heeft {0} niet gestart ({1}).</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>De sessie ziet geen omgeleid station: neerzetten werkt niet. Schakel stations in onder Lokale bronnen.</value>

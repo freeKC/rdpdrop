@@ -189,6 +189,9 @@ Credenciales guardadas: {0} nunca guarda una contraseña. Windows la guarda cuan
   <data name="FileHasNoAddress" xml:space="preserve">
     <value>El archivo {0} no indica ningún equipo al que conectarse (falta la línea «full address»).</value>
   </data>
+  <data name="FileHasNoRemoteProgram" xml:space="preserve">
+    <value>{0} pide un programa RemoteApp pero no indica ninguno: falta remoteapplicationprogram.</value>
+  </data>
   <data name="ForgetCredentialsQuestion" xml:space="preserve">
     <value>¿Olvidar las credenciales que Windows guardó para {0}?
 
@@ -355,6 +358,25 @@ La próxima conexión las volverá a pedir. La sesión abierta no se ve afectada
   </data>
   <data name="Reconnecting" xml:space="preserve">
     <value>Reconectando a {0} (intento {1})...</value>
+  </data>
+  <data name="RemoteAppCloseQuestion" xml:space="preserve">
+    <value>{0} sigue en ejecución en el servidor después de cerrar esta pestaña, y vuelve en la próxima conexión con este archivo. Para terminarlo, ciérrelo en su propia ventana o use Archivo, Cerrar la sesión remota.
+
+¿Cerrar la pestaña de todos modos?</value>
+  </data>
+  <data name="RemoteAppHint" xml:space="preserve">
+    <value>{0} se abre en sus propias ventanas, fuera de esta. Coloque los archivos en esas ventanas para enviarlos a la sesión.</value>
+  </data>
+  <data name="RemoteAppNotPublished" xml:space="preserve">
+    <value>{0} no está publicado en el servidor, o esta cuenta no puede abrirlo.</value>
+  </data>
+  <data name="RemoteAppQuitQuestion" xml:space="preserve">
+    <value>Estos programas siguen en ejecución en el servidor después de cerrar UltimateRDP, y vuelven en la próxima conexión con sus archivos: {0}.
+
+¿Salir de todos modos?</value>
+  </data>
+  <data name="RemoteAppStartFailed" xml:space="preserve">
+    <value>El servidor no inició {0} ({1}).</value>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>La sesión no ve ninguna unidad redirigida: no se podrán colocar archivos. Active las unidades en Recursos locales.</value>

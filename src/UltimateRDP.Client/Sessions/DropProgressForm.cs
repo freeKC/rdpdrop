@@ -167,14 +167,21 @@ internal sealed class DropProgressForm : Form
 
     /// <summary>
     /// Shows the window, without activating it, centered over <paramref name="screenArea"/>,
-    /// the screen area of the session, and owned by <paramref name="owner"/>.
+    /// the screen area of the session, and owned by <paramref name="owner"/>. A RemoteApp
+    /// drop has no owner, since the main window may be minimized, and stays on top of the
+    /// windows of the program with <paramref name="topMost"/>.
     /// </summary>
-    public void ShowOver(Form? owner, Rectangle screenArea)
+    public void ShowOver(Form? owner, Rectangle screenArea, bool topMost = false)
     {
         _area = screenArea;
         if (owner is not null && Owner != owner)
         {
             Owner = owner;
+        }
+
+        if (TopMost != topMost)
+        {
+            TopMost = topMost;
         }
 
         Place();

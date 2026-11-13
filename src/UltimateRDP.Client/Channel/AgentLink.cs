@@ -157,6 +157,12 @@ internal sealed class AgentLink : IDisposable
     public Func<bool>? LargeLineComing { get; set; }
 
     /// <summary>
+    /// True when the connection runs a RemoteApp program: the hello says so, and the agent
+    /// replays each drag at the drop with a small proxy window.
+    /// </summary>
+    public bool RemoteApp { get; set; }
+
+    /// <summary>
     /// Finds out, once, how strings are handed to the control, and logs it. Called before
     /// the control connects, so that the log says it even when the connection fails.
     /// </summary>
@@ -410,7 +416,7 @@ internal sealed class AgentLink : IDisposable
     {
         _hellosSent++;
         var what = Invariant($"hello #{_hellosSent}");
-        Send(HelloMessage.FromClient(AppInfo.Version, UiLanguage.CurrentCode), what, what);
+        Send(HelloMessage.FromClient(AppInfo.Version, UiLanguage.CurrentCode, RemoteApp), what, RemoteApp ? what + " (RemoteApp)" : what);
     }
 
     /// <summary>Encodes the message and queues its line. False when it cannot be encoded.</summary>

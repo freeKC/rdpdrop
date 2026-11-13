@@ -26,16 +26,17 @@ internal static class RdpSettingsApplier
     private const string PromptForCredentialsOnClientKey = "prompt for credentials on client";
     private const string PromptCredentialOnceKey = "promptcredentialonce";
     private const string SessionBppKey = "session bpp";
-    private const string RemoteApplicationModeKey = "remoteapplicationmode";
     private const string EnableCredSspSupportKey = "enablecredsspsupport";
 
     /// <summary>
     /// Applies <paramref name="file"/> and the display choices in <paramref name="options"/>
     /// to <paramref name="control"/>, creates the UltimateRDP virtual channel when
     /// <paramref name="createChannel"/> is true, and returns the desktop size that was
-    /// set. Throws when the file has no address.
+    /// set. With <paramref name="remoteApp"/>, the control runs that program in RemoteApp
+    /// mode, with a desktop of the size of the virtual screen. Throws when the file has no
+    /// address.
     /// </summary>
-    public static Size Apply(RdpControl control, RdpFile file, SessionOptions options, bool createChannel)
+    public static Size Apply(RdpControl control, RdpFile file, SessionOptions options, bool createChannel, RemoteAppLaunch? remoteApp = null)
     {
         var log = new List<string>();
 
@@ -61,7 +62,7 @@ internal static class RdpSettingsApplier
             TrySet(log, $"domain={domain}", () => control.Domain = domain);
         }
 
-        var desktop = ChooseDesktopSize(control.ClientSize, file);
+        var desktop = remoteApp is null ? ChooseDesktopSize(control.ClientSize, file) : RemoteAppDesktopSize(log);
         control.DesktopWidth = desktop.Width;
         control.DesktopHeight = desktop.Height;
         log.Add(Invariant($"desktop={desktop.Width}x{desktop.Height} (control {control.ClientSize.Width}x{control.ClientSize.Height})"));
@@ -76,9 +77,9 @@ internal static class RdpSettingsApplier
             log.Add("screen mode id=2 (full screen) ignored, the session runs in the window");
         }
 
-        if (file.GetInt(RemoteApplicationModeKey) == 1)
+        if (remoteApp is not null)
         {
-            log.Add("remoteapplicationmode=1 ignored, RemoteApp is not supported, a full desktop is requested");
+            ApplyRemoteApp(control, remoteApp, log);
         }
 
         var advanced = control.AdvancedSettings9;
@@ -165,6 +166,52 @@ internal static class RdpSettingsApplier
         // An even width avoids the padding some servers add to odd widths.
         var (clampedWidth, clampedHeight) = SessionDisplay.ClampSize(width, height);
         return new Size(clampedWidth, clampedHeight);
+    }
+
+    /// <summary>
+    /// A RemoteApp session needs a desktop that covers every local monitor: the server puts
+    /// the windows of the program where they are on the client.
+    /// </summary>
+    private static Size RemoteAppDesktopSize(List<string> log)
+    {
+        var screen = SystemInformation.VirtualScreen;
+        var (width, height) = SessionDisplay.ClampSize(screen.Width, screen.Height);
+        if (width != screen.Width || height != screen.Height)
+        {
+            log.Add(Invariant($"virtual screen {screen.Width}x{screen.Height} at ({screen.X}, {screen.Y}) brought within the limits of the control"));
+        }
+
+        return new Size(width, height);
+    }
+
+    /// <summary>
+    /// RemoteApp mode, set before Connect: the control asks the server for the program
+    /// itself, with the RemoteProgram2 values. The alternate shell is left alone; the server
+    /// ignores it in RemoteApp mode.
+    /// </summary>
+    private static void ApplyRemoteApp(RdpControl control, RemoteAppLaunch remoteApp, List<string> log)
+    {
+        TrySet(log, "remoteProgramMode=True", () => control.RemoteProgram.RemoteProgramMode = true);
+        var program = control.RemoteProgram2;
+        if (remoteApp.Program is { } path)
+        {
+            TrySet(log, $"remoteApplicationProgram={path}", () => program.RemoteApplicationProgram = path);
+        }
+
+        if (remoteApp.Name is { } name)
+        {
+            TrySet(log, $"remoteApplicationName={name}", () => program.RemoteApplicationName = name);
+        }
+
+        if (remoteApp.Args is { } args)
+        {
+            TrySet(log, $"remoteApplicationArgs={args}", () => program.RemoteApplicationArgs = args);
+        }
+
+        if (remoteApp.File is { } target)
+        {
+            log.Add($"remoteapplicationfile={target} kept for ServerStartProgram");
+        }
     }
 
     /// <summary>

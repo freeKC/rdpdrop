@@ -86,6 +86,7 @@ internal sealed partial class SessionView : UserControl
         InitializeDrops();
         InitializeTransfer();
         InitializeLogOff();
+        InitializeRemoteApp();
 
         ClientLog.Info($"Session view created for {Host} from {rdpPath}");
         if (!file.RequestsDriveRedirection)
@@ -120,11 +121,13 @@ internal sealed partial class SessionView : UserControl
     /// <summary>Host name from the full address of the .rdp file, without the port.</summary>
     public string Host { get; }
 
-    /// <summary>Short name of the session, for a tab.</summary>
-    public string Title => Host;
+    /// <summary>Short name of the session, for a tab: the host, or the name of the RemoteApp program.</summary>
+    public string Title => RemoteAppName ?? Host;
 
     /// <summary>Title of the window while this session is the active one.</summary>
-    public string WindowTitle => $"{AppInfo.Name}: {RdpFile.FullAddress}";
+    public string WindowTitle => RemoteAppName is { } program
+        ? $"{AppInfo.Name}: {program} ({RdpFile.FullAddress})"
+        : $"{AppInfo.Name}: {RdpFile.FullAddress}";
 
     public SessionState State { get; private set; } = SessionState.Disconnected;
 
@@ -172,7 +175,15 @@ internal sealed partial class SessionView : UserControl
         {
             _reconnectRequested = false;
             var options = _display.PrepareConnection(_scaleChoice, _keyboardHookMode, _useAllMonitors, WindowTitle);
-            var desktop = RdpSettingsApplier.Apply(_rdp, RdpFile, options, createChannel: !_channelCreated);
+            if (IsRemoteApp)
+            {
+                // The windows of the program go where they are on the server, which spans
+                // every local monitor; the picture is never scaled.
+                options = options with { SmartSizing = false, UseMultimon = true };
+                OnRemoteAppConnecting();
+            }
+
+            var desktop = RdpSettingsApplier.Apply(_rdp, RdpFile, options, createChannel: !_channelCreated, _remoteApp);
             ApplySavedCredentials();
             _display.OnConnecting(desktop);
             _sessionUsesAllMonitors = _useAllMonitors;
@@ -258,6 +269,7 @@ internal sealed partial class SessionView : UserControl
         AgentTextChanged?.Invoke(this, EventArgs.Empty);
         DropTextChanged?.Invoke(this, EventArgs.Empty);
         _progressWindow?.ApplyTexts();
+        UpdatePanel();
     }
 
     protected override void Dispose(bool disposing)
@@ -268,6 +280,7 @@ internal sealed partial class SessionView : UserControl
             _closeTimer?.Dispose();
             DisposeLogOff();
             _childTargets.RevokeAll();
+            DisposeRemoteApp();
             DisposeDrops();
             _agent.Dispose();
             _display.Dispose();
@@ -292,7 +305,7 @@ internal sealed partial class SessionView : UserControl
     protected override void OnDpiChangedAfterParent(EventArgs e)
     {
         base.OnDpiChangedAfterParent(e);
-        if (_display is null || _closeRequested)
+        if (_display is null || _closeRequested || IsRemoteApp)
         {
             return;
         }
@@ -334,6 +347,11 @@ internal sealed partial class SessionView : UserControl
         ClientLog.Info($"Event OnConnected ({Host})");
         SetConnection(SessionState.Connected, LocalText.Of(nameof(Strings.ConnectedTo), Host));
         _childTargets.Refresh("connected");
+        if (IsRemoteApp)
+        {
+            OnRemoteAppConnected();
+        }
+
         _agent.Start();
     }
 
@@ -343,6 +361,11 @@ internal sealed partial class SessionView : UserControl
         SetConnection(SessionState.Connected, LocalText.Of(nameof(Strings.LoggedOnTo), Host));
         _childTargets.Refresh("logged on");
         _display.OnLoggedOn();
+        if (IsRemoteApp)
+        {
+            OnRemoteAppLoggedOn();
+        }
+
         _agent.RestartDiscovery("logged on");
     }
 
@@ -357,6 +380,10 @@ internal sealed partial class SessionView : UserControl
         EndLogOff();
         ShowFullScreenState(false);
         SetConnection(SessionState.Disconnected, DescribeDisconnect(reason, text));
+        if (IsRemoteApp)
+        {
+            OnRemoteAppDisconnected();
+        }
 
         if (_closeRequested)
         {
@@ -394,6 +421,11 @@ internal sealed partial class SessionView : UserControl
         _reconnectRequested = false;
         ShowFullScreenState(false);
         SetConnection(SessionState.Disconnected, LocalText.Of(nameof(Strings.FatalError), errorCode));
+        if (IsRemoteApp)
+        {
+            OnRemoteAppDisconnected();
+        }
+
         if (_closeRequested)
         {
             BeginInvoke(ReportClosed);
@@ -424,6 +456,7 @@ internal sealed partial class SessionView : UserControl
     {
         _connectionText = text;
         ConnectionTextChanged?.Invoke(this, EventArgs.Empty);
+        UpdatePanel();
     }
 
     private void RaiseStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
@@ -431,6 +464,7 @@ internal sealed partial class SessionView : UserControl
     private void OnAgentStateChanged()
     {
         AgentTextChanged?.Invoke(this, EventArgs.Empty);
+        UpdatePanel();
 
         if (_agent.State == AgentState.Ready && _agent.DriveRedirectionAvailable == false)
         {
@@ -444,6 +478,7 @@ internal sealed partial class SessionView : UserControl
     {
         _dropText = text;
         DropTextChanged?.Invoke(this, EventArgs.Empty);
+        UpdatePanel();
     }
 
     private string SafeControlVersion()

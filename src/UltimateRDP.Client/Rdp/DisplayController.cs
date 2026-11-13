@@ -48,6 +48,12 @@ internal sealed class DisplayController : IDisposable
 
     public DisplayMode Mode { get; private set; }
 
+    /// <summary>
+    /// True for a RemoteApp session: its desktop is the size of the virtual screen and never
+    /// follows the window, so nothing is sent to the session after a resize.
+    /// </summary>
+    public bool RemoteApp { get; set; }
+
     /// <summary>Size of the remote desktop, from the connection and from every size change event.</summary>
     public Size RemoteDesktopSize { get; private set; }
 
@@ -85,7 +91,7 @@ internal sealed class DisplayController : IDisposable
     public void OnLoggedOn()
     {
         _loggedOn = true;
-        if (Mode == DisplayMode.ResizeSession)
+        if (Mode == DisplayMode.ResizeSession && !RemoteApp)
         {
             ScheduleUpdate("logged on");
         }
@@ -110,7 +116,7 @@ internal sealed class DisplayController : IDisposable
     /// <summary>Called on every resize of the window; the update waits until the resize settles.</summary>
     public void OnWindowResized()
     {
-        if (!_disposed && Mode == DisplayMode.ResizeSession && _loggedOn && !_fullScreen)
+        if (!_disposed && Mode == DisplayMode.ResizeSession && _loggedOn && !_fullScreen && !RemoteApp)
         {
             _timer.Stop();
             _timer.Start();
@@ -135,7 +141,7 @@ internal sealed class DisplayController : IDisposable
     public void OnFullScreenChanged(bool fullScreen)
     {
         _fullScreen = fullScreen;
-        if (Mode == DisplayMode.ResizeSession && _loggedOn)
+        if (Mode == DisplayMode.ResizeSession && _loggedOn && !RemoteApp)
         {
             ScheduleUpdate(fullScreen ? "entered full screen" : "left full screen");
         }
@@ -154,7 +160,7 @@ internal sealed class DisplayController : IDisposable
 
         Mode = mode;
         ClientLog.Info($"Display mode is now {mode}");
-        if (!connected)
+        if (!connected || RemoteApp)
         {
             return;
         }
@@ -200,7 +206,7 @@ internal sealed class DisplayController : IDisposable
         _timer.Stop();
         var force = _forceNextUpdate;
         _forceNextUpdate = false;
-        if (Mode != DisplayMode.ResizeSession || !_loggedOn || _owner.FindForm()?.WindowState == FormWindowState.Minimized)
+        if (Mode != DisplayMode.ResizeSession || !_loggedOn || RemoteApp || _owner.FindForm()?.WindowState == FormWindowState.Minimized)
         {
             return;
         }

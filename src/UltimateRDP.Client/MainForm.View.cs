@@ -55,9 +55,11 @@ internal sealed partial class MainForm
             _viewMenu.ShowAllMonitors(_settings.UseAllMonitors);
             _viewMenu.ShowKeyboardHookMode(_settings.KeyboardHookMode);
             _viewMenu.ShowFullScreen(false, false);
+            _viewMenu.EnableDisplayChoices(true);
             return;
         }
 
+        _viewMenu.EnableDisplayChoices(session.HasDisplayChoices);
         _viewMenu.ShowDisplayMode(session.DisplayMode);
         _viewMenu.ShowScaleFactor(session.ScaleChoice, session.AutoDesktopScaleFactor);
         _viewMenu.ShowAllMonitors(session.UseAllMonitors);

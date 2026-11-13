@@ -215,6 +215,10 @@ Saved credentials: {0} never saves a password. Windows saves it when you tick "R
     <value>The file {0} does not name a computer to connect to (no "full address" line).</value>
     <comment>{0} is a file path. "full address" is a setting name of .rdp files: keep it in English.</comment>
   </data>
+  <data name="FileHasNoRemoteProgram" xml:space="preserve">
+    <value>{0} asks for a RemoteApp program but names none: remoteapplicationprogram is missing.</value>
+    <comment>{0} is the path of the .rdp file. remoteapplicationprogram stays as it is.</comment>
+  </data>
   <data name="ForgetCredentialsQuestion" xml:space="preserve">
     <value>Forget the credentials that Windows saved for {0}?
 
@@ -395,6 +399,30 @@ The next connection asks for them again. The open session is not affected.</valu
   <data name="Reconnecting" xml:space="preserve">
     <value>Reconnecting to {0} (attempt {1})...</value>
     <comment>{0} is a computer name, {1} a number.</comment>
+  </data>
+  <data name="RemoteAppCloseQuestion" xml:space="preserve">
+    <value>{0} keeps running on the server after this tab closes, and comes back at the next connection with this file. To end it, close it in its own window, or use File, Log off the remote session.
+
+Close the tab anyway?</value>
+    <comment>{0} is the name of the RemoteApp program. "File, Log off the remote session" names the menu entry in the language of the menu.</comment>
+  </data>
+  <data name="RemoteAppHint" xml:space="preserve">
+    <value>{0} opens in windows of its own, outside this one. Drop files on those windows to send them into the session.</value>
+    <comment>{0} is the name of the RemoteApp program.</comment>
+  </data>
+  <data name="RemoteAppNotPublished" xml:space="preserve">
+    <value>{0} is not published on the server, or this account may not open it.</value>
+    <comment>{0} is the name of the RemoteApp program.</comment>
+  </data>
+  <data name="RemoteAppQuitQuestion" xml:space="preserve">
+    <value>These programs keep running on the server after UltimateRDP closes, and come back at the next connection with their files: {0}.
+
+Quit anyway?</value>
+    <comment>{0} is a list of RemoteApp program names, separated by commas.</comment>
+  </data>
+  <data name="RemoteAppStartFailed" xml:space="preserve">
+    <value>The server did not start {0} ({1}).</value>
+    <comment>{0} is the name of the RemoteApp program, {1} a code name given by the Remote Desktop control, not translated.</comment>
   </data>
   <data name="SessionSeesNoDrive" xml:space="preserve">
     <value>The session sees no redirected drive: drops will not work. Turn on drives under Local Resources.</value>
