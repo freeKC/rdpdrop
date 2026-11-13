@@ -127,6 +127,9 @@ Il n'y a pas d'option pour un mot de passe : Windows utilise l'identifiant enre
   <data name="CredentialsForgotten" xml:space="preserve">
     <value>Identifiants enregistrés pour {0} oubliés ; la prochaine connexion les demandera.</value>
   </data>
+  <data name="DesktopAlreadyOpen" xml:space="preserve">
+    <value>Ce bureau est déjà ouvert dans cet onglet : une seconde connexion avec le même compte reprendrait sa session.</value>
+  </data>
   <data name="Disconnected" xml:space="preserve">
     <value>Déconnecté</value>
   </data>
@@ -141,6 +144,9 @@ Il n'y a pas d'option pour un mot de passe : Windows utilise l'identifiant enre
   </data>
   <data name="DisconnectedSessionClosed" xml:space="preserve">
     <value>Déconnecté : la session a été fermée depuis l'ordinateur distant</value>
+  </data>
+  <data name="DisconnectedTakenOver" xml:space="preserve">
+    <value>Cette session a été reprise par une autre connexion avec le même compte.</value>
   </data>
   <data name="Disconnecting" xml:space="preserve">
     <value>Déconnexion...</value>

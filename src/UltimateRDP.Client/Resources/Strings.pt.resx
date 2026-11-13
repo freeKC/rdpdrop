@@ -127,6 +127,9 @@ Não há opção para senha: o Windows usa a credencial salva para o servidor ou
   <data name="CredentialsForgotten" xml:space="preserve">
     <value>Credenciais salvas de {0} esquecidas; a próxima conexão vai solicitá-las.</value>
   </data>
+  <data name="DesktopAlreadyOpen" xml:space="preserve">
+    <value>Esta área de trabalho já está aberta nesta guia: uma segunda conexão com a mesma conta assumiria a sessão dela.</value>
+  </data>
   <data name="Disconnected" xml:space="preserve">
     <value>Desconectado</value>
   </data>
@@ -141,6 +144,9 @@ Não há opção para senha: o Windows usa a credencial salva para o servidor ou
   </data>
   <data name="DisconnectedSessionClosed" xml:space="preserve">
     <value>Desconectado: a sessão foi encerrada no computador remoto</value>
+  </data>
+  <data name="DisconnectedTakenOver" xml:space="preserve">
+    <value>Esta sessão foi assumida por outra conexão com a mesma conta.</value>
   </data>
   <data name="Disconnecting" xml:space="preserve">
     <value>Desconectando...</value>

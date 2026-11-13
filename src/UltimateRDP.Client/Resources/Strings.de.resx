@@ -127,6 +127,9 @@ Es gibt keine Option für ein Kennwort: Windows verwendet die für den Server ge
   <data name="CredentialsForgotten" xml:space="preserve">
     <value>Gespeicherte Anmeldedaten für {0} entfernt; bei der nächsten Verbindung werden sie erneut abgefragt.</value>
   </data>
+  <data name="DesktopAlreadyOpen" xml:space="preserve">
+    <value>Dieser Desktop ist bereits in dieser Registerkarte geöffnet: eine zweite Verbindung mit demselben Konto würde seine Sitzung übernehmen.</value>
+  </data>
   <data name="Disconnected" xml:space="preserve">
     <value>Getrennt</value>
   </data>
@@ -141,6 +144,9 @@ Es gibt keine Option für ein Kennwort: Windows verwendet die für den Server ge
   </data>
   <data name="DisconnectedSessionClosed" xml:space="preserve">
     <value>Getrennt: Die Sitzung wurde auf dem Remotecomputer beendet</value>
+  </data>
+  <data name="DisconnectedTakenOver" xml:space="preserve">
+    <value>Diese Sitzung wurde von einer anderen Verbindung mit demselben Konto übernommen.</value>
   </data>
   <data name="Disconnecting" xml:space="preserve">
     <value>Verbindung wird getrennt...</value>

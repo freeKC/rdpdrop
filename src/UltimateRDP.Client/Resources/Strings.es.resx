@@ -127,6 +127,9 @@ No hay ninguna opción para una contraseña: Windows usa la credencial guardada 
   <data name="CredentialsForgotten" xml:space="preserve">
     <value>Se olvidaron las credenciales guardadas de {0}; la próxima conexión las pedirá.</value>
   </data>
+  <data name="DesktopAlreadyOpen" xml:space="preserve">
+    <value>Este escritorio ya está abierto en esta pestaña: una segunda conexión con la misma cuenta tomaría su sesión.</value>
+  </data>
   <data name="Disconnected" xml:space="preserve">
     <value>Desconectado</value>
   </data>
@@ -141,6 +144,9 @@ No hay ninguna opción para una contraseña: Windows usa la credencial guardada 
   </data>
   <data name="DisconnectedSessionClosed" xml:space="preserve">
     <value>Desconectado: la sesión se cerró desde el equipo remoto</value>
+  </data>
+  <data name="DisconnectedTakenOver" xml:space="preserve">
+    <value>Otra conexión con la misma cuenta ha tomado esta sesión.</value>
   </data>
   <data name="Disconnecting" xml:space="preserve">
     <value>Desconectando...</value>

@@ -127,6 +127,9 @@ Er is geen optie voor een wachtwoord: Windows gebruikt de opgeslagen referentie 
   <data name="CredentialsForgotten" xml:space="preserve">
     <value>Opgeslagen referenties voor {0} vergeten; bij de volgende verbinding worden ze opnieuw gevraagd.</value>
   </data>
+  <data name="DesktopAlreadyOpen" xml:space="preserve">
+    <value>Dit bureaublad is al open in dit tabblad: een tweede verbinding met hetzelfde account zou de sessie overnemen.</value>
+  </data>
   <data name="Disconnected" xml:space="preserve">
     <value>Verbinding verbroken</value>
   </data>
@@ -141,6 +144,9 @@ Er is geen optie voor een wachtwoord: Windows gebruikt de opgeslagen referentie 
   </data>
   <data name="DisconnectedSessionClosed" xml:space="preserve">
     <value>Verbinding verbroken: de sessie is gesloten vanaf de externe computer</value>
+  </data>
+  <data name="DisconnectedTakenOver" xml:space="preserve">
+    <value>Deze sessie is overgenomen door een andere verbinding met hetzelfde account.</value>
   </data>
   <data name="Disconnecting" xml:space="preserve">
     <value>Verbinding verbreken...</value>

@@ -138,6 +138,9 @@ There is no option for a password: Windows uses the credential saved for the ser
     <value>Saved credentials for {0} forgotten; the next connection asks for them.</value>
     <comment>{0} is a computer name.</comment>
   </data>
+  <data name="DesktopAlreadyOpen" xml:space="preserve">
+    <value>This desktop is open already in this tab: a second connection with the same account would take its session.</value>
+  </data>
   <data name="Disconnected" xml:space="preserve">
     <value>Disconnected</value>
   </data>
@@ -154,6 +157,9 @@ There is no option for a password: Windows uses the credential saved for the ser
   </data>
   <data name="DisconnectedSessionClosed" xml:space="preserve">
     <value>Disconnected: the session was closed from the remote computer</value>
+  </data>
+  <data name="DisconnectedTakenOver" xml:space="preserve">
+    <value>This session was taken over by another connection with the same account.</value>
   </data>
   <data name="Disconnecting" xml:space="preserve">
     <value>Disconnecting...</value>

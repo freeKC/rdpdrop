@@ -252,6 +252,13 @@ internal sealed partial class MainForm
 
     private void ShowEndMessage(SessionView session)
     {
+        if (_messageShowing)
+        {
+            // Never a stack of messages: the tab keeps the reason of this one.
+            ClientLog.Info($"The session of {session.Title} ended while a message already shows; no second message, the tab keeps the reason: {session.ConnectionText}");
+            return;
+        }
+
         ClientLog.Info($"The session of {session.Title} ended while the main window is out of sight: {session.ConnectionText}");
         _messageShowing = true;
         try

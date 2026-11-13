@@ -54,6 +54,7 @@ internal sealed partial class SessionView : UserControl
         RdpFile = file;
         _settings = settings;
         Host = RdpAddress.Split(file.FullAddress ?? string.Empty).Host;
+        Target = ConnectionTarget.FromRdpFile(file);
         _childTargets = new ChildDropTargets(_rdp);
         _agent = new AgentLink(_rdp, settings.TransferBatchCharacters, settings.TransferWindowBytes);
         _display = new DisplayController(_rdp, this, settings.DisplayMode);
@@ -132,8 +133,11 @@ internal sealed partial class SessionView : UserControl
     /// <summary>Host name from the full address of the .rdp file, without the port.</summary>
     public string Host { get; }
 
-    /// <summary>Short name of the session, for a tab: the host, or the name of the RemoteApp program.</summary>
-    public string Title => RemoteAppName ?? Host;
+    /// <summary>Short name of the session, for a tab: the host, or the names of the RemoteApp programs of the connection.</summary>
+    public string Title => RemoteAppNames ?? Host;
+
+    /// <summary>Where the connection goes and with which account, for the launches that may share it, since 0.10.0.</summary>
+    public ConnectionTarget Target { get; }
 
     /// <summary>Title of the window while this session is the active one.</summary>
     public string WindowTitle => RemoteAppName is { } program
@@ -403,7 +407,7 @@ internal sealed partial class SessionView : UserControl
         ResetDrops();
         EndLogOff();
         ShowFullScreenState(false);
-        SetConnection(SessionState.Disconnected, DescribeDisconnect(reason, normal, text));
+        SetConnection(SessionState.Disconnected, SessionEnd.IsTakenOver(reason, extended) ? LocalText.Of(nameof(Strings.DisconnectedTakenOver)) : DescribeDisconnect(reason, normal, text));
         if (IsRemoteApp)
         {
             OnRemoteAppDisconnected();
@@ -500,6 +504,9 @@ internal sealed partial class SessionView : UserControl
     }
 
     private void RaiseStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Shows a notice in the status line of the tab, such as a second open of the same desktop.</summary>
+    public void ShowNotice(LocalText text) => ShowDropStatus(text);
 
     private void OnAgentStateChanged()
     {

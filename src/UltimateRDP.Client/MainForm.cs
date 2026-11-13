@@ -289,6 +289,11 @@ internal sealed partial class MainForm : Form
         }
 
         var opened = source with { Path = source.Path is null ? null : fullPath };
+        if (JoinsExistingConnection(opened, file, askCredentials))
+        {
+            return;
+        }
+
         if (opened.IsPlainFile)
         {
             _recent.Add(fullPath);
@@ -313,6 +318,7 @@ internal sealed partial class MainForm : Form
         ClientLog.Info($"Tab opened for {session.Host}, {_tabs.TabCount} tab(s).");
 
         AttachLoader(session);
+        FollowJoinedLaunches(session);
         _tray?.UpdateText();
 
         // Connect once the tab has its final size: the desktop size comes from it.

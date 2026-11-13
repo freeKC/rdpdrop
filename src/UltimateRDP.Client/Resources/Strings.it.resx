@@ -127,6 +127,9 @@ Non esiste un'opzione per la password: Windows usa le credenziali salvate per il
   <data name="CredentialsForgotten" xml:space="preserve">
     <value>Credenziali salvate per {0} dimenticate; la prossima connessione le richiederà.</value>
   </data>
+  <data name="DesktopAlreadyOpen" xml:space="preserve">
+    <value>Questo desktop è già aperto in questa scheda: una seconda connessione con lo stesso account prenderebbe la sua sessione.</value>
+  </data>
   <data name="Disconnected" xml:space="preserve">
     <value>Disconnesso</value>
   </data>
@@ -141,6 +144,9 @@ Non esiste un'opzione per la password: Windows usa le credenziali salvate per il
   </data>
   <data name="DisconnectedSessionClosed" xml:space="preserve">
     <value>Disconnesso: la sessione è stata chiusa dal computer remoto</value>
+  </data>
+  <data name="DisconnectedTakenOver" xml:space="preserve">
+    <value>Questa sessione è stata presa da un'altra connessione con lo stesso account.</value>
   </data>
   <data name="Disconnecting" xml:space="preserve">
     <value>Disconnessione...</value>

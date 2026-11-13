@@ -53,6 +53,8 @@ internal sealed partial class SessionView : IRailSession
     private readonly System.Windows.Forms.Timer _startTimer = new() { Interval = RemoteProgramStart.RetryMilliseconds };
     private readonly System.Windows.Forms.Timer _memoryTimer = new() { Interval = MemoryLogMilliseconds };
     private readonly RemoteProgramStart _start = new();
+    private readonly SharedRemoteAppConnection<JoinedLaunch> _shared = new();
+    private readonly System.Windows.Forms.Timer _joinedTimer = new() { Interval = 500 };
     private RemoteAppLaunch? _remoteApp;
     private RemoteAppPanel? _panel;
     private bool _remoteWindowShown;
@@ -66,11 +68,38 @@ internal sealed partial class SessionView : IRailSession
     /// <summary>Raised once per connection, when the first window of the program appears.</summary>
     public event EventHandler? RemoteProgramShown;
 
+    /// <summary>Raised when a launch that joined this connection starts its program, since 0.10.0.</summary>
+    public event EventHandler<JoinedLaunch>? JoinedLaunchStarted;
+
+    /// <summary>Raised when the start of a launch that joined this connection is over, since 0.10.0.</summary>
+    public event EventHandler<JoinedLaunch>? JoinedLaunchEnded;
+
+    /// <summary>
+    /// Raised when this connection ends with launches that waited for it, or whose program
+    /// never showed: each opens a connection of its own, since 0.10.0.
+    /// </summary>
+    public event EventHandler<IReadOnlyList<JoinedLaunch>>? JoinedLaunchesOrphaned;
+
     /// <summary>True when the tab runs a RemoteApp program.</summary>
     public bool IsRemoteApp => _remoteApp is not null;
 
     /// <summary>The name of the RemoteApp program, or null for a desktop.</summary>
     public string? RemoteAppName => _remoteApp?.DisplayName;
+
+    /// <summary>
+    /// The names of the programs of the connection, the program of the tab first, then those of
+    /// the launches that joined it, once each; null for a desktop.
+    /// </summary>
+    public string? RemoteAppNames => _remoteApp is null
+        ? null
+        : string.Join(", ", new[] { _remoteApp.DisplayName }.Concat(_shared.Joined.Select(joined => joined.Name)).Distinct(StringComparer.CurrentCultureIgnoreCase));
+
+    /// <summary>
+    /// True while a RemoteApp launch to the same target may use this connection instead of
+    /// opening its own (<see cref="JoinRemoteApp"/>): a RemoteApp tab that connects or is
+    /// logged on, and that the user did not close.
+    /// </summary>
+    public bool TakesRemoteAppLaunches => IsRemoteApp && !_closeRequested && !IsDisposed && _shared.Phase != SharedConnectionPhase.Ended;
 
     /// <summary>The windows of the program open on this computer.</summary>
     public int RemoteWindowCount => IsRemoteApp ? RailDropTargets.WindowCount(this) : 0;
@@ -119,6 +148,7 @@ internal sealed partial class SessionView : IRailSession
         _rdp.HandleCreated += (_, _) => HideControlWindow("its window was created");
         RailDropTargets.WindowsChanged += OnRailWindowsChanged;
         _startTimer.Tick += (_, _) => OnStartRetry();
+        _joinedTimer.Tick += (_, _) => OnJoinedTick();
         _memoryTimer.Tick += (_, _) =>
         {
             _memoryTimer.Stop();
@@ -132,6 +162,7 @@ internal sealed partial class SessionView : IRailSession
     {
         _startTimer.Dispose();
         _memoryTimer.Dispose();
+        _joinedTimer.Dispose();
         RailDropTargets.WindowsChanged -= OnRailWindowsChanged;
         DetachRail();
     }
@@ -139,6 +170,7 @@ internal sealed partial class SessionView : IRailSession
     /// <summary>A new connection starts: what the previous one saw is forgotten.</summary>
     private void OnRemoteAppConnecting()
     {
+        _shared.OnConnecting();
         _start.Reset();
         _remoteWindowShown = false;
         _remoteAppLoggedOn = false;
@@ -181,6 +213,7 @@ internal sealed partial class SessionView : IRailSession
             OnFirstProgramWindow("a window found in the process");
         }
 
+        OnJoinedWindows();
         UpdatePanel();
     }
 
@@ -223,7 +256,7 @@ internal sealed partial class SessionView : IRailSession
         LogMemory("logged on");
         if (_start.OnLoggedOn() == RemoteProgramStep.CallServerStartProgram)
         {
-            StartProgram("at the logon, since the RemoteProgram2 values alone do not start it on every server");
+            StartProgram(_remoteApp!, "at the logon, since the RemoteProgram2 values alone do not start it on every server");
             _startTimer.Stop();
             _startTimer.Start();
         }
@@ -231,6 +264,98 @@ internal sealed partial class SessionView : IRailSession
         {
             ClientLog.Info($"RemoteApp ({Host}): ServerStartProgram is not called at the logon: the control already reported {(_start.Answered ? "the result of a start" : "a window of the program")}.");
         }
+
+        foreach (var joined in _shared.OnLoggedOn())
+        {
+            StartJoined(joined, "it waited for the logon, after the program of the connection");
+        }
+    }
+
+    /// <summary>
+    /// A RemoteApp launch to the same target as this connection, since 0.10.0: it starts its
+    /// program here at once when the session is logged on, waits for the logon while it
+    /// connects, or opens its own connection when this one ended.
+    /// </summary>
+    public JoinDecision JoinRemoteApp(JoinedLaunch launch)
+    {
+        ArgumentNullException.ThrowIfNull(launch);
+        var decision = _shared.Join(launch);
+        switch (decision)
+        {
+            case JoinDecision.StartNow:
+                StartJoined(launch, RemoteWindowCount == 0 ? "the connection is logged on with no window of a program left" : "the connection is logged on");
+                break;
+            case JoinDecision.Queued:
+                ClientLog.Info($"RemoteApp launch of {launch} queued until the logon of the connection of {Title} ({Host}).");
+                break;
+            default:
+                ClientLog.Info($"RemoteApp launch of {launch}: the connection of {Title} ({Host}) ended; it opens its own connection.");
+                break;
+        }
+
+        UpdatePanel();
+        RaiseStateChanged();
+        return decision;
+    }
+
+    /// <summary>Starts the program of a launch that joined this connection, and follows it until its loader may close.</summary>
+    private void StartJoined(JoinedLaunch launch, string why)
+    {
+        launch.Start.OnStarted(RemoteWindowCount, Environment.TickCount64);
+        ClientLog.Info($"RemoteApp launch of {launch} started on the existing connection of {Host}: {why}; {RemoteWindowCount} window(s) of programs open.");
+        StartProgram(launch.Launch, "a launch that joined the connection");
+        _joinedTimer.Start();
+        JoinedLaunchStarted?.Invoke(this, launch);
+    }
+
+    /// <summary>The windows of programs changed: a new one ends the start of a launch that joined.</summary>
+    private void OnJoinedWindows()
+    {
+        var count = RemoteWindowCount;
+        foreach (var joined in _shared.Joined.ToList())
+        {
+            if (joined.Start.OnWindows(count))
+            {
+                EndJoined(joined);
+            }
+        }
+    }
+
+    private void OnJoinedTick()
+    {
+        var now = Environment.TickCount64;
+        var running = false;
+        foreach (var joined in _shared.Joined.ToList())
+        {
+            if (joined.Start.OnTick(now))
+            {
+                EndJoined(joined);
+            }
+
+            running |= joined.Start.Started && joined.Start.End == JoinedStartEnd.None;
+        }
+
+        if (!running)
+        {
+            _joinedTimer.Stop();
+        }
+    }
+
+    private void EndJoined(JoinedLaunch launch)
+    {
+        if (launch.Start.End != JoinedStartEnd.TimedOut)
+        {
+            _shared.Confirm(launch);
+        }
+
+        ClientLog.Info($"RemoteApp launch of {launch} on {Host}: the start is over, {launch.Start.End switch
+        {
+            JoinedStartEnd.NewWindow => "a new window of a program appeared",
+            JoinedStartEnd.AnsweredOk => Invariant($"the server answered Ok and no new window came in {JoinedProgramStart.OkGraceMilliseconds} ms; the program may only have brought its window to the front"),
+            JoinedStartEnd.Failed => "the server reported a failure",
+            _ => Invariant($"no window and no answer came in {JoinedProgramStart.TimeoutMilliseconds} ms"),
+        }}.");
+        JoinedLaunchEnded?.Invoke(this, launch);
     }
 
     /// <summary>
@@ -242,7 +367,23 @@ internal sealed partial class SessionView : IRailSession
     {
         _startTimer.Stop();
         _memoryTimer.Stop();
+        _joinedTimer.Stop();
         DetachRail();
+        var orphans = _shared.OnEnded(closedByUser: _closeRequested);
+        if (orphans.Count > 0)
+        {
+            foreach (var orphan in orphans)
+            {
+                ClientLog.Info($"RemoteApp launch of {orphan}: the connection of {Host} ended before its program showed; it opens its own connection.");
+            }
+
+            BeginInvoke(() => JoinedLaunchesOrphaned?.Invoke(this, orphans));
+        }
+        else if (_closeRequested && _shared.Joined.Count > 0)
+        {
+            ClientLog.Info($"RemoteApp ({Host}): the tab was closed; the launches that joined its connection are dropped.");
+        }
+
         var loggedOn = _remoteAppLoggedOn;
         _remoteAppLoggedOn = false;
         if (loggedOn && !_closeRequested && !_reconnectRequested)
@@ -263,10 +404,29 @@ internal sealed partial class SessionView : IRailSession
 
     private void OnRemoteProgramResult(string program, RemoteProgramResult result, bool isExecutable)
     {
-        _start.OnResult();
-        _startTimer.Stop();
-        var text = Invariant($"Event OnRemoteProgramResult ({Host}): program \"{program}\", result {result} ({(int)result}), executable {isExecutable}");
-        if (result == RemoteProgramResult.remoteAppResultOk)
+        var ok = result == RemoteProgramResult.remoteAppResultOk;
+
+        // The answer of a launch that joined the connection, when one waits for this program;
+        // otherwise the answer of the program of the connection.
+        var joined = _shared.Joined.FirstOrDefault(launch => launch.Start.Started && launch.Start.End == JoinedStartEnd.None
+            && string.Equals(launch.Launch.Program, program, StringComparison.OrdinalIgnoreCase));
+        var name = joined?.Name ?? RemoteAppName ?? program;
+        if (joined is null)
+        {
+            _start.OnResult();
+            _startTimer.Stop();
+        }
+        else
+        {
+            _shared.Confirm(joined);
+            if (joined.Start.OnResult(ok, Environment.TickCount64))
+            {
+                EndJoined(joined);
+            }
+        }
+
+        var text = Invariant($"Event OnRemoteProgramResult ({Host}): program \"{program}\", result {result} ({(int)result}), executable {isExecutable}{(joined is null ? string.Empty : ", for the launch of " + joined.Name + " that joined the connection")}");
+        if (ok)
         {
             ClientLog.Info(text);
             return;
@@ -274,8 +434,8 @@ internal sealed partial class SessionView : IRailSession
 
         ClientLog.Warn(text);
         ShowDropStatus(result == RemoteProgramResult.remoteAppResultNotInWhitelist
-            ? LocalText.Of(nameof(Strings.RemoteAppNotPublished), RemoteAppName ?? program)
-            : LocalText.Of(nameof(Strings.RemoteAppStartFailed), RemoteAppName ?? program, result.ToString().Replace("remoteAppResult", string.Empty, StringComparison.Ordinal)));
+            ? LocalText.Of(nameof(Strings.RemoteAppNotPublished), name)
+            : LocalText.Of(nameof(Strings.RemoteAppStartFailed), name, result.ToString().Replace("remoteAppResult", string.Empty, StringComparison.Ordinal)));
     }
 
     private void OnRemoteProgramDisplayed(bool displayed, uint displayInformation)
@@ -306,6 +466,7 @@ internal sealed partial class SessionView : IRailSession
             OnFirstProgramWindow("the event of the control");
         }
 
+        OnJoinedWindows();
         UpdatePanel();
         RaiseStateChanged();
     }
@@ -322,20 +483,15 @@ internal sealed partial class SessionView : IRailSession
             return;
         }
 
-        if (_start.OnRetryTimer() == RemoteProgramStep.CallServerStartProgram)
+        if (_start.OnRetryTimer() == RemoteProgramStep.CallServerStartProgram && _remoteApp is { } launch)
         {
-            StartProgram(Invariant($"again: no OnRemoteProgramResult and no window {RemoteProgramStart.RetryMilliseconds / 1000} s after the first call"));
+            StartProgram(launch, Invariant($"again: no OnRemoteProgramResult and no window {RemoteProgramStart.RetryMilliseconds / 1000} s after the first call"));
         }
     }
 
-    /// <summary>Calls ServerStartProgram with the program, the file and the arguments of the .rdp file.</summary>
-    private void StartProgram(string why)
+    /// <summary>Calls ServerStartProgram with the program, the file and the arguments of <paramref name="launch"/>.</summary>
+    private void StartProgram(RemoteAppLaunch launch, string why)
     {
-        if (_remoteApp is not { } launch)
-        {
-            return;
-        }
-
         var program = launch.Program ?? string.Empty;
         var file = launch.File ?? string.Empty;
         var args = launch.Args ?? string.Empty;
@@ -395,7 +551,7 @@ internal sealed partial class SessionView : IRailSession
         }
 
         _panel.ShowState(
-            _remoteApp.DisplayName,
+            RemoteAppNames ?? _remoteApp.DisplayName,
             LocalText.Of(nameof(Strings.RemoteAppHint), _remoteApp.DisplayName).ToString(),
             LocalText.Of(nameof(Strings.RemoteAppWindowCount), RemoteWindowCount).ToString(),
             ConnectionText,
