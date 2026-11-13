@@ -251,10 +251,19 @@ internal sealed class BlockingStream(byte[] data) : Stream
     }
 }
 
-/// <summary>A storage in memory whose deletion takes a while, as a large partial file may on a server.</summary>
-internal sealed class SlowDeleteStorage(TimeSpan delay) : IDirectStorage
+/// <summary>
+/// A storage in memory whose deletion waits until the test releases it, as a large partial
+/// file may take long to delete on a server.
+/// </summary>
+internal sealed class SlowDeleteStorage : IDirectStorage
 {
     public MemoryDirectStorage Inner { get; } = new();
+
+    /// <summary>Set once the deletion started and waits.</summary>
+    public ManualResetEventSlim Entered { get; } = new(false);
+
+    /// <summary>Lets the deletion go on.</summary>
+    public ManualResetEventSlim Released { get; } = new(false);
 
     public void CreateDirectory(string relativePath) => Inner.CreateDirectory(relativePath);
 
@@ -264,7 +273,57 @@ internal sealed class SlowDeleteStorage(TimeSpan delay) : IDirectStorage
 
     public void DeleteAll()
     {
-        Thread.Sleep(delay);
+        Entered.Set();
+        Released.Wait(TimeSpan.FromSeconds(60));
         Inner.DeleteAll();
     }
+}
+
+/// <summary>A file that reads freely up to <paramref name="holdAt"/> bytes, then waits for <see cref="Release"/>: the transfer cannot end before the test acts.</summary>
+internal sealed class HoldingStream(byte[] data, long holdAt) : Stream
+{
+    private readonly ManualResetEventSlim _released = new(false);
+    private long _position;
+
+    public override bool CanRead => true;
+
+    public override bool CanSeek => true;
+
+    public override bool CanWrite => false;
+
+    public override long Length => data.Length;
+
+    public override long Position
+    {
+        get => _position;
+        set => _position = value;
+    }
+
+    public void Release() => _released.Set();
+
+    public override int Read(Span<byte> buffer)
+    {
+        if (_position >= holdAt)
+        {
+            _released.Wait(TimeSpan.FromSeconds(60));
+        }
+
+        var limit = _released.IsSet ? data.Length : Math.Min(holdAt, data.Length);
+        var count = (int)Math.Min(buffer.Length, Math.Max(0, limit - _position));
+        data.AsSpan((int)_position, count).CopyTo(buffer);
+        _position += count;
+        return count;
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+    public override void Flush()
+    {
+    }
+
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+    public override void SetLength(long value) => throw new NotSupportedException();
+
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }

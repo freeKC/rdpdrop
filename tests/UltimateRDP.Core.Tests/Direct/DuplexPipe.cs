@@ -18,7 +18,7 @@ internal static class DuplexPipe
     }
 
     /// <summary>One direction of the connection.</summary>
-    private sealed class Direction(int capacity, long cutAfter)
+    internal sealed class Direction(int capacity, long cutAfter)
     {
         private readonly Queue<byte[]> _segments = new();
         private readonly object _gate = new();
@@ -27,6 +27,10 @@ internal static class DuplexPipe
         private long _written;
         private bool _completed;
         private bool _abandoned;
+        private int _waitingWriters;
+
+        /// <summary>True while a write waits for room, the connection being full.</summary>
+        public bool WriterWaiting => Volatile.Read(ref _waitingWriters) > 0;
 
         public void Write(ReadOnlySpan<byte> data)
         {
@@ -48,7 +52,9 @@ internal static class DuplexPipe
 
                     while (_buffered >= capacity && !_abandoned && !_completed)
                     {
+                        Interlocked.Increment(ref _waitingWriters);
                         Monitor.Wait(_gate);
+                        Interlocked.Decrement(ref _waitingWriters);
                     }
 
                     if (_abandoned || _completed)
@@ -123,9 +129,13 @@ internal static class DuplexPipe
         }
     }
 
-    private sealed class End(Direction incoming, Direction outgoing) : Stream
+    /// <summary>One end of the connection.</summary>
+    internal sealed class End(Direction incoming, Direction outgoing) : Stream
     {
         private int _disposed;
+
+        /// <summary>True while a write of this end waits for the other end to read.</summary>
+        public bool WriteBlocked => outgoing.WriterWaiting;
 
         public override bool CanRead => true;
 

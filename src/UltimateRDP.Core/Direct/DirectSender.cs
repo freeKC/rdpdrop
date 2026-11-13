@@ -136,6 +136,9 @@ public sealed class DirectSender
     /// <summary>A file that takes this long from its open to its first block is shown to the user, through <see cref="FileWaiting"/>.</summary>
     public static readonly TimeSpan FileWaitNotice = TimeSpan.FromSeconds(2);
 
+    /// <summary>The delay of <see cref="FileWaiting"/>, <see cref="FileWaitNotice"/> unless a test asks for less.</summary>
+    internal TimeSpan FileWaitDelay { get; init; } = FileWaitNotice;
+
     /// <summary>Blocks in the queue per connection.</summary>
     private const int BlocksPerConnection = 2;
 
@@ -602,7 +605,8 @@ public sealed class DirectSender
     private void ReadFiles()
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        using var notice = new Timer(_ => CheckFileWait(), null, TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250));
+        var period = TimeSpan.FromMilliseconds(Math.Clamp(FileWaitDelay.TotalMilliseconds / 4, 10, 250));
+        using var notice = new Timer(_ => CheckFileWait(), null, period, period);
         var digest = new byte[DirectFrames.HashLength];
         Slot control;
         lock (_gate)
@@ -685,12 +689,12 @@ public sealed class DirectSender
         }
     }
 
-    /// <summary>On a timer while the reader runs: a wait for a file past <see cref="FileWaitNotice"/> is told once.</summary>
+    /// <summary>On a timer while the reader runs: a wait for a file past <see cref="FileWaitDelay"/> is told once.</summary>
     private void CheckFileWait()
     {
         lock (_noticeGate)
         {
-            if (_noticePath is { } path && !_noticeShown && !_stopping && Seconds(Stopwatch.GetTimestamp() - _noticeSince) >= FileWaitNotice.TotalSeconds)
+            if (_noticePath is { } path && !_noticeShown && !_stopping && Seconds(Stopwatch.GetTimestamp() - _noticeSince) >= FileWaitDelay.TotalSeconds)
             {
                 _noticeShown = true;
                 FileWaiting?.Invoke(path);

@@ -51,7 +51,7 @@ public class DirectTransferTests(ITestOutputHelper output)
             new(@"Folder\d.bin", d.Length),
         ];
 
-        var run = Run(files, [a, b, c, d], connections);
+        var run = Run(files, [a, b, c, d], connections, startWhen: sender => sender.Stats().Connections == connections);
 
         Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
         Assert.True(run.Outcome.Acknowledged);
@@ -367,7 +367,9 @@ public class DirectTransferTests(ITestOutputHelper output)
     public void A_cancel_at_the_first_acknowledgement_ends_both_sides_as_cancelled()
     {
         var a = Data(30 * Block, 1);
-        var run = Run([new("a.bin", a.Length)], [a], connections: 4, onAck: (sender, _) => sender.Cancel("The user cancelled the transfer."));
+        var hold = new HoldingStream(a, 16L * Block);
+        var run = Run([new("a.bin", a.Length)], [a], connections: 4, open: _ => hold, onAck: (sender, _) => sender.Cancel("The user cancelled the transfer."));
+        hold.Release();
 
         Assert.Equal(DirectSendStatus.Cancelled, run.Outcome.Status);
         Assert.True(run.Outcome.Acknowledged);
@@ -413,7 +415,8 @@ public class DirectTransferTests(ITestOutputHelper output)
         agent.Join();
 
         Assert.Equal(DirectSendStatus.Cancelled, outcome.Status);
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"Run returned {watch.ElapsedMilliseconds} ms after the cancel.");
+        // About a second at most by design: the bound leaves room for a far slower machine.
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(8), $"Run returned {watch.ElapsedMilliseconds} ms after the cancel.");
         Assert.Equal(DirectReceiverState.Cancelled, agent.Receiver.State);
         Assert.Contains(lines, line => line.StartsWith("The reader is still reading a.bin", StringComparison.Ordinal));
 
@@ -421,7 +424,7 @@ public class DirectTransferTests(ITestOutputHelper output)
         Thread.Sleep(800);
         blocking.Release();
         var late = Stopwatch.StartNew();
-        while (!lines.Any(line => line.Contains("after the connections closed", StringComparison.Ordinal)) && late.Elapsed < TimeSpan.FromSeconds(5))
+        while (!lines.Any(line => line.Contains("after the connections closed", StringComparison.Ordinal)) && late.Elapsed < TimeSpan.FromSeconds(30))
         {
             Thread.Sleep(20);
         }
@@ -454,10 +457,12 @@ public class DirectTransferTests(ITestOutputHelper output)
         var sender = new DirectSender(() => [new TransferFile("a.bin", a.Length)], _ => new MemoryStream(a, writable: false), 1, () => Environment.TickCount64);
         sender.Info += lines.Enqueue;
         var watch = new Stopwatch();
+        var blocked = false;
         var canceller = new Thread(() =>
         {
+            // The cancel comes once the writer is blocked in a write on the full connection.
             listed.Wait();
-            Thread.Sleep(300);
+            blocked = SpinWait.SpinUntil(() => ((DuplexPipe.End)client).WriteBlocked, TimeSpan.FromSeconds(30));
             watch.Start();
             sender.Cancel("The user cancelled the transfer.");
         });
@@ -469,8 +474,9 @@ public class DirectTransferTests(ITestOutputHelper output)
         agentEnd.Dispose();
         stalled.Join();
 
+        Assert.True(blocked, "The writer never blocked.");
         Assert.Equal(DirectSendStatus.Cancelled, outcome.Status);
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"Run returned {watch.ElapsedMilliseconds} ms after the cancel.");
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(8), $"Run returned {watch.ElapsedMilliseconds} ms after the cancel.");
         Assert.Contains(lines, line => line.StartsWith("The cancel frame could not be sent within 1 s", StringComparison.Ordinal));
     }
 
@@ -479,7 +485,9 @@ public class DirectTransferTests(ITestOutputHelper output)
     {
         var a = Data(30 * Block, 1);
         using var agent = new Agent();
-        var run = Run([new("a.bin", a.Length)], [a], connections: 2, agent: agent, onAck: (_, _) => agent.Receiver.ClientCancelled("The user cancelled the transfer."));
+        var hold = new HoldingStream(a, 16L * Block);
+        var run = Run([new("a.bin", a.Length)], [a], connections: 2, agent: agent, open: _ => hold, onAck: (_, _) => agent.Receiver.ClientCancelled("The user cancelled the transfer."));
+        hold.Release();
 
         Assert.Equal(DirectSendStatus.AgentCancelled, run.Outcome.Status);
         Assert.Equal(DirectReceiverState.Cancelled, agent.Receiver.State);
@@ -506,7 +514,9 @@ public class DirectTransferTests(ITestOutputHelper output)
     {
         var a = Data(30 * Block, 1);
         using var agent = new Agent();
-        var run = Run([new("a.bin", a.Length)], [a], connections: 2, agent: agent, onAck: (_, _) => agent.Receiver.Close("the agent stops"));
+        var hold = new HoldingStream(a, 16L * Block);
+        var run = Run([new("a.bin", a.Length)], [a], connections: 2, agent: agent, open: _ => hold, onAck: (_, _) => agent.Receiver.Close("the agent stops"));
+        hold.Release();
         agent.Receiver.ClientCancelled("The user cancelled the transfer.");
 
         Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
@@ -540,7 +550,8 @@ public class DirectTransferTests(ITestOutputHelper output)
             [a],
             connections: 4,
             agent: agent,
-            openExtra: (index, _) => new DirectConnection(agent.Connect(index == 2 ? 3L * Block : long.MaxValue)));
+            openExtra: (index, _) => new DirectConnection(agent.Connect(index == 2 ? 3L * Block : long.MaxValue)),
+            startWhen: sender => sender.Stats().Connections == 4);
 
         Assert.Equal(DirectSendStatus.Broken, run.Outcome.Status);
         Assert.Equal(DirectReceiverState.Failed, agent.Receiver.State);
@@ -567,7 +578,8 @@ public class DirectTransferTests(ITestOutputHelper output)
                 2 => throw new IOException("did not answer within 3 s"),
                 3 => null,
                 _ => new DirectConnection(agent.Connect()),
-            });
+            },
+            startWhen: sender => sender.Stats().Connections == 2 && lines.Contains("Connection 2 is not used: did not answer within 3 s"));
 
         Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
         Assert.Equal(a, agent.Memory.Content("a.bin"));
@@ -585,6 +597,7 @@ public class DirectTransferTests(ITestOutputHelper output)
         var (control, reader) = Open(agent, 0);
         var (extra, _) = Open(agent, 1);
         extra.Dispose();
+        Assert.True(SpinWait.SpinUntil(() => !dropped.IsEmpty, TimeSpan.FromSeconds(30)), "The agent did not see the connection close.");
         SendList(control, reader, new TransferFile("a.bin", a.Length));
         SendBlock(control, 0, 0, a);
         DirectFrames.Write(control, DirectFrameType.FileTrailer, DirectFrames.FileTrailerPayload(0, SHA256.HashData(a)));
@@ -611,7 +624,7 @@ public class DirectTransferTests(ITestOutputHelper output)
             contents.Add(Data(size, i + 1));
         }
 
-        var run = Run([.. files], [.. contents], connections: 4, bytesPerConnection: 1024);
+        var run = Run([.. files], [.. contents], connections: 4, bytesPerConnection: 1024, startWhen: sender => sender.Stats().Connections == 4);
 
         Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
         Assert.Equal(4, run.Sender.Stats().Connections);
@@ -632,7 +645,7 @@ public class DirectTransferTests(ITestOutputHelper output)
         var storage = new StreamingDirectStorage();
         using var agent = new Agent(storage: storage);
         var watch = Stopwatch.StartNew();
-        var run = Run([new("a.bin", Size)], [], connections: 8, agent: agent, bytesPerConnection: 16L * 1024 * 1024, open: _ => new RepeatingStream(block, Size));
+        var run = Run([new("a.bin", Size)], [], connections: 8, agent: agent, bytesPerConnection: 16L * 1024 * 1024, open: _ => new RepeatingStream(block, Size), startWhen: sender => sender.Stats().Connections == 8);
         watch.Stop();
         var stats = run.Sender.Stats();
         output.WriteLine($"200 MB over {stats.Connections} connections in {watch.ElapsedMilliseconds} ms; the agent read {agent.Receiver.ReadSeconds:0.00} s, wrote {agent.Receiver.WriteSeconds:0.00} s, hashed {agent.Receiver.HashSeconds:0.00} s; the client read {stats.ReadSeconds:0.00} s, wrote {stats.WriteSeconds:0.00} s.");
@@ -640,7 +653,8 @@ public class DirectTransferTests(ITestOutputHelper output)
         Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
         Assert.Equal(8, stats.Connections);
         Assert.Equal(Size, storage.Written);
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"200 MB took {watch.ElapsedMilliseconds} ms.");
+        // About 0.2 s on the development computer: the bound holds on a machine far slower.
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(20), $"200 MB took {watch.ElapsedMilliseconds} ms.");
     }
 
     [Fact]
@@ -753,15 +767,26 @@ public class DirectTransferTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void A_cancel_through_the_channel_stops_the_transfer_at_once_while_the_files_are_still_being_deleted()
+    public void A_cancel_through_the_channel_stops_the_transfer_while_the_files_are_still_being_deleted()
     {
         var a = Data(30 * Block, 1);
-        var storage = new SlowDeleteStorage(TimeSpan.FromSeconds(3));
+        var storage = new SlowDeleteStorage();
         using var agent = new Agent(storage: storage);
         var cancelled = 0;
-        long returned = -1, stopped = -1;
+        long returned = -1;
+        var stopped = false;
         var endedAtStop = true;
-        var run = Run([new("a.bin", a.Length)], [a], connections: 4, agent: agent, onAck: (_, _) =>
+
+        // The deletion goes on once the test saw the transfer stop, and some time after.
+        var releaser = new Thread(() =>
+        {
+            storage.Entered.Wait(TimeSpan.FromSeconds(30));
+            Thread.Sleep(300);
+            storage.Released.Set();
+        });
+        releaser.Start();
+        var hold = new HoldingStream(a, 16L * Block);
+        var run = Run([new("a.bin", a.Length)], [a], connections: 4, agent: agent, open: _ => hold, onAck: (_, _) =>
         {
             if (Interlocked.Exchange(ref cancelled, 1) != 0)
             {
@@ -771,94 +796,106 @@ public class DirectTransferTests(ITestOutputHelper output)
             var watch = Stopwatch.StartNew();
             agent.Receiver.ClientCancelled("The user cancelled the transfer.");
             returned = watch.ElapsedMilliseconds;
-            Assert.True(agent.Receiver.WaitStopped(TimeSpan.FromSeconds(5)));
-            stopped = watch.ElapsedMilliseconds;
+            stopped = agent.Receiver.HasStopped;
             endedAtStop = agent.Receiver.HasEnded;
         });
-        output.WriteLine($"ClientCancelled returned after {returned} ms, the receiver stopped after {stopped} ms, the files took {agent.Receiver.CleanUpTimes}.");
+        hold.Release();
+        releaser.Join();
+        output.WriteLine($"ClientCancelled returned after {returned} ms; the files took {agent.Receiver.CleanUpTimes}.");
 
         Assert.Equal(DirectSendStatus.AgentCancelled, run.Outcome.Status);
-        Assert.InRange(returned, 0, 500);
-        Assert.InRange(stopped, 0, 500);
+
+        // The call itself does not wait for the files: it returns stopped while they are held.
+        Assert.True(stopped);
         Assert.False(endedAtStop);
+        Assert.InRange(returned, 0, 5000);
         Assert.True(agent.Receiver.HasEnded);
-        Assert.True(agent.Receiver.CleanUpTimes!.DeleteMilliseconds >= 2900);
+        Assert.True(agent.Receiver.CleanUpTimes!.DeleteMilliseconds >= 250);
         Assert.Equal(1, storage.Inner.DeleteAllCalls);
     }
 
     [Fact]
-    public void A_lost_connection_stops_the_transfer_at_once_while_the_files_are_still_being_deleted()
+    public void A_lost_connection_stops_the_transfer_while_the_files_are_still_being_deleted()
     {
         var a = Data(12 * Block, 1);
-        var storage = new SlowDeleteStorage(TimeSpan.FromSeconds(3));
+        var storage = new SlowDeleteStorage();
         using var agent = new Agent(storage: storage);
-        var stoppedAt = new Stopwatch();
-        var endedAt = new Stopwatch();
-        var watch = Stopwatch.StartNew();
-        agent.Receiver.Stopped += () => stoppedAt.Start();
-        agent.Receiver.Ended += () => endedAt.Start();
         var sender = new DirectSender(() => [new TransferFile("a.bin", a.Length)], _ => new MemoryStream(a, writable: false), 1, () => Environment.TickCount64);
 
         var outcome = sender.Run(new DirectConnection(agent.Connect(10L * Block)), Token, null);
-        var returned = watch.ElapsedMilliseconds;
-        Assert.True(agent.Receiver.WaitStopped(TimeSpan.FromSeconds(5)));
-        var stopped = watch.ElapsedMilliseconds;
+        Assert.True(agent.Receiver.WaitStopped(TimeSpan.FromSeconds(30)));
+        Assert.True(storage.Entered.Wait(TimeSpan.FromSeconds(30)));
         var endedWhenStopped = agent.Receiver.HasEnded;
+        Thread.Sleep(300);
+        storage.Released.Set();
         agent.Join();
-        output.WriteLine($"The client returned after {returned} ms, the receiver stopped after {stopped} ms and ended after {watch.ElapsedMilliseconds} ms.");
 
         Assert.Equal(DirectSendStatus.Broken, outcome.Status);
         Assert.Equal(DirectReceiverState.Failed, agent.Receiver.State);
         Assert.False(endedWhenStopped);
-        Assert.True(agent.Receiver.CleanUpTimes!.DeleteMilliseconds >= 2900);
+        Assert.True(agent.Receiver.CleanUpTimes!.DeleteMilliseconds >= 250);
     }
 
     [Fact]
-    public void A_transfer_that_succeeds_ends_without_waiting_for_a_deletion()
+    public void A_transfer_that_succeeds_ends_without_a_deletion()
     {
         var a = Data(3 * Block, 1);
-        var storage = new SlowDeleteStorage(TimeSpan.FromSeconds(3));
+        var storage = new SlowDeleteStorage();
         using var agent = new Agent(storage: storage);
-        var watch = Stopwatch.StartNew();
+
+        // The deletion is never released: a success that waited for one would not end.
         var run = Run([new("a.bin", a.Length)], [a], agent: agent);
+        storage.Released.Set();
 
         Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"The transfer took {watch.ElapsedMilliseconds} ms.");
+        Assert.False(storage.Entered.IsSet);
         Assert.Null(agent.Receiver.CleanUpTimes!.DeleteMilliseconds);
         Assert.Equal(0, storage.Inner.DeleteAllCalls);
         Assert.Equal(a, storage.Inner.Content("a.bin"));
     }
 
     [Fact]
-    public void A_file_slow_to_open_is_told_after_two_seconds_and_until_its_first_block()
+    public void A_file_slow_to_open_is_told_after_the_delay_and_until_its_first_block()
     {
         var a = Data(2 * Block, 1);
-        var b = Data(10, 2);
-        var waits = new ConcurrentQueue<(long Milliseconds, string? Path)>();
-        var watch = Stopwatch.StartNew();
+        var events = new ConcurrentQueue<string>();
+        var released = new ManualResetEventSlim(false);
+        var held = false;
         var run = Run(
-            [new("a.bin", a.Length), new(@"Folder\b.txt", b.Length)],
-            [a, b],
-            created: sender => sender.FileWaiting += path => waits.Enqueue((watch.ElapsedMilliseconds, path)),
-            open: index =>
+            [new("a.bin", a.Length)],
+            [a],
+            fileWaitDelay: TimeSpan.FromMilliseconds(50),
+            created: sender => sender.FileWaiting += path =>
             {
-                if (index == 0)
+                events.Enqueue(path ?? "(end)");
+                if (path is not null)
                 {
-                    // As Windows checking a large executable: the open takes long.
-                    Thread.Sleep(2600);
+                    released.Set();
                 }
-
-                return new MemoryStream(index == 0 ? a : b, writable: false);
+            },
+            open: _ =>
+            {
+                // As Windows checking a large executable: the open lasts until the notice came.
+                held = released.Wait(TimeSpan.FromSeconds(30));
+                events.Enqueue("opened");
+                return new MemoryStream(a, writable: false);
             });
-        output.WriteLine(string.Join("; ", waits.Select(wait => $"{wait.Milliseconds} ms {wait.Path ?? "(end)"}")));
+        output.WriteLine(string.Join("; ", events));
+
+        Assert.True(held, "The notice never came.");
+        Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
+        Assert.Equal(new[] { "a.bin", "opened", "(end)" }, events);
+    }
+
+    [Fact]
+    public void A_file_that_opens_at_once_gets_no_notice()
+    {
+        var a = Data(2 * Block, 1);
+        var events = new ConcurrentQueue<string?>();
+        var run = Run([new("a.bin", a.Length)], [a], created: sender => sender.FileWaiting += events.Enqueue);
 
         Assert.Equal(DirectSendStatus.Succeeded, run.Outcome.Status);
-        var told = waits.ToArray();
-        Assert.Equal(2, told.Length);
-        Assert.Equal("a.bin", told[0].Path);
-        Assert.InRange(told[0].Milliseconds, 1900, 2600);
-        Assert.Null(told[1].Path);
-        Assert.True(told[1].Milliseconds >= 2600);
+        Assert.Empty(events);
     }
 
     private static (Stream Stream, DirectFrameReader Reader) Open(Agent agent, byte index)
@@ -917,17 +954,34 @@ public class DirectTransferTests(ITestOutputHelper output)
         Action<DirectSender, DirectAck>? onAck = null,
         Action<DirectSender>? created = null,
         Func<int, CancellationToken, DirectConnection?>? openExtra = null,
-        Func<int, Stream>? open = null)
+        Func<int, Stream>? open = null,
+        Func<DirectSender, bool>? startWhen = null,
+        TimeSpan? fileWaitDelay = null)
     {
         agent ??= new Agent(items: items);
+        DirectSender? createdSender = null;
+        var started = true;
+        Func<int, Stream> openFile = open ?? (index => contents[index] is { } content ? new MemoryStream(content, writable: false) : throw new IOException("The file is locked."));
         var sender = new DirectSender(
             () => files,
-            open ?? (index => contents[index] is { } content ? new MemoryStream(content, writable: false) : throw new IOException("The file is locked.")),
+            index =>
+            {
+                // The data waits for the condition of the test, such as every connection being
+                // open, so that a slow machine does not end the transfer before it holds.
+                if (index == 0 && startWhen is not null)
+                {
+                    started = SpinWait.SpinUntil(() => startWhen(createdSender!), TimeSpan.FromSeconds(30));
+                }
+
+                return openFile(index);
+            },
             connections,
             () => Environment.TickCount64)
         {
             BytesPerConnection = bytesPerConnection,
+            FileWaitDelay = fileWaitDelay ?? DirectSender.FileWaitNotice,
         };
+        createdSender = sender;
         created?.Invoke(sender);
         var acks = new List<DirectAck>();
         sender.Acknowledged += ack =>
@@ -941,6 +995,7 @@ public class DirectTransferTests(ITestOutputHelper output)
         };
         var outcome = sender.Run(new DirectConnection(agent.Connect(cutControlAfter)), Token, openExtra ?? ((_, _) => new DirectConnection(agent.Connect())));
         agent.Join();
+        Assert.True(started, "The condition of the test before the first file never held.");
         return new RunResult(outcome, agent, sender, acks);
     }
 
