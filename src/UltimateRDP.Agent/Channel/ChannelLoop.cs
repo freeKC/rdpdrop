@@ -350,6 +350,19 @@ internal sealed class ChannelLoop : IDisposable
     /// </summary>
     private void ReportFailure(ChannelAttempt attempt)
     {
+        // Error 50 (not supported): the client of the session does not offer the channel, as the
+        // Windows client does not. Seen in production with mstsc in a RemoteApp session: the agent
+        // stays idle and the session ends as usual. Information, once, not a warning.
+        if (ChannelRetryPolicy.IsNotOffered(attempt))
+        {
+            if (_openFailures.IsNew("open:" + attempt.OpenError))
+            {
+                _logger.Info($"The {ProtocolConstants.ChannelName} virtual channel is not offered in this session ({Describe(attempt)}): "
+                    + "the client of the session is probably not UltimateRDP, for example the Windows client. The agent stays idle and keeps watching.");
+                return;
+            }
+        }
+
         var expected = ChannelRetryPolicy.IsExpected(attempt);
         if (!expected && _openFailures.IsNew("open:" + attempt.OpenError))
         {

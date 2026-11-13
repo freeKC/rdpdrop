@@ -129,8 +129,18 @@ public class ChannelRetryPolicyTests
     [InlineData(true, false, 1168, true)]
     [InlineData(true, false, 5, false)]
     [InlineData(true, false, 87, false)]
+    [InlineData(true, false, 50, true)]
     public void Failures_of_a_session_without_client_are_expected(bool remote, bool disconnected, int error, bool expected)
     {
         Assert.Equal(expected, ChannelRetryPolicy.IsExpected(Attempt(remote, disconnected, error)));
+    }
+
+    [Theory]
+    [InlineData(true, 50, true)]
+    [InlineData(false, 50, false)]
+    [InlineData(true, 1168, false)]
+    public void Error_50_means_the_client_of_the_session_does_not_offer_the_channel(bool remote, int error, bool notOffered)
+    {
+        Assert.Equal(notOffered, ChannelRetryPolicy.IsNotOffered(Attempt(remote, false, error)));
     }
 }

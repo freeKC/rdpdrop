@@ -53,12 +53,21 @@ public static class ChannelRetryPolicy
     /// <summary>True when the open failed because the channel does not exist in the session.</summary>
     public static bool IsNotFound(int error) => error is ErrorFileNotFound or ErrorNotFound;
 
+    /// <summary>ERROR_NOT_SUPPORTED: the client of the session does not offer the channel, as the Windows client does not.</summary>
+    public const int ErrorNotSupported = 50;
+
+    /// <summary>
+    /// True when the client of the session does not offer the channel, since 0.10.0: seen in
+    /// production with the Windows client in a RemoteApp session.
+    /// </summary>
+    public static bool IsNotOffered(ChannelAttempt attempt) => attempt.IsRemoteSession && attempt.OpenError == ErrorNotSupported;
+
     /// <summary>
     /// True when the failure is the normal state of a session without an UltimateRDP
     /// client, and so not worth a warning in the log.
     /// </summary>
     public static bool IsExpected(ChannelAttempt attempt) =>
-        !attempt.IsRemoteSession || attempt.IsSessionDisconnected || IsNotFound(attempt.OpenError);
+        !attempt.IsRemoteSession || attempt.IsSessionDisconnected || IsNotFound(attempt.OpenError) || IsNotOffered(attempt);
 
     /// <summary>The wait before the next attempt.</summary>
     public static TimeSpan NextDelay(ChannelAttempt attempt)
