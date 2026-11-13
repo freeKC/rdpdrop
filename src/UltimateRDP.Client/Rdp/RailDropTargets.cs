@@ -178,6 +178,17 @@ internal static class RailDropTargets
         return Windows.Values.Count(window => Resolve(window) == session && NativeMethods.IsWindowVisible(window.Hwnd));
     }
 
+    /// <summary>
+    /// True when a visible window of a program may belong to <paramref name="session"/>: one
+    /// known to be its own, or one whose session is not known, which happens with several
+    /// RemoteApp sessions when the control does not raise OnRemoteWindowDisplayed.
+    /// </summary>
+    public static bool HasVisibleWindowFor(IRailSession session)
+    {
+        Prune();
+        return Windows.Values.Any(window => NativeMethods.IsWindowVisible(window.Hwnd) && Resolve(window) is var owner && (owner == session || owner is null));
+    }
+
     /// <summary>The window of a RemoteApp session under <paramref name="screenPoint"/>, or IntPtr.Zero.</summary>
     public static IntPtr WindowAt(Point screenPoint)
     {

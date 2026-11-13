@@ -169,10 +169,39 @@ internal sealed partial class SessionView : IRailSession
 
     private void OnRailWindowsChanged()
     {
-        if (!IsDisposed)
+        if (IsDisposed)
         {
-            UpdatePanel();
+            return;
         }
+
+        // The control of some versions never raises OnRemoteWindowDisplayed: the windows found
+        // by the hook and the scan then tell that the program appeared.
+        if (_remoteAppLoggedOn && !_remoteWindowShown && RailDropTargets.HasVisibleWindowFor(this))
+        {
+            OnFirstProgramWindow("a window found in the process");
+        }
+
+        UpdatePanel();
+    }
+
+    /// <summary>The first window of the program of this connection appeared: the start is over.</summary>
+    private void OnFirstProgramWindow(string source)
+    {
+        if (_remoteWindowShown)
+        {
+            return;
+        }
+
+        _remoteWindowShown = true;
+        _start.OnWindow();
+        _startTimer.Stop();
+        ClientLog.Info($"RemoteApp ({Host}): the first window of the program appeared, seen by {source}.");
+        LogMonitorLayout("first window");
+        LogProcessWindows("first window of the program");
+        LogMemory("first window");
+        _memoryTimer.Stop();
+        _memoryTimer.Start();
+        RemoteProgramShown?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnRemoteAppConnected()
@@ -274,15 +303,7 @@ internal sealed partial class SessionView : IRailSession
 
         if (displayed && !_remoteWindowShown && hwnd != IntPtr.Zero && RailDropTargets.IsProgramWindow(hwnd))
         {
-            _start.OnWindow();
-            _startTimer.Stop();
-            _remoteWindowShown = true;
-            LogMonitorLayout("first window");
-            LogProcessWindows("first window of the program");
-            LogMemory("first window");
-            _memoryTimer.Stop();
-            _memoryTimer.Start();
-            RemoteProgramShown?.Invoke(this, EventArgs.Empty);
+            OnFirstProgramWindow("the event of the control");
         }
 
         UpdatePanel();
