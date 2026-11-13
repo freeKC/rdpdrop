@@ -55,8 +55,9 @@ internal sealed partial class MainForm : Form
     /// <paramref name="startHidden"/> the window starts out of sight, with a notification
     /// icon; <paramref name="askCredentials"/> asks for the password in the first tab.
     /// </summary>
-    public MainForm(string? initialPath, ClientSettings settings, bool startHidden = false, bool askCredentials = false)
+    public MainForm(string? initialPath, ClientSettings settings, bool startHidden = false, bool askCredentials = false, Loader.LoaderForm? startupLoader = null)
     {
+        _startupLoader = startupLoader;
         _initialPath = initialPath;
         _initialAskCredentials = askCredentials;
         _settings = settings;
@@ -207,10 +208,7 @@ internal sealed partial class MainForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         ClientLog.Info("Form closed.");
-        foreach (var session in _connecting.Keys.ToList())
-        {
-            CloseConnecting(session);
-        }
+        FinishLoaders("the window closed");
 
         _tray?.Dispose();
         _tray = null;
@@ -255,6 +253,7 @@ internal sealed partial class MainForm : Form
 
     private void OnShown()
     {
+        PlaceLoaders();
         if (_initialPath is not null)
         {
             OpenSession(_initialPath, _initialAskCredentials);
@@ -277,6 +276,8 @@ internal sealed partial class MainForm : Form
         if (!RdpFileLoader.TryLoad(path, out var fullPath, out var file, out var error))
         {
             _recent.Remove(path);
+            _startupLoader?.Finish("the .rdp file cannot be read");
+            _startupLoader = null;
             MessageBox.Show(DialogOwner, error.ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
             ExitIfIdle();
             return;
@@ -301,7 +302,7 @@ internal sealed partial class MainForm : Form
         OnSessionStateChanged(session);
         ClientLog.Info($"Tab opened for {session.Host}, {_tabs.TabCount} tab(s).");
 
-        ShowConnecting(session);
+        AttachLoader(session);
         _tray?.UpdateText();
 
         // Connect once the tab has its final size: the desktop size comes from it.
@@ -406,7 +407,7 @@ internal sealed partial class MainForm : Form
         }
 
         _tabs.TabPages.Remove(page);
-        CloseConnecting(session);
+        FinishLoader(session, "the tab closed");
         _wasConnected.Remove(session);
         page.Dispose();
         ClientLog.Info($"Tab closed for {session.Host}, {_tabs.TabCount} tab(s) left.");
@@ -435,6 +436,7 @@ internal sealed partial class MainForm : Form
 
     private void OnSessionStateChanged(SessionView session)
     {
+        OnSessionStateForLoader(session);
         OnSessionStateForTray(session);
         if (session.Parent is TabPage page)
         {

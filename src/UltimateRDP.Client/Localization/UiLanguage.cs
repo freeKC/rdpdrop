@@ -41,13 +41,16 @@ internal static class UiLanguage
     /// Sets the user interface language of this thread and of the threads started later
     /// for <paramref name="choice"/>. Texts read after this call use the new language.
     /// </summary>
-    public static void Apply(string? choice)
+    public static void Apply(string? choice, bool log = true)
     {
         var code = UiLanguages.Resolve(choice, WindowsCulture.TwoLetterISOLanguageName);
         var culture = CultureInfo.GetCultureInfo(code);
         CultureInfo.CurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
         CurrentCode = code;
-        ClientLog.Info($"User interface language: {code} (choice {UiLanguages.NormalizeChoice(choice)}, Windows display language {WindowsCulture.Name}).");
+        if (log)
+        {
+            ClientLog.Info($"User interface language: {code} (choice {UiLanguages.NormalizeChoice(choice)}, Windows display language {WindowsCulture.Name}).");
+        }
     }
 }

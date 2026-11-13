@@ -103,6 +103,12 @@ internal sealed partial class SessionView : UserControl
     /// <summary>Raised when <see cref="State"/> or anything shown in the menus changes.</summary>
     public event EventHandler? StateChanged;
 
+    /// <summary>Raised at OnConnected, since 0.9.3, for the loader.</summary>
+    public event EventHandler? ConnectedToServer;
+
+    /// <summary>Raised at OnLoginComplete, since 0.9.3, for the loader.</summary>
+    public event EventHandler? LoggedOn;
+
     /// <summary>Raised when <see cref="ConnectionText"/> changes.</summary>
     public event EventHandler? ConnectionTextChanged;
 
@@ -363,6 +369,7 @@ internal sealed partial class SessionView : UserControl
         }
 
         _agent.Start();
+        ConnectedToServer?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnRdpLoginComplete()
@@ -378,6 +385,7 @@ internal sealed partial class SessionView : UserControl
         }
 
         _agent.RestartDiscovery("logged on");
+        LoggedOn?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnRdpDisconnected(int reason)

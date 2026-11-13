@@ -1,3 +1,5 @@
+using System.Globalization;
+using UltimateRDP.Client.Loader;
 using UltimateRDP.Client.Localization;
 using UltimateRDP.Client.Logging;
 using UltimateRDP.Client.Resources;
@@ -27,7 +29,46 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) => ReportUnhandled(e.ExceptionObject as Exception);
 
         ApplicationConfiguration.Initialize();
+
+        // Development aid: previews of the loader as PNG files, without any window.
+        if (args is [LoaderPreview.Switch, var previewFolder])
+        {
+            return LoaderPreview.Render(previewFolder);
+        }
+
+        // Before anything slower: the two settings the loader needs, the single instance, then
+        // the loader itself, so that something shows at once after a click on a shortcut.
+        var early = ReadEarlySettings();
+        UiLanguage.Apply(early.Language, log: false);
+        var options = LaunchOptions.Parse(args);
+        var path = options.Error is null && options.Path is { } given ? FullPath(given) : null;
+
+        // One client per user and session: a second start hands its file to the first one,
+        // which shows the loader of the new session itself.
+        MainForm? form = null;
+        using var formReady = new ManualResetEventSlim(false);
+        var pipe = args is [DropProgressDemo.Switch] || options.Error is not null
+            ? null
+            : SameUserPipe.TryStart(PipePurpose, request => OnOpenRequest(request, () => form, formReady), line => ClientLog.Info(line));
+        if (pipe is null && options.Error is null && args is not [DropProgressDemo.Switch] && HandOff(path, options))
+        {
+            return 0;
+        }
+
+        LoaderForm? loader = null;
+        long? loaderMilliseconds = null;
+        if (early.Loader && path is not null)
+        {
+            loader = new LoaderForm("the start");
+            loader.ShowNow();
+            loaderMilliseconds = MillisecondsSinceProcessStart();
+        }
+
         ClientLog.Info($"UltimateRDP client {AppInfo.Version} starting, arguments: {string.Join(' ', args)}");
+        if (loaderMilliseconds is { } shown)
+        {
+            ClientLog.Info(string.Create(CultureInfo.InvariantCulture, $"Loader shown {shown} ms after the process started."));
+        }
 
         // The language comes first: the open dialog below already shows texts.
         var settings = ClientSettings.Load(ClientSettings.DefaultPath);
@@ -44,23 +85,11 @@ internal static class Program
             return 0;
         }
 
-        var options = LaunchOptions.Parse(args);
         if (options.Error is { } error)
         {
             ClientLog.Warn($"Command line refused: {error}");
             MessageBox.Show(LocalText.Of(nameof(Strings.CommandLineError), error).ToString(), AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 2;
-        }
-
-        var path = options.Path is { } given ? FullPath(given) : null;
-
-        // One client per user and session: a second start hands its file to the first one.
-        MainForm? form = null;
-        using var formReady = new ManualResetEventSlim(false);
-        var pipe = SameUserPipe.TryStart(PipePurpose, request => OnOpenRequest(request, () => form, formReady), line => ClientLog.Info(line));
-        if (pipe is null && HandOff(path, options))
-        {
-            return 0;
         }
 
         using (pipe)
@@ -73,8 +102,14 @@ internal static class Program
                 ClientLog.Info("No .rdp file chosen, the window opens empty.");
             }
 
-            var hidden = path is not null && options.StartsHidden(MainForm.IsRemoteAppFile(path));
-            form = new MainForm(path, settings, hidden, options.AskCredentials);
+            var described = path is null ? null : MainForm.DescribeFile(path);
+            if (described is { } what)
+            {
+                loader?.FileRead(what.Server, what.Program);
+            }
+
+            var hidden = path is not null && options.StartsHidden(described?.Program is not null);
+            form = new MainForm(path, settings, hidden, options.AskCredentials, loader);
             form.HandleCreated += (_, _) => formReady.Set();
             Application.Run(form);
             formReady.Reset();
@@ -82,6 +117,25 @@ internal static class Program
 
         ClientLog.Info("UltimateRDP client stopped.");
         return 0;
+    }
+
+    /// <summary>The settings the loader needs, read from client.json without its full reader; the defaults when it cannot be read.</summary>
+    private static (bool Loader, string? Language) ReadEarlySettings()
+    {
+        try
+        {
+            return File.Exists(ClientSettings.DefaultPath) ? LoaderRules.ReadEarlySettings(File.ReadAllBytes(ClientSettings.DefaultPath)) : (true, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (true, null);
+        }
+    }
+
+    private static long MillisecondsSinceProcessStart()
+    {
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        return (long)(DateTime.Now - process.StartTime).TotalMilliseconds;
     }
 
     private static string FullPath(string path)

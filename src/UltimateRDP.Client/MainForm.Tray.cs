@@ -11,8 +11,8 @@ namespace UltimateRDP.Client;
 
 /// <summary>
 /// The main window kept out of sight, since 0.9.0: a RemoteApp program started from a .bat
-/// file or a shortcut shows only its own windows, with a notification icon, a small
-/// "Connecting to..." window until its first window appears, and the process exits by itself
+/// file or a shortcut shows only its own windows, with a notification icon, a loader until
+/// its first window appears (<see cref="Loader.LoaderForm"/>), and the process exits by itself
 /// once its last session ended.
 /// </summary>
 /// <remarks>
@@ -34,7 +34,6 @@ internal sealed partial class MainForm
     /// <summary>Where the form waits out of sight: outside every monitor, as Windows puts minimized windows.</summary>
     private static readonly Point OffScreen = new(-32000, -32000);
 
-    private readonly Dictionary<SessionView, ConnectingForm> _connecting = [];
     private readonly HashSet<SessionView> _wasConnected = [];
     private ClientTray? _tray;
     private bool _offScreen;
@@ -62,6 +61,12 @@ internal sealed partial class MainForm
 
     /// <summary>True while the window takes the files of a second start: not once it closes.</summary>
     public bool AcceptsRequests => !_closeRequested && !_exitRequested && !IsDisposed;
+
+    /// <summary>The host and the RemoteApp program of a .rdp file, for the loader; null when the file cannot be read.</summary>
+    public static (string Server, string? Program)? DescribeFile(string path) =>
+        RdpFileLoader.TryLoad(path, out _, out var file, out _)
+            ? (RdpAddress.Split(file.FullAddress ?? string.Empty).Host, RemoteAppLaunch.FromFile(file, out _)?.DisplayName)
+            : null;
 
     /// <summary>True when <paramref name="path"/> is a .rdp file that runs a RemoteApp program.</summary>
     public static bool IsRemoteAppFile(string path) =>
@@ -143,6 +148,7 @@ internal sealed partial class MainForm
         }
 
         Activate();
+        PlaceLoaders();
     }
 
     /// <summary>Puts the main window out of sight again, while RemoteApp programs run.</summary>
@@ -164,6 +170,7 @@ internal sealed partial class MainForm
         NativeMethods.ChangeExStyle(Handle, NativeMethods.ExToolWindow, NativeMethods.ExAppWindow);
         Bounds = new Rectangle(OffScreen, Size);
         NativeMethods.ShowWindow(Handle, NativeMethods.SwShowNoActivate);
+        PlaceLoaders();
     }
 
     /// <summary>
@@ -199,35 +206,6 @@ internal sealed partial class MainForm
         Close();
     }
 
-    /// <summary>A RemoteApp program opens out of sight: the small window says so until its first window.</summary>
-    private void ShowConnecting(SessionView session)
-    {
-        if (!_offScreen || !session.IsRemoteApp || _connecting.ContainsKey(session))
-        {
-            return;
-        }
-
-        var form = new ConnectingForm(session.RemoteAppName ?? session.Host);
-        form.CancelRequested += (_, _) =>
-        {
-            ClientLog.Info($"Connecting window of {session.Title}: Cancel.");
-            CloseConnecting(session);
-            session.BeginClose();
-        };
-        _connecting[session] = form;
-        session.RemoteProgramShown += (_, _) => CloseConnecting(session);
-        form.Show();
-    }
-
-    private void CloseConnecting(SessionView session)
-    {
-        if (_connecting.Remove(session, out var form) && !form.IsDisposed)
-        {
-            form.Close();
-            form.Dispose();
-        }
-    }
-
     /// <summary>
     /// Follows the end of each connection out of sight: a desktop that ended on purpose closes
     /// its tab, an end that was not on purpose shows a message, and a connection that failed
@@ -246,7 +224,7 @@ internal sealed partial class MainForm
         {
             // The control refused the connection before it started: nothing would come.
             session.ConnectFailed = false;
-            CloseConnecting(session);
+            FinishLoader(session, "the session ended");
             BeginInvoke(() => ShowEndMessage(session));
             return;
         }
@@ -256,7 +234,7 @@ internal sealed partial class MainForm
             return;
         }
 
-        CloseConnecting(session);
+        FinishLoader(session, "the session ended");
         if (_tray is null || !_offScreen || _closeRequested || session.IsClosing)
         {
             return;
