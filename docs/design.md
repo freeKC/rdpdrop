@@ -1,6 +1,6 @@
 # UltimateRDP design
 
-Date: 2026-11-05, updated on 2026-11-13 for version 0.8.0.
+Date: 2026-11-05, updated on 2026-11-13 for version 0.9.0.
 
 ## Goal
 
@@ -17,12 +17,16 @@ the channel as the fallback; see "Version 0.6". Since version 0.7, that
 connection is several TCP connections at once; see "Version 0.7", and
 "Version 0.7.1" for its release after a cancel. Since version 0.8, the
 client also opens RemoteApp programs and takes drops on their windows; see
-"Version 0.8".
+"Version 0.8". Since version 0.9, the session can send files to the client
+computer through the same direct connection, a RemoteApp program opens from a
+shortcut with only its own windows on the screen, and the client can be told to
+ask for the password; see "Version 0.9".
 
 Scope:
 
-* Direction: local computer to remote session only. The other direction keeps
-  using copy and paste.
+* Direction: local computer to remote session for the drop. Since 0.9 the
+  session sends files to the client computer with the Send To menu, the tray
+  menu or `--send`, through the direct connection only.
 * Client: Windows 10 or 11, 64 bit. A single portable executable, nothing to
   install, nothing written to the registry.
 * Server: Windows Server (2016 or later) or Windows 10/11 acting as a Remote
@@ -3298,3 +3302,387 @@ RemoteApp tabs, but the agent replays a drag with its proxy over the whole scree
 server shows on the client, and its RemoteApp session never ends by itself: an agent 0.7.0
 must therefore not be started in RemoteApp sessions. The direct connection keeps version 2 of
 0.7.0.
+
+## Version 0.9
+
+Decided on 2026-11-13, after the first real run of 0.8.0 with a published Notepad and the
+first production use of the direct connection. Three parts: files sent from the session to the
+client computer at the rate of the direct connection; a RemoteApp program opened from a shortcut
+with only its own windows on the screen; and an option that makes the client ask for the
+password. In this section MB means a million bytes, as in the sections of 0.6 and 0.7.
+
+### Files from the session to the client
+
+The owner asked for the other direction with the throughput of the first one: 255 to 296 MB/s
+were measured from the client computer to the server over 8 connections. A drag from the session
+onto the client desktop is not possible with RDP, and the owner accepted another gesture. The
+direct connection of 0.7 carries the files, with its roles reversed; the channel only carries
+the offer and its answers. There is no slower path: the channel of 0.5.2 carries 2 to 4 MB/s,
+and drive redirection already lets the user copy files to `\\tsclient` by hand.
+
+#### The gestures
+
+All three run in the session, as the session user, through the agent of that session:
+
+* **Send To.** While a client that receives files is connected, the agent keeps a shortcut "My
+  PC (UltimateRDP)", in the language of the session, in the Send To folder of the user. It runs
+  `UltimateRDP.Agent.exe --send` with the selected files and folders.
+* **The tray menu.** "Send files to my PC..." opens a file dialog and sends the chosen files. It
+  is enabled only while a client that receives files is connected. The tray icon never shows in
+  a RemoteApp session, so this entry exists in desktop sessions only.
+* **`UltimateRDP.Agent.exe --send <paths>`.** The copy started with `--send` hands the full
+  paths to the agent of its session through a named pipe, waits for its answer and exits. A
+  refusal is shown in a message box, in the language of the session; a success shows nothing in
+  the session, since the progress shows on the client.
+
+The Send To folder belongs to the user, not to the session: the agents of one user in a desktop
+session and in a RemoteApp session share it. Each agent that wants the shortcut writes a claim,
+`%LOCALAPPDATA%\UltimateRDP\sendto-claims\S<session>.claim`, with its process id and start time.
+The shortcut goes when the last claim of a running agent goes: when the client leaves, when its
+hello says that it does not receive files, and when the agent exits. At its start an agent
+removes the claims of agents that are gone, and the shortcut in any of the seven languages when
+no live claim is left (`SendToClient.AllShortcutNames` in Core). In a session of the same user
+without a client, the shortcut may then still be in the menu; using it says that no client that
+receives files is connected.
+
+#### The pipe between the processes of one session
+
+`SameUserPipe` in Core: a named pipe whose name holds a purpose, the SID of the user and the
+session id, `UltimateRDP.AgentSend.<SID>.S<session>` for the agent. The server is created with
+`PipeOptions.CurrentUserOnly`, which gives it an access list with the current user only, as the
+first and only instance of its name, so that a process that took the name first is refused
+rather than mistaken for the server. It refuses a client whose session
+(`GetNamedPipeClientSessionId`) is not its own. The client also uses `CurrentUserOnly`, which
+checks that the owner of the server is the same user, and checks the session of the server
+(`GetNamedPipeServerSessionId`). One request and one answer per connection, each a length of 4
+bytes and at most 4 MiB of JSON (`LocalMessages`): a request names 1 to 10 000 full paths without
+control characters, `\\.\` and `\\?\` paths refused. The agent creates the pipe only while a
+client that receives files is connected, together with the shortcut; it waits with asynchronous
+calls, so no thread of its own waits. WM_COPYDATA, the other choice, cannot tell the user of the
+sender, so it was left.
+
+#### The protocol
+
+The hello of the client says `acceptsFiles: true` when the client receives files: its settings
+`receiveFiles` and `directTransfer` are both `auto`. Only then does the agent create the
+shortcut and accept a request.
+
+```
+agent:  {"type":"sendOffer","id":"<32 hex digits>","files":3,"bytes":123456,"firstItem":"report.pdf","items":[{"name":"report.pdf","isDirectory":false},{"name":"Photos","isDirectory":true}],"direct":{"port":3400,"token":"<64 hex digits>","certSha256":"<64 hex digits>","host":"<address>","version":2,"connections":8}}
+client: {"type":"sendAck","id":"<id>","accepted":true}
+client: {"type":"sendAck","id":"<id>","accepted":false,"message":"<reason in the language of the client>"}
+either: {"type":"sendCancel","id":"<id>","reason":"<English>","notAvailable":true}
+```
+
+The agent checks the request: the setting `sendToClient`, a client that receives files, no
+other direct transfer in the session in either direction, paths that exist, item names that are
+names of files (`TransferPaths.ItemName`, as for a drop) and that differ. It lists the files with
+`TransferListing`, shared with the client since 0.9.0: folders file by file with paths relative
+to the item, hidden and system files included, links to folders skipped. It opens a listener
+(`DirectSendListener`) on the first free port of `directPortRange`, with a new token and the
+certificate of the agent process, sends the sendOffer, and waits 8 seconds at most for the
+sendAck. A refusal of the client comes back to the request with its reason. After an accepted
+sendAck, connection 0 must come within 10 seconds, or the listener closes.
+
+#### The direct connection with reversed roles
+
+The agent still listens and the client still connects, exactly as for a drop: TCP to the host
+of the .rdp file within 3 seconds, then to the address hint, then TLS pinned by the SHA-256 of
+the offer. The token frame of each connection ends with a role byte, 1 for a client that
+receives (`DirectRole.ClientReceives`), and its proof is an HMAC over "UltimateRDP direct v2
+receive" and the index byte instead of "UltimateRDP direct v2", so that a proof of one direction
+is never one of the other. `DirectTokenGate` in Core checks the frames of both directions: the
+version, the role of the offer, the index below the connections of the offer, the proof in
+constant time before anything that depends on the index or the role, connection 0 first, each
+index once. A drop listener refuses a token of the receiving role, and a send listener a token
+of the sending role.
+
+After the ready frame, the frames, the blocks of 1 MiB, the trailers, the acknowledgements, the
+final frame and the verification by SHA-256 are those of 0.7, with the sides swapped: the agent
+runs a `DirectSender` (`RunAccepted` on connection 0, `Attach` for the others) and the client a
+`DirectReceiver` (`Register` then `RunRegistered` for each connection, connection 0 registered
+before the others are opened, so that their order never depends on threads). The client opens
+one connection per started 32 MiB, within the offer and its own `directConnections`, as for a
+drop. `directMaxMegabytesPerSecond` of the agent paces the writers of the sender with the
+`DirectPacer` of 0.7: the outbound link of the server also carries the screens of the other
+sessions.
+
+When connection 0 cannot be made, its handshake fails or its token gets no ready frame, the
+client sends `sendCancel` with `notAvailable: true` and the reason, and its progress window says
+that the files cannot come through the direct connection, that a Remote Desktop Gateway or a
+firewall may block its ports, and that they can be copied in the session to a drive of the
+client under `\\tsclient` instead. The agent logs it as a warning.
+
+#### The client
+
+* The folder for received files is `receiveFolder` of client.json, the Downloads folder of the
+  user (`FOLDERID_Downloads`) when absent; a value that is not a full path gives the default and
+  a warning. The folder is created when missing.
+* The offer is checked by `ReceivePolicy.Check` in Core: receiving on, no other send in the tab,
+  a direct connection of version 2, and the free space of the bytes plus the margin of the
+  staging folder of the agent. A refusal goes back in the sendAck, in the language of the client,
+  and shows in the status bar.
+* The files arrive in a hidden folder `.ultimaterdp-<id>.part` inside the folder for received
+  files (`ReceiveNames.PartFolderName`), through `FolderDirectStorage` in Core, which checks that
+  every full path stays in that folder. `DirectReceiver` checks every relative path with
+  `TransferPaths.IsAllowed`, so that `..`, a drive, a reserved name such as `NUL` or `COM1`, a
+  path outside the items of the offer, or a name twice, fail the transfer with "bad name" and
+  nothing is kept.
+* Every file gets the Mark of the Web once it is checked: a `Zone.Identifier` stream with
+  `ZoneId=3`, the Internet zone, as a browser gives a download, so that SmartScreen and Office
+  treat it as such. On a drive without alternate data streams the files are kept without it,
+  with one warning in the log.
+* Once every file is checked, each item moves into the folder for received files under a name
+  that no file or folder there has yet, "report (2).pdf" or "Photos (2)"
+  (`ReceivePolicy.MoveIn`, `ReceiveNames.Unique`); the part folder is deleted. A failure or a
+  cancel deletes the part folder. A move that fails leaves the files in the part folder, and the
+  window says where.
+* The progress window is the one of a drop, with its own title "Files from the session", the
+  folder as its destination, the file, the rate and the time left, Cancel while it runs, and at
+  the end "Received 3 file(s) in ... at ... MB/s.", where the items are, and Open folder, which
+  starts Explorer with the first item selected. It stays until it is closed. The status bar says
+  "Receiving 3 file(s) from the session: 42 % (85.0 MB/s, 5 s left)".
+* The client never runs anything it received.
+
+#### Security rules of the send
+
+These rules are part of the design, as those of 0.6.
+
+* Only the user of the session can start a send, through the agent of that session: the pipe
+  takes only processes of that user in that session, and the tray menu belongs to the agent.
+* The agent sends only what that user can read, with the rights of the user, and only to the
+  client of its own session, after that client said in its hello that it receives files.
+* The client takes files only after it acknowledged an offer that came through the RDP channel of
+  its own session, only on the connections whose token proves that offer, and only into the
+  folder for received files, through its hidden part folder. It never replaces a file, never
+  runs one, and marks each with the Mark of the Web.
+* Limits: the free space is checked twice, at the offer and at the begin frame; names and paths
+  are checked as for a drop; at most 10 000 items per send.
+* The listener of a send follows the rules of 0.6 and 0.7: it exists only from the offer to the
+  end of its transfer, TLS 1.2 or 1.3, a token per offer that is never logged, each index once,
+  at most N + 4 sockets, 5 seconds for each to authenticate.
+
+#### Settings
+
+| Where | Setting | Values | When absent | Meaning |
+| --- | --- | --- | --- | --- |
+| agent.json | `sendToClient` | `auto`, `never` | `auto` | Whether the files of the session may be sent to the client. Only editable in the file. |
+| client.json | `receiveFiles` | `auto`, `never` | `auto` | Whether the client receives them; `directTransfer` at `never` also turns it off. |
+| client.json | `receiveFolder` | a full path | the Downloads folder | Where they go. Environment variables such as `%USERPROFILE%` are expanded. |
+
+#### Logs
+
+Agent, at the info level:
+
+```
+Send requested from the Send To shortcut or --send with 2 item(s), the first one <path>.
+Send <id>: direct connection offered on port 3400 for the client to receive, protocol version 2, up to 8 connection(s), at most 100 MB/s, address hint <address>.
+Send <id>: 2 item(s), 37 file(s), 2000000000 bytes offered to the client.
+Send <id>: the client accepted the files; waiting for its connections.
+Send <id>: connection 0 from <address>:<port> accepted with Tls13 (TLS_AES_256_GCM_SHA384); sending the list of the files.
+Send <id>: Succeeded through the direct connection to <address>:<port> on port 3400, Tls13 (...), 37 file(s), 2000000000 of 2000000000 bytes acknowledged in 8.1 s, 246.9 MB/s; The client has every file.
+Send <id>: direct connection statistics: 8 of 8 planned connection(s), bytes per connection 0: ..., 1: ...; ... s from the go frame; the reader spent ... s opening and reading the files and waited ... s for room in the queue; the writers spent ... s in socket writes and waited ... s for blocks, summed over the connections, and ... s for the rate limit; average ... MB/s, first 5 s ... MB/s, last 5 s ... MB/s.
+Send To shortcut created: <path>, running <agent> --send.
+```
+
+Client, at the info level:
+
+```
+Send offer <id>: 2 item(s), 37 file(s), 2000000000 bytes, first report.pdf, direct connection on port 3400 with up to 8 connection(s).
+Receive <id>: accepted, ... into <folder>, part folder <folder>\.ultimaterdp-<id>.part, port 3400 of <host>, certificate pinned to SHA-256 <hex>.
+Receive <id>: connection 0 to <host>:3400 with Tls13 (...); the agent accepted the token.
+Receive <id>: Succeeded through the direct connection to <host>:3400, ..., 37 of 37 file(s), ... bytes in 8.0 s, 250.0 MB/s, ... acknowledgement(s).
+Receive <id>: direct connection statistics: 8 connection(s), bytes per connection ...; socket reads ... s, file writes ... s, hashing ... s, summed over the threads; average ... MB/s, first 5 s ... MB/s, last 5 s ... MB/s.
+Receive <id>: 2 item(s) moved into <folder>: report (2).pdf, Photos.
+```
+
+So both logs end a send with the same statistics lines as a drop, each side in the words of its
+role: the sender line of the client of 0.7 is now also on the agent, and the receiver line of the
+agent is now also on the client.
+
+#### Measured in the tests
+
+`DirectReverseTests` runs whole sends between a `DirectSender` that accepted the connections and
+a `DirectReceiver` that opened them, over in memory connections: 1 and 8 connections, a cancel of
+either side, a connection broken in the middle, a block damaged on its way to the disk, paths
+with `..`, a drive, `NUL`, `COM1` or outside the items, the pacing of the agent on a clock of its
+own, tokens of the other direction refused by both kinds of gate, and a whole send into a part
+folder on disk followed by the move into a folder that already holds files of the same names.
+`SameUserPipeTests` runs the pipe on this computer: a request and its answer, a second server of
+the same name refused, a call without a server, and a name freed by a server that stopped.
+
+Not measured yet: a real send over the production path. The rate is expected to be close to the
+other direction, within the limit of `directMaxMegabytesPerSecond` when the server sets it; the
+statistics lines of both logs will tell.
+
+### RemoteApp from a shortcut
+
+#### What the first real run of 0.8.0 showed
+
+With a published Notepad, the RemoteApp code worked: the session was created, the logon task
+started the agent, the program window showed as a `RAIL_WINDOW`, a drop onto it was accepted in
+530 ms, and the session ended cleanly. It also showed seven defects:
+
+1. Three windows instead of one: the window of the program; a `UIMainClass` window of the
+   control, visible, over a whole monitor at (639, -1080) to (2559, 0), style 0x96380000, not
+   cloaked, which appeared after "Event OnEnterFullScreenMode, area 1920x1080 at (639, -1080)"
+   just before OnConnected; and the main window, black with scroll bars, with a remote desktop of
+   3200x3080 in a control of 1512x705.
+2. Opening the .rdp file always showed the main window.
+3. 10 seconds lost at every start: Connect at 13:38:32.9, OnConnected at 38.7, OnLoginComplete at
+   40.9, then 10 seconds of nothing, ServerStartProgram at 50.9, its result at 51.0 and the window
+   at 51.3. The RemoteProgram2 values alone never start the program with this server.
+4. Windows keeps a RemoteApp session connected 15 to 20 seconds after the last window of its
+   program closed, as with mstsc, where nothing shows meanwhile, then disconnects with reason 2
+   and extended reason 11. 0.8.0 logged it as an internal error and left an empty main window.
+5. `RailDropTargets` registered drop targets on the `UIMainClass` window and on the 32 pixel
+   proxy of the agent, a `RAIL_WINDOW` with style 0x96000000 and extended style 0x08080088.
+6. The agents of one user in a desktop session and in a RemoteApp session wrote the same log file
+   with the same thread numbers.
+7. The working set of the client was 721 MB a minute after the window of the program showed, 98 MB
+   at launch.
+
+#### Why the control entered full screen
+
+0.8.0 set `ContainerHandledFullScreen` to 0, so that the control runs full screen itself in a
+desktop session; with 0, full screen means that the control takes its `UIMainClass` window out
+of the client window and shows it as a top level window over a monitor. In RemoteApp mode the
+control entered full screen by itself, right before OnConnected: the window that appeared is that
+window, which the control fills with the remote desktop, empty around a RemoteApp program. mstsc
+in RemoteApp mode keeps its frame, `TscShellContainerClass`, hidden, and only the program windows
+show.
+
+Version 0.9 sets `ContainerHandledFullScreen` to 1 and `FullScreen` to false in RemoteApp mode
+only (`RdpSettingsApplier`): the control then asks the container with `OnRequestGoFullScreen`
+instead of taking a window of its own, and the client logs that request and ignores it. Its
+windows stay children of the client window. The client also hides the window of the control
+itself in RemoteApp mode, when it is created, at each connection, at OnConnected and at the
+logon, which removes the black picture with scroll bars from the tab: the tab shows its panel
+with the name of the program, the number of its windows, the state of the connection and of the
+agent, and a Disconnect button. A full screen event in RemoteApp mode is logged and ignored. The
+desktop sessions keep 0 and do not change.
+
+Not verified without a real server: that the control does not enter full screen with 1, that the
+windows of the program, their input, their keyboard and the drops on them work with the window of
+the control hidden, as they do in mstsc with its frame hidden, and that the credential prompt of
+Windows shows above the other windows while the main window is out of sight. The lines to read
+at the next real run:
+
+* `Settings applied: ... containerHandledFullScreen=1 (RemoteApp); fullScreen=False (RemoteApp)`;
+* `Event OnRequestGoFullScreen (...) in RemoteApp mode, ignored`, or `Event OnEnterFullScreenMode
+  (...) in RemoteApp mode, ignored` if the control still enters full screen;
+* `RemoteApp (...): N top level window(s) of the process, logged on` and the same line at the
+  `first window of the program`, followed by one line per window with its class, title, visible,
+  cloaked, styles, rectangle, owner and what `RailWindowRule` makes of it. Expected: only the
+  `RAIL_WINDOW` of the program visible on a monitor, besides the main window far outside every
+  monitor while it is out of sight;
+* `RemoteApp (...): the window of the control 0x... is hidden, ...`.
+
+#### The main window out of sight
+
+`UltimateRDP.exe file.rdp` with a RemoteApp file now opens without the main window
+(`LaunchOptions` in Core): `--show` forces the main window, `--hidden` hides it also for a
+desktop file, and a desktop file keeps the main window by default. The form is never hidden in
+the sense of Windows Forms, since a control whose form was never shown gets no window and the
+Remote Desktop control needs one to connect: out of sight, the form is a tool window, which has
+no taskbar button and no place in Alt+Tab, at (-32000, -32000), outside every monitor, as Windows
+puts minimized windows.
+
+* A notification icon whose menu names each program and its server, then Show UltimateRDP,
+  Disconnect and Exit. Show UltimateRDP makes the form a normal window on the monitor of the
+  mouse; its close box then puts it back out of sight while RemoteApp programs run.
+* A small window "Connecting to <program>..." with Cancel, in the bottom right corner of the
+  monitor of the mouse, so that it does not cover the credential prompt, without a taskbar
+  button and without taking the keyboard, until the first window of the program appears.
+* A session that ends on purpose ends without a word; once no tab is left, the process exits. An
+  end that is not on purpose shows a message, and a connection that failed before the logon also
+  shows the main window, whose tab says why and can connect again.
+* One client per user and session: a second start hands its file and options to the first one
+  through a `SameUserPipe` named `UltimateRDP.Client.<SID>.S<session>`, which opens it, without
+  showing the main window for a RemoteApp file, and exits. When the first one does not answer
+  within 3 seconds, or is closing, the second one runs on its own.
+
+No taskbar button shows besides those of the windows of the program.
+
+#### The start of the program
+
+`RemoteProgramStart` in Core: the client calls ServerStartProgram at OnLoginComplete, unless the
+control already reported OnRemoteProgramResult or a window of the program, and once more 10
+seconds later when no result and no window came; two calls at most per connection. A window that
+is not a window of the program, such as the proxy of the agent, does not count. The line to read:
+`RemoteApp (...): calling ServerStartProgram(...), call 1 of at most 2, at the logon`, and the time
+of `Event OnRemoteProgramResult` after it.
+
+#### The end of the session
+
+`SessionEnd.IsNormal` in Core: reasons 1, 2 and 3 with no extended reason or the extended reasons
+1, 2, 11 and 12 are normal ends, and get the texts of 0.8.0 for reasons 1 to 3; any other end gets
+the description of the control. The log says `reason=2 extended=11 (disconnected by the user, as
+at the end of a RemoteApp session), a normal end`. Between the close of the last window and the
+disconnection, nothing of the client is on the screen but the notification icon. The client does
+not end the session early when no window is left, since a program may have none between its
+splash screen and its main window; no setting was added for it.
+
+#### The windows of the program
+
+`RailWindowRule` in Core: a top level window of the process is a window of the program when its
+class is `RAIL_WINDOW`, it can be activated (no `WS_EX_NOACTIVATE`), and its title is not "UltimateRDP
+drag", the title of the proxy of the agent, which the server sends with the window. The windows
+of the control (`UIMainClass`, `UIContainerClass`, `IHWindowClass`, `OPWindowClass` and the like)
+and every other class are left out. A window left out gets one log line that says what it is,
+`... : DropProxy, not a window of the program; no drop target.`, and no drop target. Only the
+windows of the program count in the panel, in the question before closing a tab, and for the
+connecting window.
+
+#### The log of the agent
+
+Every line of the agent log gives the session with the thread, as in `INFO  [S3 12]`. The agents
+of one user, and the copy started with `--send`, take turns on the file through a mutex of that
+user across sessions, `Global\UltimateRDP.AgentLog.<SID>`, and open it shared for writing, so
+that a writer without the mutex cannot make the open of another fail. The client log is also
+opened shared, since a second start writes a few lines to it.
+
+#### Memory
+
+Nothing of UltimateRDP holds memory in a RemoteApp session in proportion to the 600 MB of the
+run: no transfer ran, the scan of the windows every 2 seconds keeps a list of handles, and the
+channel keeps sent strings for 10 seconds only while a transfer runs. The client sets no bitmap
+cache and no cache size; the control uses its defaults. What the client does set is a desktop of
+the size of the virtual screen, 3200x3080 in that run, which RemoteApp needs to place the windows
+where they are on the client: the surfaces of the control for such a desktop take about 40 MB
+each at 32 bits per pixel. The visible `UIMainClass` window over a monitor also drew the remote
+desktop, which no longer happens. Nothing else was changed, since nothing else is clearly ours.
+The client now logs `RemoteApp (...) memory, logged on`, `memory, first window` and `memory, 60 s
+after the first window`, with the working set, the private bytes, the managed heap and the size of
+the desktop; the managed heap tells what belongs to .NET, the rest to the control.
+
+### The password prompt
+
+Before 0.9.0 the client read the generic credential `TERMSRV/<host>`, set its password and turned
+the prompt off, whatever the .rdp file said. `CredentialPrompt.Decide` in Core makes the client
+ask when any of three inputs says so, the first named in the log:
+
+* the command line option `--ask-credentials`;
+* the setting `credentials` of client.json at `ask` (`saved` by default), which the checkable
+  File menu entry "Always ask for the password" changes and saves;
+* the key `prompt for credentials:i:1` of the .rdp file, honoured from now on as the Microsoft
+  client honours it.
+
+When the client asks, it does not read the saved credential, keeps the user name of the .rdp file
+filled in, sets `PromptForCredentials` and turns off `AllowCredentialSaving` of
+`IMsRdpClientNonScriptable4`, so that the prompt of the control does not offer to save the
+password. Otherwise it sets `AllowCredentialSaving` back and applies the saved credential as
+before. The log says which input decided, `Credentials for <host>: the password is asked: "prompt
+for credentials:i:1" of the .rdp file; ...`, and never holds a password.
+
+This changes the behaviour of a .rdp file that already holds `prompt for credentials:i:1` with a
+saved credential: 0.8.0 connected without a prompt, 0.9.0 asks.
+
+### Versions
+
+The protocol gains `acceptsFiles` in the hello of the client and the messages `sendOffer`,
+`sendAck` and `sendCancel`, which only a client 0.9.0 that said `acceptsFiles` ever gets; the
+direct connection keeps version 2 and gains the role byte, which only the reversed direction
+uses, so that a drop between 0.9.0 and 0.8.0 or 0.7.0 goes as before. A client 0.8.0 or older
+never says `acceptsFiles`, so an agent 0.9.0 never creates the shortcut for it, and an agent 0.8.0
+ignores the field. Both sides ship as 0.9.0.

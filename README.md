@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/freeKC/ultimaterdp/actions/workflows/ci.yml/badge.svg)](https://github.com/freeKC/ultimaterdp/actions/workflows/ci.yml)
 
-UltimateRDP lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. UltimateRDP is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection. Large files travel through the virtual channel before the drop, which is faster than drive redirection, and from version 0.6.0 through a direct TLS connection when the network allows it.
+UltimateRDP lets you drag files or folders from your desktop and drop them into a Remote Desktop session, on the application under the cursor. Explorer, a mail client, a browser or a business application receives them as if you had dropped them inside the session. When nothing under the cursor accepts them, the drop is ignored. UltimateRDP is made of a client that hosts the Microsoft Remote Desktop control, a small agent in the session, a virtual channel between the two, and the standard drive redirection. Large files travel through the virtual channel before the drop, which is faster than drive redirection, and from version 0.6.0 through a direct TLS connection when the network allows it. From version 0.9.0 files also go the other way, from the session to your computer, through the same direct connection: see "Sending files from the session to your computer".
 
 ## Why
 
@@ -25,7 +25,7 @@ UltimateRDP works through a Remote Desktop Gateway. The direct connection for la
 
 UltimateRDP has a deliberately narrow scope:
 
-- One direction only, from the local computer to the session. For the other direction, keep using copy and paste.
+- Drops go one way, from the local computer to the session. From version 0.9.0 the session sends files to your computer with its Send To menu instead of a drop, through the direct connection only: see "Sending files from the session to your computer".
 - Full desktop sessions, and from version 0.8.0 RemoteApp programs: see "RemoteApp programs".
 - The session always starts in a window, even if the .rdp file asks for full screen. You can switch to full screen afterwards. In full screen, you can only drop from a monitor that the session does not cover.
 
@@ -52,6 +52,7 @@ RemoteApp sessions do not use the `Run` entry. To have the agent there too, see 
 Other options:
 
 - `--uninstall` stops the agent from starting with your session and stops the running copy. Run it from an elevated prompt to remove the all users entry as well.
+- `--send <paths>` sends files and folders of the session to the computer of the UltimateRDP client connected to it. The Send To shortcut runs it; see "Sending files from the session to your computer".
 - `--status` prints the version, the `Run` entries under `HKEY_CURRENT_USER` and `HKEY_LOCAL_MACHINE`, the settings file, the machine settings file and whether the agent runs in your session. It also says whether the session is a RemoteApp session, and whether the `SysProcs` value and the scheduled task of "RemoteApp programs" exist. It changes nothing.
 - `--help` lists the options.
 
@@ -91,6 +92,7 @@ Each session opens in its own tab. The status bar and the menus follow the activ
 - **Close tab** (Ctrl+W): disconnects the active session and closes its tab.
 - **Log off the remote session**: ends your Windows session on the server. See "Ending the session" below.
 - **Forget saved credentials**: see "Saved credentials" below.
+- **Always ask for the password**: from version 0.9.0, every connection asks for the password instead of using a saved credential. See "Saved credentials" below.
 - **Quit**: disconnects every session and closes the window.
 
 The Session menu holds Connect, Disconnect, Look for the agent again and Cancel the transfer. See "Large files" below.
@@ -189,6 +191,42 @@ How to read them:
 
 Whether the connection uses UDP shows in the connection bar of the Remote Desktop session: click the signal icon for the connection information.
 
+### Sending files from the session to your computer
+
+From version 0.9.0, files and folders of the session go to your computer through the direct connection, at the same rate as large files in the other direction. Both sides must run 0.9.0, and the direct connection must work: see "Direct connection for large files".
+
+In the session:
+
+- **Send To.** Right click files or folders in Explorer, then Send to, **My PC (UltimateRDP)**. The shortcut exists only while an UltimateRDP client that receives files is connected, and goes when it disconnects.
+- **The tray menu of the agent**, Send files to my PC..., picks files in a dialog. The tray icon does not show in RemoteApp sessions.
+- **The command line**: `UltimateRDP.Agent.exe --send "C:\Users\me\Documents\report.pdf" "C:\Users\me\Pictures\Trip"`.
+
+If the files cannot be sent, a message in the session says why, for example that no client that receives files is connected.
+
+On your computer:
+
+- The files go to your Downloads folder. While they come, they are in a hidden folder `.ultimaterdp-<id>.part` inside it, and they appear once every file was checked with its SHA-256. A file never replaces another: when `report.pdf` exists, the new one is `report (2).pdf`, and a folder becomes `Photos (2)`.
+- A window "Files from the session" shows the progress, with Cancel. At the end it says where the files are, and Open folder shows them in Explorer.
+- Every received file gets the mark that Windows gives to downloads, so that SmartScreen and Office treat it as a file from the Internet. UltimateRDP never opens or runs a received file.
+- When the direct connection cannot be used, for example through a Remote Desktop Gateway or with ports closed by a firewall, nothing is sent and the window says so. There is no slower path; copy the files in the session to a drive of your computer under `\\tsclient` instead.
+- Names that Windows refuses, a path that would leave the folder, or not enough free space stop the transfer, and nothing is kept.
+
+Settings in `%LOCALAPPDATA%\UltimateRDP\client.json`, only editable in the file:
+
+```json
+{
+  "receiveFiles": "auto",
+  "receiveFolder": "%USERPROFILE%\\Desktop\\From the server"
+}
+```
+
+| Setting | Values | When absent | Meaning |
+| --- | --- | --- | --- |
+| `receiveFiles` | `auto`, `never` | `auto` | `never` refuses the files of the session. `directTransfer` at `never` refuses them too, since only the direct connection carries them. |
+| `receiveFolder` | a full path | your Downloads folder | Where the files go. Environment variables such as `%USERPROFILE%` are expanded; the folder is created when missing. |
+
+On the server, `sendToClient` in agent.json, `auto` by default, set to `never` turns the sending off for a user or, in the machine settings, for everybody. `directMaxMegabytesPerSecond` also limits what the agent sends, which protects the outbound link of the server.
+
 ### Status bar messages
 
 Messages of a drag:
@@ -277,6 +315,16 @@ cmdkey /generic:TERMSRV/<host> /user:<domain\user> /pass
 
 `cmdkey` then asks for the password.
 
+From version 0.9.0 the client asks for the password instead, and reads no saved credential, when any of these says so:
+
+- the option `--ask-credentials` on the command line;
+- File, **Always ask for the password**, which the client remembers as `"credentials": "ask"` in client.json (`saved` by default);
+- the line `prompt for credentials:i:1` in the .rdp file, as the Microsoft client does.
+
+The user name of the .rdp file stays filled in, and the prompt does not offer to save the password. The client log says which of the three decided, and never holds a password.
+
+This changes what happens with a .rdp file that already holds `prompt for credentials:i:1`: version 0.8.0 used the saved credential and connected without a prompt; version 0.9.0 asks for the password. Remove the line from the file, or set it to 0, to get the saved credential back.
+
 The "Remember me" box of the Windows credential prompt saves a different credential type, a domain password. Windows keeps that password for itself, so UltimateRDP cannot read it. The Windows prompt itself may still use it.
 
 File, Forget saved credentials deletes both kinds of credential for the host of the active tab. The open session is not affected, and the next connection asks again.
@@ -285,6 +333,7 @@ File, Forget saved credentials deletes both kinds of credential for the host of 
 
 By default the tray icon of the agent is visible only while an UltimateRDP client is connected to the session. Its menu holds:
 
+- **Send files to my PC...**: from version 0.9.0, sends the chosen files to the computer of the client. See "Sending files from the session to your computer".
 - **Stage files in the session before the drop**: off by default. When on, the agent copies the files into the session before the drag starts, and the remote application receives local paths instead of `\\tsclient` paths. Turn it on for applications that refuse network paths. Large files take time to copy before the drag starts. When the files come through the channel, see below, they arrive as local copies anyway.
 - **Fast transfer of large files**: Auto, Always or Never. Auto, the default, sends the files through the UltimateRDP channel before the drop when they hold 10 MiB or more. Always does it for every drop, Never for none: the remote application then reads the files through drive redirection, as in version 0.3.
 - **Direct connection for large files**: Auto or Never. Auto, the default, offers the direct connection for a fast transfer, with the channel as the fallback. Never keeps every fast transfer in the channel. See "Direct connection for large files".
@@ -309,7 +358,8 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
   "directMaxMegabytesPerSecond": 0,
   "trayIcon": "auto",
   "channelRead": "wts",
-  "mapClientDrives": "never"
+  "mapClientDrives": "never",
+  "sendToClient": "auto"
 }
 ```
 
@@ -325,6 +375,7 @@ The agent keeps its settings in `%LOCALAPPDATA%\UltimateRDP\agent.json` on the s
 | `logLevel` | `debug`, `info`, `warn`, `error` | `info` | The lowest level written to the log. Only editable in the file. |
 | `trayIcon` | `auto`, `always`, `never` | `auto` | `auto` shows the tray icon only while an UltimateRDP client is connected to the session. `always` shows it from the start of the agent. `never` never shows it: the agent is then controlled with `--uninstall` and its `Run` entry only. Only editable in the file. |
 | `mapClientDrives` | `never`, `auto` | `never` | The tray menu entry "Client drives on drive letters". |
+| `sendToClient` | `auto`, `never` | `auto` | Whether files of the session may be sent to the computer of a client that receives them. Only editable in the file. |
 | `channelRead` | `wts`, `file` | `wts` | How the agent reads the channel. `wts` reads it with WTSVirtualChannelRead, 1600 bytes at a time. `file` is an experiment: the agent reads the file handle of the channel with a buffer of 64 KiB, takes out the channel headers it may find, logs which framing it found, and goes back to `wts` for the connection at the first inconsistency, with a warning. Only editable in the file. |
 
 An unknown value gives the default and a warning in the log. Restart the agent after editing the file by hand. When the tray menu changes a setting, it writes that key into your agent.json and keeps your other keys; comments in the file are not kept.
@@ -421,15 +472,36 @@ With `logLevel` at `debug` in client.json or agent.json, both sides also log the
 
 ## RemoteApp programs
 
-From version 0.8.0, UltimateRDP also opens RemoteApp programs: a program published on the server that shows in windows of its own on your desktop, without the remote desktop around it. Open its .rdp file as any other, for example the one your administrator gives you or the one of the web feed. A file with `remoteapplicationmode:i:1` opens a RemoteApp tab. RemoteApp support is new and was not tested against a real server at the time of the release: please report what you see, with both logs.
+From version 0.8.0, UltimateRDP also opens RemoteApp programs: a program published on the server that shows in windows of its own on your desktop, without the remote desktop around it. Open its .rdp file as any other, for example the one your administrator gives you or the one of the web feed. A file with `remoteapplicationmode:i:1` opens a RemoteApp tab. Version 0.8.0 was tested once against a real server with Notepad; version 0.9.0 fixes what that test showed, and its changes were not tested against a real server at the time of the release: please report what you see, with both logs.
+
+### From a shortcut or a .bat file
+
+From version 0.9.0, `UltimateRDP.exe` started with a RemoteApp file shows only the windows of the program, as the Microsoft client does. For example, in a file `Notepad on the server.bat`:
+
+```bat
+@echo off
+start "" "C:\Tools\UltimateRDP\UltimateRDP.exe" "C:\Users\me\Documents\notepad-server.example.com.rdp"
+```
+
+or a shortcut whose target is `"C:\Tools\UltimateRDP\UltimateRDP.exe" "C:\Users\me\Documents\notepad-server.example.com.rdp"`.
+
+- A small window "Connecting to Notepad..." with Cancel shows in the bottom right corner of the screen until the window of the program appears.
+- The UltimateRDP window stays out of sight. A notification icon names the program and its server, and its menu holds Show UltimateRDP, Disconnect and Exit. No taskbar button shows besides those of the windows of the program.
+- When you close the last window of the program, the server keeps the session about 20 seconds, then ends it, and UltimateRDP exits by itself without a message. Until then, only the notification icon is left.
+- When the connection fails, or ends for another reason, a message says why; when it failed before the logon, the UltimateRDP window shows too, with the reason in its tab and Session, Connect.
+- Starting UltimateRDP again with another file hands it to the copy that runs: one copy per user runs at a time.
+- `--show` shows the UltimateRDP window anyway, and `--hidden` keeps it out of sight for a desktop file too. A desktop file shows the window by default.
+- `--ask-credentials` asks for the password, see "Saved credentials".
+
+The command line is `UltimateRDP.exe [--show | --hidden] [--ask-credentials] [file.rdp]`.
 
 ### On your computer
 
-- The tab shows the name of the program, the state of the connection and of the agent, and the result of the last drop. The program itself opens in its own windows, outside the UltimateRDP window, which you can minimize once you are logged on.
+- The tab shows the name of the program, how many of its windows are open, the state of the connection and of the agent, the result of the last drop, and a Disconnect button. The program itself opens in its own windows, outside the UltimateRDP window, which you can minimize once you are logged on.
 - Drop files on a window of the program. Nothing happens while you move over it: the drop happens where you release the button. The progress window "Drop into the session" opens over the window you dropped on, as for a desktop session, and large files go through the channel or the direct connection as described above.
 - The remote application shows no drop feedback while you move, since the drag only starts in the session when you release the button.
 - View, Resize session to window, Scale to window, Scale factor, Full screen and Use all monitors do not apply to a RemoteApp tab and are disabled there. The session always covers all your monitors.
-- When the program closes its last window, the server ends or disconnects the session and the tab closes.
+- When the program closes its last window, the server ends or disconnects the session about 20 seconds later, and the tab closes. The status bar calls it a normal end.
 - Closing the tab, or quitting UltimateRDP, while windows of the program are open asks first: the program keeps running on the server and comes back at the next connection with the same file. To end it, close it in its own window, or use File, Log off the remote session.
 - Several tabs, desktop and RemoteApp, work side by side. A drop on a window of a program goes to the session of that program.
 
@@ -553,7 +625,8 @@ Messages are JSON objects sent as ASCII lines, except the `u15` chunks, and each
 - **A transfer fails at once with "Data was lost or damaged on the way".** The channel sometimes damages the data of one line on the way. From 0.5.2 on both sides the agent asks for that line again, as for a lost one, and its log says what the damage looked like in a line that contains "arrived damaged"; an agent 0.5.1 still fails the transfer.
 - **Large files never use the direct connection.** The client log says why at the start of each transfer: "the direct connection cannot be used" with the reason, such as a port that did not answer within 3 seconds. Check the firewall rules of "Direct connection for large files", on the server and at the hosting provider, and that both sides run 0.7.0. The agent log says on which port it listened, and warns when no port of the range was free.
 - **A direct transfer is slower than the link.** Read the `direct connection statistics` lines of both logs, see "Reading the summary lines".
-- **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
+- **Files sent from the session do not arrive.** The client log has a line `Send offer` for each offer, then `Receive <id>:` lines that say whether the direct connection could be made, and why not. The agent log has the same `Send <id>:` lines. When the client log has no `Send offer` line, check that both sides run 0.9.0 and that `receiveFiles` and `directTransfer` are not `never` in client.json; the agent log line `Hello from client` says `receives files of the session: True` when they are not.
+- **Where the logs are.** The client writes `%LOCALAPPDATA%\UltimateRDP\logs\client-yyyyMMdd.log` on your computer. The agent writes `agent-yyyyMMdd.log` in the same folder on the server; from version 0.9.0 each of its lines gives the session and the thread, such as `[S3 12]`, since the agents of one user in several sessions write the same file. Both keep fourteen days of logs. The client opens its folder from Help, Open log folder, and the agent from its tray menu, Open log folder.
 
 ## Build from source
 
@@ -582,11 +655,12 @@ The executables of a release are signed by APROGSYS, and Windows shows this publ
 - The agent never offers a move. A move accepted in the session could delete the file on your local disk through the redirected drive.
 - Messages carry file paths, coordinates, modifier key flags and window names. File contents go through the channel only for a transfer of large files, inside the encrypted Remote Desktop connection.
 - From version 0.6.0, the files of a transfer of large files may go through a direct TLS connection instead. The agent listens only while a transfer is offered, and accepts a connection only with a proof of the single use token it gave through the encrypted Remote Desktop connection, each connection of the offer once, 16 at most. The client accepts only the certificate whose SHA-256 the agent gave there. The files go to the same staging folder, with the same checks. Open the ports only to the client addresses allowed for RDP.
+- From version 0.9.0, the session can send files to your computer. Only the user of the session can start it, through the agent of that session: `--send` reaches that agent through a pipe that only accepts processes of the same user in the same session. The client takes files only after it answered an offer that came through the encrypted Remote Desktop connection of its own session, only through the direct connection whose certificate and token that offer gave, and only into its folder for received files. It never replaces a file, never runs one, and marks each one as a download.
 - The client never writes credentials and never logs them. It reads the generic credential `TERMSRV/<host>` when one exists, and hands it to the Microsoft control. Other credential prompts come from the Microsoft control.
 
 ## Status
 
-Version 0.8.0 is a test release. Its RemoteApp support and its drive letters were not tested against a real server at the time of the release.
+Version 0.9.0 is a test release. The files sent from the session to your computer, the launch of a RemoteApp program from a shortcut, its window fixes and the password option were not tested against a real server at the time of the release; the drive letters of 0.8.0 were not either.
 
 Verified in a real Remote Desktop session, with version 0.2.1:
 
@@ -596,7 +670,7 @@ Verified in a real Remote Desktop session, with version 0.2.1:
 
 The log off command and the translations are new in 0.3.0. The fast transfer of large files is new in 0.4.0. Its first test against a real server failed. Version 0.4.1 fixes the two defects found there; with it, a file of 496 MB reached a real session in 193 seconds. Version 0.4.2 adds a progress window at every drop and only changes the client. Version 0.4.3 fixes short messages that the Remote Desktop control sometimes lost just before a large one, which failed some transfers at their start. Version 0.4.4 measures where the time of a transfer goes, on both sides, and adds the settings `transferWindowBytes` and `channelRead` to test what limits it.
 
-Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps. Version 0.5.1 numbers the messages of a transfer, so that the agent asks for the ones the Remote Desktop control lost and the transfer goes on. Version 0.5.2 does the same for a message that arrives damaged. Version 0.6.0 sends large files through a direct TLS connection when the server opens its ports for it, since the channel stayed at 2 to 4 MB/s. Its first production test reached 135 to 180 MB/s for a few seconds, then about 20 MB/s, the limit of one TCP connection on that path; version 0.7.0 therefore uses several connections at once, and logs where the time of a transfer goes. Version 0.8.0 opens RemoteApp programs and takes drops on their windows, keeps the agent from holding a RemoteApp session open, can give the drives of the client letters of the session, and reads machine wide settings.
+Its measurements showed that neither side limits the transfer: the channel is full, and the encoding of the data took the larger part of it. Version 0.5.0 sends the files in a denser form when the data of the client reaches the agent as UTF-16, which is expected to raise the rate about 2.5 times, from 2.1 MB/s to about 5.4 MB/s on a channel of 5.8 MB/s. It also keeps the fast transfer when you release the button quickly, before the agent answered the start of the drag, including when that answer comes in two steps. Version 0.5.1 numbers the messages of a transfer, so that the agent asks for the ones the Remote Desktop control lost and the transfer goes on. Version 0.5.2 does the same for a message that arrives damaged. Version 0.6.0 sends large files through a direct TLS connection when the server opens its ports for it, since the channel stayed at 2 to 4 MB/s. Its first production test reached 135 to 180 MB/s for a few seconds, then about 20 MB/s, the limit of one TCP connection on that path; version 0.7.0 therefore uses several connections at once, and logs where the time of a transfer goes. Version 0.8.0 opens RemoteApp programs and takes drops on their windows, keeps the agent from holding a RemoteApp session open, can give the drives of the client letters of the session, and reads machine wide settings. Its first real test with Notepad worked and showed an empty window of the control over a monitor, a main window always shown, ten seconds lost before the program started, and a normal end shown as an error. Version 0.9.0 fixes these, opens RemoteApp programs from a shortcut with only their own windows on the screen, sends files from the session to your computer, and can ask for the password every time.
 
 Feedback that helps:
 
